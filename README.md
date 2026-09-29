@@ -38,6 +38,7 @@ Project board: https://github.com/users/herringvoices/projects/10/
 
 See:
 
+- [Planning index](docs/planning-index.md)
 - [Architecture invariants](docs/architecture-invariants.md)
 - [MVP boundary](docs/mvp-boundary.md)
 - [Board workflow](docs/board-workflow.md)
