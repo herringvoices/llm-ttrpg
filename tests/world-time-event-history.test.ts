@@ -31,6 +31,7 @@ function dependencies(persistence: PersistencePorts) {
         return `${kind}.history-${++id}`;
       },
     },
+    worldSeedSource: { nextSeed: () => 0x1234_5678 },
   };
 }
 

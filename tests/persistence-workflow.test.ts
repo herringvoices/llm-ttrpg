@@ -22,6 +22,7 @@ function createDependencies(persistence: PersistencePorts) {
         return `${kind}.test-${++id}`;
       },
     },
+    worldSeedSource: { nextSeed: () => 0x1234_5678 },
   };
 }
 
@@ -56,7 +57,6 @@ async function exercisePersistence(persistence: PersistencePorts) {
       modifier: 1,
       difficulty: 4,
     },
-    { seed: 7 },
   );
   const changedState = reopened.snapshot();
   const changedHistory = await reopened.eventHistory();
@@ -111,6 +111,7 @@ describe("project shell persistence workflow", () => {
       "scheduled_triggers",
       "simulation_cursors",
       "action_pressure_states",
+      "randomness_states",
     ]));
     database.close();
   });

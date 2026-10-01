@@ -40,6 +40,7 @@ function dependencies(persistence: PersistencePorts) {
         return `${kind}.pressure-${++id}`;
       },
     },
+    worldSeedSource: { nextSeed: () => 0x1234_5678 },
   };
 }
 
@@ -138,7 +139,7 @@ describe("action pressure contracts", () => {
 
   it("bounds the same goal without changing its meaning or consuming time", () => {
     const game = loadGameDefinition(referenceGameDefinition);
-    const world = initializeCampaignWorld(game);
+    const world = initializeCampaignWorld(game, 0x1234_5678);
     const worldBefore = structuredClone(world);
     const historyBefore = initializeCampaignHistory(game);
     const intent: InterpretedIntent = {
@@ -258,7 +259,7 @@ describe("action pressure persistence", () => {
     database.exec(migrationSql("0001_persistence_foundation.sql"));
     database.exec(migrationSql("0002_fictional_time_event_history.sql"));
     const game = loadGameDefinition(referenceGameDefinition);
-    const currentState = initializeCampaignWorld(game);
+    const currentState = initializeCampaignWorld(game, 0x1234_5678);
     const { actionPressure: _omitted, ...legacyState } = currentState;
     const initialEvents = initializeCampaignHistory(game);
     const metadata = {
@@ -299,6 +300,7 @@ describe("action pressure persistence", () => {
     ]);
 
     database.exec(migrationSql("0003_action_pressure.sql"));
+    database.exec(migrationSql("0004_resolution_randomness.sql"));
     const persistence = createSqlitePersistence(createSqlJsClient(database));
     expect((await persistence.worlds.load(metadata.id))?.state.actionPressure)
       .toEqual({ status: "unassessed" });

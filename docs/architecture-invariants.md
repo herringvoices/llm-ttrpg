@@ -25,6 +25,11 @@ These are project-level constraints. Implementation should work within them unle
 - The conceptual hierarchy is at least **domain → subsystem → operation**.
 - These are application-level tool trees. They are **not literal MCP servers**, and there is no plan to convert them into MCP servers.
 - Rules operations use the same hierarchy. They expose schemas and deterministic implementations, then return outcomes and proposed mutations/events instead of directly mutating persistence.
+- A resolution operation is a rules operation, not a separate check registry. The engine recognizes only the generic resolution paths `automatic`, `impossible`, and `uncertain`; checks and their mechanics remain ruleset-owned.
+- Resolution assessment is deterministic and has no RNG capability. Only the second phase of an `uncertain` resolution may receive lazy engine RNG access, and uncertainty does not require using it.
+- Ruleset-owned resolution basis and results remain opaque validated data. The engine has no universal difficulty, modifier, opposition, success, or degree semantics.
+- `impossible` is a valid local fictional resolution, distinct from an invalid request and from concluding that the player's overall goal is impossible.
+- Operations receive deep-frozen World State snapshots. Authoritative changes can occur only through validated mutation/event proposals committed by the runtime.
 
 ## Persistence and application boundaries
 
@@ -80,6 +85,15 @@ These are project-level constraints. Implementation should work within them unle
 - Pressure limits fictional resolution scope, never the number of internal operations. The authorized horizon is a ceiling, not an instruction to advance time; actual operation durations consume it downstream.
 - Bounding intent is side-effect free. Pressure reassessment is atomically persisted without advancing fictional time or creating an event merely for the control-state change.
 - A material circumstance change returns control when it invalidates authorization assumptions or creates a meaningful new player choice. Later orchestration may then request a new assessment; it must not blindly continue or retroactively expand an existing authorization.
+- A resolution request consumes an already bounded executable intent. One resolution may not advance fictional time beyond that intent's authorized horizon; issue #11 retains ownership of cumulative multi-operation budgeting and stopping.
+
+## Randomness
+
+- RNG progression is persisted authoritative simulation-control state, not fictional truth and not an event.
+- Each world has an explicit, versioned RNG algorithm, root seed, and next local-stream index. Seeds come from an explicit host dependency, never implicitly from wall-clock time.
+- A stochastic resolution uses one deterministic local stream derived from the root seed and stream index. Multiple draws stay within that stream so changing one mechanic's draw count does not shift every later resolution.
+- Stream use is lazy and transactional. Invalid, automatic, impossible, and uncertain-without-draw resolutions consume no stream; a tentative draw advances authoritative progression only when the complete resolution commit succeeds.
+- Completed stochastic resolutions expose an inspectable reproduction trace. Checkpoints preserve the exact RNG progression captured with the rest of execution state.
 
 ## Presentation
 

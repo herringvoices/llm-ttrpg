@@ -13,7 +13,6 @@ This file records the current GitHub Project placement for the seeded issues.
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
-| #8 | Checks, Resolution & RNG | Actions & Rules, Core Engine |
 | #9 | Hierarchical Tool Catalog | Context & Tools, Core Engine |
 | #10 | Context Assembly & Knowledge Retrieval | Context & Tools |
 | #11 | Player Action Execution Pipeline | Core Engine, Actions & Rules, Context & Tools |
@@ -32,6 +31,11 @@ This file records the current GitHub Project placement for the seeded issues.
 | #25 | Player Fantasy & Starting Situation | World / Content, Player UX |
 | #26 | Content & Encounter Principles | NPCs & Social, World / Content |
 | #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
+
+## Verify / Playtest
+
+- #8 â€” Checks, Resolution & RNG
+  - Labels: Actions & Rules, Core Engine
 
 ## Done
 

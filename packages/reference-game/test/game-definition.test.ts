@@ -2,7 +2,6 @@ import {
   GameValidationError,
   SaveCompatibilityError,
   createSaveMetadata,
-  createSeededRandom,
   executeRulesOperation,
   initializeCampaignWorld,
   initializeCampaignHistory,
@@ -36,7 +35,7 @@ describe("game package contracts", () => {
   });
 
   it("keeps hidden canonical truth out of an ordinary actor perspective", () => {
-    const world = initializeCampaignWorld(game);
+    const world = initializeCampaignWorld(game, 0x1234_5678);
     const knowledge = retrieveKnowledge(
       game,
       world,
@@ -63,7 +62,7 @@ describe("game package contracts", () => {
   });
 
   it("returns an actor's belief without changing or leaking canonical truth", () => {
-    const world = initializeCampaignWorld(game);
+    const world = initializeCampaignWorld(game, 0x1234_5678);
     const canonicalBefore = structuredClone(game.setting.content.facts);
 
     const knowledge = retrieveKnowledge(
@@ -90,7 +89,7 @@ describe("game package contracts", () => {
   });
 
   it("retrieves long documents progressively", () => {
-    const world = initializeCampaignWorld(game);
+    const world = initializeCampaignWorld(game, 0x1234_5678);
     const perspective = {
       kind: "actor" as const,
       id: "campaign.entity.amelia",
@@ -156,7 +155,7 @@ describe("game package contracts", () => {
   });
 
   it("discovers and executes a deterministic rules operation through the engine", () => {
-    const world = initializeCampaignWorld(game);
+    const world = initializeCampaignWorld(game, 0x1234_5678);
     const worldBefore = structuredClone(world);
     const mapping = game.adapter.mappings[0];
     expect(mapping).toBeDefined();
@@ -167,7 +166,7 @@ describe("game package contracts", () => {
       difficulty: 7,
       reinforced: true,
     });
-    const context = { world, rng: createSeededRandom(17) };
+    const context = { world };
     const first = executeRulesOperation<
       typeof mappedInput,
       z.infer<typeof effortResultSchema>
@@ -178,7 +177,7 @@ describe("game package contracts", () => {
     >(
       game.operationRegistry,
       mapping!.operationId,
-      { world, rng: createSeededRandom(17) },
+      { world },
       mappedInput,
     );
 
@@ -187,10 +186,18 @@ describe("game package contracts", () => {
     ]);
     expect(game.operationRegistry.listSubsystems("rules")).toEqual([
       { id: "actions", label: "Actions" },
+      { id: "resolution", label: "Resolution" },
     ]);
     expect(game.operationRegistry.listOperations("rules", "actions")).toHaveLength(
       1,
     );
+    expect(game.operationRegistry.listOperations("rules", "resolution"))
+      .toEqual([
+        expect.objectContaining({
+          id: "rules.resolution.resolve-contract-fixture",
+          kind: "resolution",
+        }),
+      ]);
     expect(first).toEqual(second);
     expect(first.result).toEqual({ total: 7, success: true });
     expect(first.proposedMutations).toEqual([]);
@@ -200,7 +207,7 @@ describe("game package contracts", () => {
 
   it("initializes mutable world state without mutating campaign definitions", () => {
     const campaignBefore = structuredClone(game.campaign.content);
-    const world = initializeCampaignWorld(game);
+    const world = initializeCampaignWorld(game, 0x1234_5678);
     const amelia = world.entities.find(
       (entity) => entity.id === "campaign.entity.amelia",
     );
@@ -226,7 +233,7 @@ describe("game package contracts", () => {
         sequence: 1,
       }),
     ]);
-    expect(initializeCampaignWorld(game)).not.toHaveProperty("events");
+    expect(initializeCampaignWorld(game, 0x1234_5678)).not.toHaveProperty("events");
     expect(() => game.eventTypeRegistry.validatePayload(
       "campaign.notice-posted",
       1,

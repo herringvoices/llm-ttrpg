@@ -19,6 +19,11 @@ pub fn run() {
         description: "action_pressure",
         sql: include_str!("../migrations/0003_action_pressure.sql"),
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 4,
+        description: "resolution_randomness",
+        sql: include_str!("../migrations/0004_resolution_randomness.sql"),
+        kind: MigrationKind::Up,
     }];
 
     tauri::Builder::default()

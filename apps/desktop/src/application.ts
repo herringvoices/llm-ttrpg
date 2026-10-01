@@ -28,6 +28,13 @@ export function createDesktopApplication(database: SqlClient): DesktopApplicatio
     persistence: createSqlitePersistence(database),
     wallClock: { now: () => new Date().toISOString() },
     idGenerator: createIdGenerator(),
+    worldSeedSource: {
+      nextSeed() {
+        const seed = new Uint32Array(1);
+        crypto.getRandomValues(seed);
+        return seed[0]!;
+      },
+    },
     game: loadGameDefinition(referenceGameDefinition),
   });
   return runtime;

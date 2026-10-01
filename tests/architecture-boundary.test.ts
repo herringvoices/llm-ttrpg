@@ -32,4 +32,15 @@ describe("engine package boundary", () => {
     );
     expect(violations).toEqual([]);
   });
+
+  it("keeps game-specific check mechanics out of engine contracts", () => {
+    const engineFiles = findTypeScriptFiles("packages/engine/src");
+    const forbiddenMechanics =
+      /\b(?:dice|difficulty class|attack roll|saving throw|opposed check|success boolean|degree of success|critical hit)\b/i;
+    const violations = engineFiles.filter((path) =>
+      forbiddenMechanics.test(readFileSync(path, "utf8")),
+    );
+
+    expect(violations).toEqual([]);
+  });
 });

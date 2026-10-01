@@ -58,6 +58,42 @@ The last fictional instant at which a generic simulation scope was brought curre
 
 A deterministic engine capability exposed to the LLM-facing orchestration layer, such as observing a location, attempting movement, modifying an object through validated rules, or querying relevant knowledge.
 
+An operation is either ordinary or resolution-capable. Both kinds use the same progressively disclosed tool tree and return validated proposals rather than mutating authoritative state directly.
+
+## Resolution
+
+Engine execution of a ruleset-owned mechanic for an already bounded `ExecutableIntent`. Resolution is more general than a check: it can represent deterministic abilities, contests, cards, resources, randomness, or mechanics with no familiar success/failure model.
+
+## Resolution operation
+
+A rules operation with a deterministic, RNG-free assessment phase and an optional uncertain execution phase. Its structured basis, prepared data, and result are validated but mechanically opaque to the engine.
+
+## Resolution path
+
+One of three generic classifications chosen by resolution assessment:
+
+- **automatic** — the ruleset can complete the operation without uncertainty
+- **impossible** — this coherent local attempt cannot accomplish its intended effect under current rules/conditions, though attempting it may still have consequences
+- **uncertain** — authoritative ruleset resolution is required and may, but need not, use RNG
+
+These paths are not universal success/failure outcomes. In particular, `impossible` is neither an invalid request nor a conclusion that the player's overall goal is impossible.
+
+## Resolution envelope
+
+The post-commit record returned for narration and diagnostics: executable intent, operation ID, resolution path, opaque ruleset basis/result, exact fictional duration, randomness trace or `null`, and produced canonical events.
+
+## Invalid resolution request
+
+A request that fails an execution boundary, such as malformed input, an unknown or wrong-kind operation, an illegal reference, invalid output/proposals, or an engine-owned constraint violation. It commits no state, time, event, or RNG progression.
+
+## Randomness state
+
+Persisted authoritative simulation-control state consisting of a versioned algorithm, world root seed, and next local-stream index. It is not fictional truth. Checkpoints preserve the exact progression, and world seeds come from an explicit host dependency rather than wall-clock time.
+
+## Randomness trace
+
+Reproduction metadata for one completed stochastic resolution: algorithm, local stream index, derived seed, and draw count. A resolution that does not draw has no trace and consumes no stream.
+
 ## Sleeping system
 
 A region, town, building, NPC, organization, economy, or other simulation subsystem that is not continuously ticking while irrelevant.
