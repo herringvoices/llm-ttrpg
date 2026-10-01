@@ -32,11 +32,6 @@ This file records the current GitHub Project placement for the seeded issues.
 | #26 | Content & Encounter Principles | NPCs & Social, World / Content |
 | #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
 
-## Verify / Playtest
-
-- #8 â€” Checks, Resolution & RNG
-  - Labels: Actions & Rules, Core Engine
-
 ## Done
 
 - #5 — Project Shell & Persistence Foundation
@@ -44,6 +39,8 @@ This file records the current GitHub Project placement for the seeded issues.
 - #6 — World State, Fictional Time & Event History
   - Labels: Core Engine, Time & World Simulation, Persistence
 - #7 — Action Pressure & Executable Intent
+  - Labels: Actions & Rules, Core Engine
+- #8 — Checks, Resolution & RNG
   - Labels: Actions & Rules, Core Engine
 - #27 — Game Package Contracts & Content Model
   - Labels: Core Engine
