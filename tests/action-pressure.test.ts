@@ -215,6 +215,31 @@ describe("action pressure persistence", () => {
     database.close();
   });
 
+  it("rejects missing live-world and checkpoint pressure rows as corruption", async () => {
+    const { database, persistence } = await createMigratedSqlitePersistence();
+    const runtime = createGameRuntime(dependencies(persistence));
+    const session = await runtime.createWorld("Pressure integrity");
+    const slot = await session.save("Integrity checkpoint");
+
+    database.run(
+      "DELETE FROM action_pressure_states WHERE world_id = ? AND checkpoint_id IS NULL",
+      [session.worldId],
+    );
+    await expect(persistence.worlds.load(session.worldId)).rejects.toThrow(
+      /exactly one action pressure state for current world/i,
+    );
+
+    database.run("DROP TRIGGER action_pressure_checkpoint_immutable_delete");
+    database.run(
+      "DELETE FROM action_pressure_states WHERE checkpoint_id = ?",
+      [slot.checkpointId],
+    );
+    await expect(
+      persistence.saves.loadCheckpoint(slot.checkpointId),
+    ).rejects.toThrow(/exactly one action pressure state for checkpoint/i);
+    database.close();
+  });
+
   it("does not expose a pressure assessment after a revision conflict", async () => {
     const persistence = createInMemoryPersistence();
     const runtime = createGameRuntime(dependencies(persistence));

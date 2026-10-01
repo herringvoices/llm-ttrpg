@@ -170,9 +170,17 @@ async function readActionPressure(
     }`,
     checkpointId === null ? [worldId] : [worldId, checkpointId],
   );
-  const level = rows[0]?.level;
+  if (rows.length !== 1) {
+    const scope = checkpointId
+      ? `checkpoint ${checkpointId}`
+      : `current world ${worldId}`;
+    throw new PersistenceConflictError(
+      `Expected exactly one action pressure state for ${scope}; found ${rows.length}`,
+    );
+  }
+  const level = rows[0]!.level;
   return actionPressureStateSchema.parse(
-    level === null || level === undefined
+    level === null
       ? { status: "unassessed" }
       : { status: "assessed", level },
   );
