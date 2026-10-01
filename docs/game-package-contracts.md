@@ -48,13 +48,15 @@ Rulesets, settings, adapters, and campaigns may register versioned event-type de
 
 There is no universal engine-level check. Checks, deterministic abilities, contests, card/resource mechanics, opposition, difficulty/modifier calculations, and degrees or axes of outcome belong to the owning ruleset. Resolution operations use the existing operation registry and expose ruleset-owned, JSON-compatible `basis`, prepared data, and result values that the engine validates but does not interpret.
 
-A `ResolutionRequest` combines an already bounded `ExecutableIntent` with a resolution operation ID and structured input. Resolution is two-phase: deterministic assessment receives a deep-frozen World State snapshot and no RNG capability, then selects `automatic`, `impossible`, or `uncertain`. Automatic and impossible paths return a complete outcome. Only uncertain resolution receives a lazy RNG capability, and it may still complete without drawing.
+A `ResolutionRequest` combines an already bounded `ExecutableIntent` with a resolution operation ID and structured input. Resolution is two-phase: deterministic assessment receives a deep-frozen rules-visible world view and no RNG capability, then selects `automatic`, `impossible`, or `uncertain`. The view is explicitly enumerated and omits engine-private RNG progression. Automatic and impossible paths return a complete outcome. Only uncertain resolution receives a lazy RNG capability, and it may still complete without drawing.
+
+The owning ruleset validates that its structured input is applicable to the supplied executable intent—for example, whether a ruleset-defined actor field matches the intent actor. The engine does not infer semantics from arbitrary input fields.
 
 `impossible` means the locally attempted operation cannot accomplish its intended effect under the current rules and conditions; it is a valid fictional resolution and may still consume time or cause consequences. It is distinct from malformed/invalid execution and does not determine that the player's overall goal is exhausted.
 
 After a successful atomic commit, the runtime returns an envelope containing the executable intent, operation ID, generic path, opaque basis/result, exact duration, randomness trace or `null`, and canonical events. A single resolution is rejected if its duration exceeds the intent's authorized horizon. Multi-operation planning, cumulative budgeting, stopping, and pressure reassessment remain issue #11 responsibilities.
 
-Operations cannot mutate the runtime candidate through context: ordinary and resolution operations receive cloned, recursively frozen snapshots and must return validated mutation/event proposals.
+Operations cannot mutate the runtime candidate through context: ordinary and resolution operations receive cloned, recursively frozen rules-visible snapshots and must return validated mutation/event proposals. Uncertain resolution can access randomness only through its separate `rng` capability, never through the world view.
 
 ### Randomness
 

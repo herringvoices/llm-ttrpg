@@ -87,16 +87,30 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown
       ? { readonly [TKey in keyof T]: DeepReadonly<T[TKey]> }
       : T;
 
+export type OperationWorldView = Pick<
+  WorldState,
+  | "game"
+  | "initializedFromCampaign"
+  | "fictionalTime"
+  | "actionPressure"
+  | "entities"
+  | "facts"
+  | "documents"
+  | "beliefs"
+  | "scheduledTriggers"
+  | "simulationCursors"
+>;
+
 export interface RuleOperationContext {
-  readonly world: DeepReadonly<WorldState>;
+  readonly world: DeepReadonly<OperationWorldView>;
 }
 
 export interface ResolutionAssessmentContext {
-  readonly world: DeepReadonly<WorldState>;
+  readonly world: DeepReadonly<OperationWorldView>;
 }
 
 export interface ResolutionExecutionContext {
-  readonly world: DeepReadonly<WorldState>;
+  readonly world: DeepReadonly<OperationWorldView>;
   readonly rng: DeterministicRandom;
 }
 
@@ -193,12 +207,23 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-export function immutableWorldSnapshot(
+export function immutableOperationWorldView(
   world: WorldState,
-): DeepReadonly<WorldState> {
+): DeepReadonly<OperationWorldView> {
   return deepFreeze(
-    JSON.parse(JSON.stringify(world)) as WorldState,
-  ) as DeepReadonly<WorldState>;
+    JSON.parse(JSON.stringify({
+      game: world.game,
+      initializedFromCampaign: world.initializedFromCampaign,
+      fictionalTime: world.fictionalTime,
+      actionPressure: world.actionPressure,
+      entities: world.entities,
+      facts: world.facts,
+      documents: world.documents,
+      beliefs: world.beliefs,
+      scheduledTriggers: world.scheduledTriggers,
+      simulationCursors: world.simulationCursors,
+    })) as OperationWorldView,
+  ) as DeepReadonly<OperationWorldView>;
 }
 
 function validateOperationResult<TResult>(
@@ -353,7 +378,7 @@ export function executeRulesOperation<TInput, TResult>(
   >;
   const parsedInput = operation.inputSchema.parse(input);
   const outcome = operation.execute(
-    { world: immutableWorldSnapshot(context.world) },
+    { world: immutableOperationWorldView(context.world) },
     parsedInput,
   );
   return validateOperationResult(operation, outcome, false);
@@ -386,7 +411,7 @@ export function assessResolutionOperation<TInput, TPrepared, TResult>(
   const parsedIntent = executableIntentSchema.parse(intent);
   const parsedInput = operation.inputSchema.parse(input);
   const assessment = operation.assess(
-    { world: immutableWorldSnapshot(world) },
+    { world: immutableOperationWorldView(world) },
     parsedIntent,
     parsedInput,
   );
@@ -430,7 +455,7 @@ export function resolveUncertainOperation<TPrepared, TResult>(
   const parsedPrepared = operation.preparedSchema.parse(prepared);
   jsonValueSchema.parse(parsedPrepared);
   const outcome = operation.resolve(
-    { world: immutableWorldSnapshot(world), rng },
+    { world: immutableOperationWorldView(world), rng },
     parsedPrepared,
   );
   return validateOperationResult(operation, outcome, true);

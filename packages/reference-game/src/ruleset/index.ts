@@ -247,7 +247,12 @@ export const resolveContractFixtureOperation: ResolutionOperation<
   inputSchema: contractResolutionInputSchema,
   preparedSchema: contractResolutionPreparedSchema,
   outputSchema: contractResolutionResultSchema,
-  assess(context, _intent, input) {
+  assess(context, intent, input) {
+    if (input.actorId !== intent.actorId) {
+      throw new OperationValidationError(
+        `Contract fixture actor ${input.actorId} does not match executable intent actor ${intent.actorId}`,
+      );
+    }
     const actorExists = context.world.entities.some(
       (entity) => entity.id === input.actorId,
     );
