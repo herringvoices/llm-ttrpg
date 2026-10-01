@@ -197,6 +197,29 @@ function gameWithOperations(
   return loadGameDefinition(definition);
 }
 
+function gameWithSecondFixtureActor(): LoadedGameDefinition {
+  const definition: GameDefinition = {
+    ...referenceGameDefinition,
+    campaign: {
+      ...referenceGameDefinition.campaign,
+      content: {
+        ...referenceGameDefinition.campaign.content,
+        entities: [
+          ...referenceGameDefinition.campaign.content.entities,
+          {
+            id: "campaign.entity.test-counterpart",
+            kind: "actor",
+            name: "Test Counterpart",
+            summary: "A test-only second actor for applicability validation.",
+            data: { descriptors: ["test-only"] },
+          },
+        ],
+      },
+    },
+  };
+  return loadGameDefinition(definition);
+}
+
 describe("resolution paths and persistence", () => {
   it("runs equivalent important behavior against in-memory persistence", async () => {
     await exerciseResolutionPersistence(createInMemoryPersistence());
@@ -268,9 +291,13 @@ describe("resolution paths and persistence", () => {
         },
       },
     })).rejects.toThrow(/not a resolution operation/i);
-    await expect(session.resolve(request("automatic", {
-      actorId: "campaign.entity.missing",
-    }))).rejects.toThrow(/missing participant/i);
+    await expect(session.resolve({
+      ...request("automatic", { actorId: "campaign.entity.missing" }),
+      intent: {
+        ...executableIntent(),
+        actorId: "campaign.entity.missing",
+      },
+    })).rejects.toThrow(/missing participant/i);
     await expect(session.resolve(request(
       "automatic",
       { durationMs: 2_000 },
@@ -278,6 +305,30 @@ describe("resolution paths and persistence", () => {
     ))).rejects.toThrow(/exceeds authorized horizon/i);
 
     expect(session.snapshot()).toEqual(before);
+    expect(await session.eventHistory()).toEqual(historyBefore);
+  });
+
+  it("rejects a valid operation actor that does not match the executable intent", async () => {
+    const persistence = createInMemoryPersistence();
+    const runtime = createGameRuntime(dependencies(
+      persistence,
+      0x1357_9bdf,
+      gameWithSecondFixtureActor(),
+    ));
+    const session = await runtime.createWorld("Mismatched resolution actor");
+    const before = session.snapshot();
+    const historyBefore = await session.eventHistory();
+
+    await expect(session.resolve(request("uncertain-random", {
+      actorId: "campaign.entity.test-counterpart",
+      setStatus: "should-not-apply",
+    }))).rejects.toThrow(/does not match executable intent actor/i);
+
+    expect(session.snapshot()).toEqual(before);
+    expect(session.snapshot().fictionalTime).toBe(before.fictionalTime);
+    expect(session.snapshot().randomness.nextStream).toBe(
+      before.randomness.nextStream,
+    );
     expect(await session.eventHistory()).toEqual(historyBefore);
   });
 
@@ -353,7 +404,12 @@ describe("operation mutation authority", () => {
   it("deep-freezes nested operation context while allowing proposals", async () => {
     const mutationProbe: RulesOperation<
       Record<string, never>,
-      { rootFrozen: boolean; nestedFrozen: boolean; directMutationBlocked: boolean }
+      {
+        rootFrozen: boolean;
+        nestedFrozen: boolean;
+        directMutationBlocked: boolean;
+        worldHasRandomness: boolean;
+      }
     > = {
       metadata: {
         id: "rules.actions.mutation-probe",
@@ -370,6 +426,7 @@ describe("operation mutation authority", () => {
         rootFrozen: z.boolean(),
         nestedFrozen: z.boolean(),
         directMutationBlocked: z.boolean(),
+        worldHasRandomness: z.boolean(),
       }).strict(),
       execute(context) {
         let directMutationBlocked = false;
@@ -384,6 +441,7 @@ describe("operation mutation authority", () => {
             rootFrozen: Object.isFrozen(context.world),
             nestedFrozen: Object.isFrozen(context.world.entities[0]!.data),
             directMutationBlocked,
+            worldHasRandomness: "randomness" in context.world,
           },
           advanceTimeByMs: fictionalDurationMs(0),
           proposedMutations: [],
@@ -404,8 +462,83 @@ describe("operation mutation authority", () => {
         rootFrozen: true,
         nestedFrozen: true,
         directMutationBlocked: true,
+        worldHasRandomness: false,
       });
     expect(session.snapshot().entities[0]!.data.status).toBe(beforeStatus);
+  });
+
+  it("omits RNG state from both resolution phases and exposes only explicit RNG", async () => {
+    const visibilityProbe: ResolutionOperation<
+      Record<string, never>,
+      { assessmentWorldHasRandomness: boolean },
+      {
+        assessmentWorldHasRandomness: boolean;
+        executionWorldHasRandomness: boolean;
+        explicitRngAvailable: boolean;
+      }
+    > = {
+      metadata: {
+        id: "rules.resolution.world-view-probe",
+        kind: "resolution",
+        description: "Test-only operation-world-view visibility probe.",
+        category: {
+          domain: { id: "rules", label: "Rules" },
+          subsystem: { id: "resolution", label: "Resolution" },
+          tags: ["test"],
+        },
+      },
+      inputSchema: z.object({}).strict(),
+      preparedSchema: z.object({
+        assessmentWorldHasRandomness: z.boolean(),
+      }).strict(),
+      outputSchema: z.object({
+        assessmentWorldHasRandomness: z.boolean(),
+        executionWorldHasRandomness: z.boolean(),
+        explicitRngAvailable: z.boolean(),
+      }).strict(),
+      assess(context) {
+        return {
+          path: "uncertain",
+          basis: { reason: "test-operation-world-view" },
+          prepared: {
+            assessmentWorldHasRandomness: "randomness" in context.world,
+          },
+        };
+      },
+      resolve(context, prepared) {
+        return {
+          result: {
+            assessmentWorldHasRandomness:
+              prepared.assessmentWorldHasRandomness,
+            executionWorldHasRandomness: "randomness" in context.world,
+            explicitRngAvailable: typeof context.rng.next === "function",
+          },
+          advanceTimeByMs: fictionalDurationMs(0),
+          proposedMutations: [],
+          proposedEvents: [],
+        };
+      },
+    };
+    const persistence = createInMemoryPersistence();
+    const runtime = createGameRuntime(dependencies(
+      persistence,
+      0x1357_9bdf,
+      gameWithOperations([visibilityProbe]),
+    ));
+    const session = await runtime.createWorld("Operation world view");
+
+    const resolution = await session.resolve({
+      intent: executableIntent(),
+      operation: { id: visibilityProbe.metadata.id, input: {} },
+    });
+
+    expect(resolution.result).toEqual({
+      assessmentWorldHasRandomness: false,
+      executionWorldHasRandomness: false,
+      explicitRngAvailable: true,
+    });
+    expect(resolution.randomness).toBeNull();
+    expect(session.snapshot().randomness.nextStream).toBe(0);
   });
 });
 

@@ -58,7 +58,7 @@ The last fictional instant at which a generic simulation scope was brought curre
 
 A deterministic engine capability exposed to the LLM-facing orchestration layer, such as observing a location, attempting movement, modifying an object through validated rules, or querying relevant knowledge.
 
-An operation is either ordinary or resolution-capable. Both kinds use the same progressively disclosed tool tree and return validated proposals rather than mutating authoritative state directly.
+An operation is either ordinary or resolution-capable. Both kinds use the same progressively disclosed tool tree, receive an explicitly bounded rules-visible world view without engine-private RNG progression, and return validated proposals rather than mutating authoritative state directly.
 
 ## Resolution
 

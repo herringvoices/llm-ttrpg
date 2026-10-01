@@ -29,7 +29,8 @@ These are project-level constraints. Implementation should work within them unle
 - Resolution assessment is deterministic and has no RNG capability. Only the second phase of an `uncertain` resolution may receive lazy engine RNG access, and uncertainty does not require using it.
 - Ruleset-owned resolution basis and results remain opaque validated data. The engine has no universal difficulty, modifier, opposition, success, or degree semantics.
 - `impossible` is a valid local fictional resolution, distinct from an invalid request and from concluding that the player's overall goal is impossible.
-- Operations receive deep-frozen World State snapshots. Authoritative changes can occur only through validated mutation/event proposals committed by the runtime.
+- Operations receive a deep-frozen, explicitly enumerated rules-visible world snapshot. Engine-private RNG progression is absent; uncertain resolution receives randomness only through its explicit RNG capability. Authoritative changes can occur only through validated mutation/event proposals committed by the runtime.
+- A ruleset must validate that its structured resolution input applies to the supplied executable intent. The engine does not infer actor, target, opposition, or other semantics from arbitrary ruleset fields.
 
 ## Persistence and application boundaries
 
