@@ -77,6 +77,18 @@ async function exerciseTimeAndHistory(persistence: PersistencePorts) {
     ),
   ).rejects.toThrow(/cannot be later than world time/);
 
+  await expect(
+    session.scheduleTrigger({
+      type: "simulation.presentation-owned-work",
+      schemaVersion: 1,
+      sourceComponent: runtimeDependencies.game.presentation.identity,
+      dueAt: fictionalInstant("2026-04-12T18:00:00.000Z"),
+      scopeIds: ["scope.reference-scene"],
+      payload: {},
+    }),
+  ).rejects.toThrow(/not an active simulation component/i);
+  expect(session.snapshot().scheduledTriggers).toEqual([]);
+
   const scheduled = await session.scheduleTrigger({
     type: "simulation.evaluate-store",
     schemaVersion: 1,

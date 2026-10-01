@@ -110,6 +110,7 @@ describe("project shell persistence workflow", () => {
       "document_sections",
       "scheduled_triggers",
       "simulation_cursors",
+      "action_pressure_states",
     ]));
     database.close();
   });

@@ -28,6 +28,10 @@ import {
   type FictionalInstant,
 } from "./time.js";
 import { z } from "zod";
+import {
+  actionPressureStateSchema,
+  type ActionPressureState,
+} from "./action-pressure.js";
 
 export const simulationCursorSchema = z
   .object({
@@ -55,6 +59,7 @@ export const worldStateSchema = z
     game: gameCompositionSchema,
     initializedFromCampaign: z.string().min(1),
     fictionalTime: fictionalInstantSchema,
+    actionPressure: actionPressureStateSchema,
     entities: z.array(entitySchema),
     facts: z.array(canonicalFactSchema),
     documents: z.array(longFormDocumentSchema),
@@ -99,6 +104,7 @@ export interface WorldState {
   game: GameComposition;
   initializedFromCampaign: string;
   fictionalTime: FictionalInstant;
+  actionPressure: ActionPressureState;
   entities: Entity[];
   facts: CanonicalFact[];
   documents: LongFormDocument[];
@@ -121,6 +127,7 @@ export function initializeCampaignWorld(
     game: compositionFromGame(game),
     initializedFromCampaign: game.campaign.identity.id,
     fictionalTime: game.campaign.startTime,
+    actionPressure: { status: "unassessed" },
     entities: content.entities,
     facts: content.facts,
     documents: content.documents,

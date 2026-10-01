@@ -2,11 +2,11 @@
 
 ## Action pressure
 
-A world-state value describing how tightly circumstances constrain the amount of action a player may describe at once.
+Persisted authoritative simulation/control state representing how finely player intent may be resolved right now. The level is assessed by the LLM from current fictional circumstances, validated and stored by the engine, and mapped deterministically to a maximum resolution horizon.
 
-Low pressure allows broad intentions spanning long fictional time. High pressure restricts the player to immediate actions spanning seconds or less.
+Action pressure is explicitly unassessed until an assessment is accepted. It is not fictional truth, a combat flag, a difficulty rating, or a deterministic derivation from world facts. Changing it does not by itself create a canonical event.
 
-The pressure level should map to a maximum elapsed-time/action-scope budget rather than acting as a combat-mode flag.
+Low pressure allows broad intentions spanning long fictional time. High pressure restricts execution to immediate attempts. Pressure constrains the fictional resolution horizon, not the number of engine operations.
 
 ## Active scene
 
@@ -26,7 +26,13 @@ Building the LLM's working context from the small always-present rules layer plu
 
 ## Executable intent
 
-A player intention that has been interpreted and narrowed enough to be resolved by the engine within the current action-pressure constraints.
+A validated, bounded form of interpreted intent. It preserves the actor, goal, and relevant targets while recording the requested horizon, accepted pressure level, authorized horizon, and whether the request was narrowed.
+
+The authorized horizon is a ceiling on downstream execution, not automatic fictional-time advancement. An over-broad declaration remains an attempt toward the same goal rather than being textually chopped into a different action.
+
+## Material circumstance change
+
+A canonical development that invalidates assumptions under which the remaining executable intent was authorized, or creates a meaningful new choice that should be returned to the player. Downstream orchestration relinquishes control instead of blindly consuming the remaining authorized horizon.
 
 ## Meaningful event
 

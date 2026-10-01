@@ -35,6 +35,7 @@ export async function createMigratedSqlitePersistence() {
   for (const file of [
     "0001_persistence_foundation.sql",
     "0002_fictional_time_event_history.sql",
+    "0003_action_pressure.sql",
   ]) {
     database.exec(
       migrationSql(file),

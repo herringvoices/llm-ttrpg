@@ -1,4 +1,9 @@
 import {
+  actionPressureAssessmentSchema,
+  type ActionPressureAssessment,
+  type ActionPressureState,
+} from "./action-pressure.js";
+import {
   canonicalEventSchema,
   type CanonicalEvent,
   type EventOrigin,
@@ -60,6 +65,9 @@ export interface ExecuteOperationOptions {
 export interface GameSession {
   readonly worldId: string;
   snapshot(): WorldState;
+  applyActionPressureAssessment(
+    assessment: ActionPressureAssessment,
+  ): Promise<ActionPressureState>;
   advanceTime(durationMs: number): Promise<WorldState>;
   setSimulationCursor(
     scopeId: string,
@@ -137,6 +145,16 @@ function openSession(
     snapshot() {
       return clone(state);
     },
+    async applyActionPressureAssessment(assessment) {
+      const parsed = actionPressureAssessmentSchema.parse(assessment);
+      const candidate = clone(state);
+      candidate.actionPressure = {
+        status: "assessed",
+        level: parsed.level,
+      };
+      await commitCandidate(candidate);
+      return clone(state.actionPressure);
+    },
     async advanceTime(durationMs) {
       const duration = fictionalDurationMs(durationMs);
       if (duration === 0) return clone(state);
@@ -161,14 +179,20 @@ function openSession(
       return clone(state);
     },
     async scheduleTrigger(trigger) {
-      const sourceIsActive = Object.values(state.game).some(
+      const simulationSources = [
+        state.game.ruleset,
+        state.game.setting,
+        state.game.adapter,
+        state.game.campaign,
+      ];
+      const sourceIsActive = simulationSources.some(
         (component) =>
           component.id === trigger.sourceComponent.id &&
           component.version === trigger.sourceComponent.version,
       );
       if (!sourceIsActive) {
         throw new Error(
-          `Scheduled trigger source is not active: ${trigger.sourceComponent.id}@${trigger.sourceComponent.version}`,
+          `Scheduled trigger source is not an active simulation component: ${trigger.sourceComponent.id}@${trigger.sourceComponent.version}`,
         );
       }
       const scheduled = scheduledTriggerSchema.parse({

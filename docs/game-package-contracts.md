@@ -43,6 +43,16 @@ Each operation also returns an exact nonnegative fictional-time duration. The ru
 
 Rulesets, settings, adapters, and campaigns may register versioned event-type definitions containing a stable type, schema version, and Zod payload schema. `loadGameDefinition` combines these into an event registry and rejects duplicate or malformed definitions. The engine persists the generic event envelope and opaque JSON payload; the owning package retains mechanical meaning.
 
+## Action pressure and executable intent
+
+Action pressure is a game-agnostic engine control contract, not a ruleset mechanic or a sixth game-package component. The eventual LLM-facing orchestration layer assesses a level from 1 through 9; the engine validates and atomically persists the accepted state, then applies the engine-owned maximum-resolution-horizon table deterministically.
+
+New and migrated worlds remain explicitly unassessed until that assessment exists. Pressure is stored with mutable World State and captured by checkpoints because it controls execution scope across save/reopen, but it is not fictional truth and a pressure change is not automatically a canonical event.
+
+The engine's interpreted-intent contract records an actor, unchanged goal, relevant targets, and requested fictional horizon. Pure intent bounding produces an executable intent whose authorized horizon is the lesser of the request and pressure maximum. That value is only a ceiling: downstream operation durations advance fictional time and consume the allowance. Pressure never limits operation count, rewrites the goal, or lets presentation/rules content bypass normal runtime persistence.
+
+Multi-operation planning, remaining-budget accounting, material-change detection, and pressure-reassessment orchestration belong to issue #11. Game-specific checks and success/failure semantics remain ruleset concerns under issue #8.
+
 ## Campaigns and saves
 
 `initializeCampaignWorld` deep-clones campaign content into mutable World State. Authored campaign events separately seed canonical history in deterministic fictional-time/array order. The campaign definition remains immutable source content.
@@ -53,7 +63,7 @@ Issue #5 adds persistence around those contracts without changing the five-part 
 
 The engine defines cohesive persistence capabilities for world lifecycle/atomic commits, checkpoint/save-slot operations, generic current-content queries, and targeted event-history queries. `createGameRuntime({ persistence, wallClock, idGenerator, game })` owns the `validate -> apply -> persist -> expose` boundary. The desktop provides the SQLite implementation; headless tests use the in-memory implementation.
 
-The SQLite model is deliberately coarse and generic: worlds, checkpoints, save slots, entities, facts, append-only events, beliefs, documents, document sections, scheduled triggers, and simulation cursors. Flexible values remain JSON. No ruleset-specific mechanic tables are part of this contract. Ordinary commits append new events instead of rewriting historical rows; checkpoints copy history into an immutable checkpoint scope so future divergence remains possible without a timeline UI.
+The SQLite model is deliberately coarse and generic: worlds, checkpoints, save slots, entities, facts, append-only events, beliefs, documents, document sections, scheduled triggers, simulation cursors, and action-pressure control state. Flexible values remain JSON. No ruleset-specific mechanic tables are part of this contract. Ordinary commits append new events instead of rewriting historical rows; checkpoints copy history and pressure into an immutable checkpoint scope so future divergence remains possible without a timeline UI.
 
 The official Tauri SQL JavaScript API does not expose a connection-bound transaction callback. The adapter therefore submits each logical write as one insert into a private command table; a migration-owned SQLite trigger expands that command into the relational tables within the same SQLite statement. Revision/composition guards abort the statement before any partial state is exposed. This keeps transaction semantics in SQLite without creating a custom Rust repository layer.
 

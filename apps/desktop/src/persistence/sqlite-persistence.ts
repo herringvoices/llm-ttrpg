@@ -16,11 +16,13 @@ import type {
   SaveSlot,
   WorldMetadata,
   WorldState,
+  ActionPressureState,
   ScheduledTrigger,
   SimulationCursor,
 } from "@llm-ttrpg/engine";
 import {
   PersistenceConflictError,
+  actionPressureStateSchema,
   canonicalEventSchema,
   eventQuerySchema,
   fictionalInstant,
@@ -66,6 +68,10 @@ interface PayloadRow {
 
 interface EventRow {
   canonical_json: string;
+}
+
+interface ActionPressureRow {
+  level: number | null;
 }
 
 function parse<T>(value: string): T {
@@ -115,13 +121,14 @@ async function readState(
   checkpointId: string | null,
 ): Promise<WorldState> {
   const worldId = "world_id" in owner ? owner.world_id : owner.id;
-  const [entities, facts, beliefs, documents, scheduledTriggers, simulationCursors] = await Promise.all([
+  const [entities, facts, beliefs, documents, scheduledTriggers, simulationCursors, actionPressure] = await Promise.all([
     payloads<Entity>(database, "entities", worldId, checkpointId, "entity_id"),
     payloads<CanonicalFact>(database, "facts", worldId, checkpointId, "fact_id"),
     payloads<Belief>(database, "beliefs", worldId, checkpointId, "belief_id"),
     payloads<LongFormDocument>(database, "documents", worldId, checkpointId, "document_id"),
     payloads<ScheduledTrigger>(database, "scheduled_triggers", worldId, checkpointId, "due_at, trigger_id"),
     payloads<SimulationCursor>(database, "simulation_cursors", worldId, checkpointId, "scope_id"),
+    readActionPressure(database, worldId, checkpointId),
   ]);
   const sectionsByDocument = new Map<string, DocumentSection[]>();
   const sectionRows = await database.select<Array<PayloadRow & { document_id: string }>>(
@@ -139,6 +146,7 @@ async function readState(
     game: parse(owner.composition_json),
     initializedFromCampaign: owner.initialized_from_campaign,
     fictionalTime: fictionalInstant(owner.fictional_time),
+    actionPressure,
     entities,
     facts,
     beliefs,
@@ -149,6 +157,25 @@ async function readState(
     scheduledTriggers,
     simulationCursors,
   };
+}
+
+async function readActionPressure(
+  database: SqlClient,
+  worldId: string,
+  checkpointId: string | null,
+): Promise<ActionPressureState> {
+  const rows = await database.select<ActionPressureRow[]>(
+    `SELECT level FROM action_pressure_states WHERE world_id = $1 AND ${
+      checkpointId === null ? "checkpoint_id IS NULL" : "checkpoint_id = $2"
+    }`,
+    checkpointId === null ? [worldId] : [worldId, checkpointId],
+  );
+  const level = rows[0]?.level;
+  return actionPressureStateSchema.parse(
+    level === null || level === undefined
+      ? { status: "unassessed" }
+      : { status: "assessed", level },
+  );
 }
 
 async function readEvents(

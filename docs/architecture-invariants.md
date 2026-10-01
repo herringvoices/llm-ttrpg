@@ -72,9 +72,14 @@ These are project-level constraints. Implementation should work within them unle
 ## Action scope
 
 - Do not divide play into a simple combat / non-combat binary.
-- Use **action pressure** to constrain how much fictional time and action scope the player may describe at once.
-- Low pressure permits broad intentions over long spans.
-- High pressure permits only very short, immediate actions.
+- **Action pressure** is persisted authoritative simulation/control state, not fictional truth, a fact/belief, danger/difficulty, or a canonical event.
+- The eventual LLM/orchestration layer judges pressure holistically. The engine never derives it from a deterministic count of hostiles, hazards, timers, or other facts.
+- Worlds begin explicitly unassessed. The engine validates and persists an accepted level from 1 (loosest) through 9 (tightest).
+- Accepted levels map deterministically to maximum resolution horizons: 8 hours, 2 hours, 30 minutes, 10 minutes, 2 minutes, 1 minute, 30 seconds, 10 seconds, and 5 seconds respectively.
+- Bound executable intent preserves the player's goal and authorizes the lesser of its requested horizon and the pressure maximum. It does not split prose or substitute a different goal.
+- Pressure limits fictional resolution scope, never the number of internal operations. The authorized horizon is a ceiling, not an instruction to advance time; actual operation durations consume it downstream.
+- Bounding intent is side-effect free. Pressure reassessment is atomically persisted without advancing fictional time or creating an event merely for the control-state change.
+- A material circumstance change returns control when it invalidates authorization assumptions or creates a meaningful new player choice. Later orchestration may then request a new assessment; it must not blindly continue or retroactively expand an existing authorization.
 
 ## Presentation
 

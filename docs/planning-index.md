@@ -1,6 +1,6 @@
 # Planning Index
 
-This file records the intended initial GitHub Project placement for the seeded issues.
+This file records the current GitHub Project placement for the seeded issues.
 
 ## Project Reference
 
@@ -13,9 +13,6 @@ This file records the intended initial GitHub Project placement for the seeded i
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
-| #5 | Project Shell & Persistence Foundation | Core Engine, Persistence |
-| #6 | World State, Fictional Time & Event History | Core Engine, Time & World Simulation, Persistence |
-| #7 | Action Pressure & Executable Intent | Actions & Rules, Core Engine |
 | #8 | Checks, Resolution & RNG | Actions & Rules, Core Engine |
 | #9 | Hierarchical Tool Catalog | Context & Tools, Core Engine |
 | #10 | Context Assembly & Knowledge Retrieval | Context & Tools |
@@ -38,6 +35,12 @@ This file records the intended initial GitHub Project placement for the seeded i
 
 ## Done
 
+- #5 — Project Shell & Persistence Foundation
+  - Labels: Core Engine, Persistence
+- #6 — World State, Fictional Time & Event History
+  - Labels: Core Engine, Time & World Simulation, Persistence
+- #7 — Action Pressure & Executable Intent
+  - Labels: Actions & Rules, Core Engine
 - #27 — Game Package Contracts & Content Model
   - Labels: Core Engine
 

@@ -14,6 +14,11 @@ pub fn run() {
         description: "fictional_time_event_history",
         sql: include_str!("../migrations/0002_fictional_time_event_history.sql"),
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 3,
+        description: "action_pressure",
+        sql: include_str!("../migrations/0003_action_pressure.sql"),
+        kind: MigrationKind::Up,
     }];
 
     tauri::Builder::default()
