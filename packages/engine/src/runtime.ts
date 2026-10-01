@@ -11,9 +11,11 @@ import {
 } from "./events.js";
 import type { LoadedGameDefinition } from "./contracts.js";
 import {
-  createSeededRandom,
+  assessResolutionOperation,
   executeRulesOperation,
+  resolveUncertainOperation,
   type MutationProposal,
+  type OperationResult,
 } from "./operations.js";
 import type {
   CheckpointMetadata,
@@ -24,6 +26,18 @@ import type {
 } from "./persistence.js";
 import { PersistenceNotFoundError } from "./persistence.js";
 import { validateGameCompositionForGame } from "./save.js";
+import {
+  createLazyRandomnessStream,
+  randomnessStateSchema,
+  type WorldSeedSource,
+} from "./randomness.js";
+import {
+  ResolutionValidationError,
+  resolutionRequestSchema,
+  type ResolutionEnvelope,
+  type ResolutionRequest,
+} from "./resolution.js";
+import type { JsonValue } from "./json.js";
 import {
   advanceFictionalInstant,
   fictionalDurationMs,
@@ -53,11 +67,11 @@ export interface GameRuntimeDependencies {
   readonly persistence: PersistencePorts;
   readonly wallClock: WallClock;
   readonly idGenerator: IdGenerator;
+  readonly worldSeedSource: WorldSeedSource;
   readonly game: LoadedGameDefinition;
 }
 
 export interface ExecuteOperationOptions {
-  readonly seed?: number;
   readonly causedByEventIds?: readonly string[];
   readonly origin?: EventOrigin;
 }
@@ -82,6 +96,10 @@ export interface GameSession {
     input: unknown,
     options?: ExecuteOperationOptions,
   ): Promise<TResult>;
+  resolve<TResult extends JsonValue = JsonValue>(
+    request: ResolutionRequest,
+    options?: ExecuteOperationOptions,
+  ): Promise<ResolutionEnvelope<TResult>>;
   save(slotName: string): Promise<SaveSlot>;
   listSlots(): Promise<readonly SaveSlot[]>;
 }
@@ -138,6 +156,70 @@ function openSession(
     state = clone(committed.state);
     revision = committed.revision;
     eventSequence = committed.eventSequence;
+  }
+
+  async function applyOutcome(
+    candidate: WorldState,
+    outcome: OperationResult<unknown>,
+    options?: ExecuteOperationOptions,
+  ): Promise<CanonicalEvent[]> {
+    applyMutations(candidate, outcome.proposedMutations);
+    candidate.fictionalTime = advanceFictionalInstant(
+      candidate.fictionalTime,
+      outcome.advanceTimeByMs,
+    );
+    const canonicalEvents: CanonicalEvent[] = [];
+    for (const event of outcome.proposedEvents) {
+      const definition = dependencies.game.eventTypeRegistry.resolve(
+        event.type,
+        event.schemaVersion,
+      );
+      const causedByEventIds = [
+        ...new Set([
+          ...(options?.causedByEventIds ?? []),
+          ...event.causedByEventIds,
+        ]),
+      ];
+      for (const causeId of causedByEventIds) {
+        const earlierInBatch = canonicalEvents.some(
+          (candidateEvent) => candidateEvent.id === causeId,
+        );
+        if (
+          !earlierInBatch &&
+          !(await dependencies.persistence.history.get(
+            persisted.metadata.id,
+            causeId,
+          ))
+        ) {
+          throw new PersistenceNotFoundError(
+            `Event cause not found: ${causeId}`,
+          );
+        }
+      }
+      const canonicalEvent = canonicalEventSchema.parse({
+        id: dependencies.idGenerator.next("event"),
+        type: event.type,
+        schemaVersion: event.schemaVersion,
+        sourceComponent: definition.sourceComponent,
+        occurredAt: candidate.fictionalTime,
+        sequence: eventSequence + canonicalEvents.length + 1,
+        summary: event.summary,
+        relatedEntityIds: [...event.relatedEntityIds],
+        scopeIds: [...event.scopeIds],
+        causedByEventIds,
+        ...(event.origin ?? options?.origin
+          ? { origin: clone(event.origin ?? options!.origin!) }
+          : {}),
+        payload: dependencies.game.eventTypeRegistry.validatePayload(
+          event.type,
+          event.schemaVersion,
+          event.payload,
+        ),
+        access: event.access,
+      });
+      canonicalEvents.push(canonicalEvent);
+    }
+    return canonicalEvents;
   }
 
   return {
@@ -216,67 +298,70 @@ function openSession(
       const outcome = executeRulesOperation<unknown, TResult>(
         dependencies.game.operationRegistry,
         operationId,
-        { world: candidate, rng: createSeededRandom(options?.seed ?? 0) },
+        { world: candidate },
         input,
       );
-      applyMutations(candidate, outcome.proposedMutations);
-      candidate.fictionalTime = advanceFictionalInstant(
-        candidate.fictionalTime,
-        outcome.advanceTimeByMs,
-      );
-      const canonicalEvents: CanonicalEvent[] = [];
-      for (const event of outcome.proposedEvents) {
-        const definition = dependencies.game.eventTypeRegistry.resolve(
-          event.type,
-          event.schemaVersion,
-        );
-        const causedByEventIds = [
-          ...new Set([
-            ...(options?.causedByEventIds ?? []),
-            ...event.causedByEventIds,
-          ]),
-        ];
-        for (const causeId of causedByEventIds) {
-          const earlierInBatch = canonicalEvents.some(
-            (candidateEvent) => candidateEvent.id === causeId,
-          );
-          if (
-            !earlierInBatch &&
-            !(await dependencies.persistence.history.get(
-              persisted.metadata.id,
-              causeId,
-            ))
-          ) {
-            throw new PersistenceNotFoundError(
-              `Event cause not found: ${causeId}`,
-            );
-          }
-        }
-        const canonicalEvent = canonicalEventSchema.parse({
-          id: dependencies.idGenerator.next("event"),
-          type: event.type,
-          schemaVersion: event.schemaVersion,
-          sourceComponent: definition.sourceComponent,
-          occurredAt: candidate.fictionalTime,
-          sequence: eventSequence + canonicalEvents.length + 1,
-          summary: event.summary,
-          relatedEntityIds: [...event.relatedEntityIds],
-          scopeIds: [...event.scopeIds],
-          causedByEventIds,
-          ...(event.origin ?? options?.origin
-            ? { origin: clone(event.origin ?? options!.origin!) }
-            : {}),
-          payload: dependencies.game.eventTypeRegistry.validatePayload(
-            event.type,
-            event.schemaVersion,
-            event.payload,
-          ),
-          access: event.access,
-        });
-        canonicalEvents.push(canonicalEvent);
-      }
+      const canonicalEvents = await applyOutcome(candidate, outcome, options);
       await commitCandidate(candidate, canonicalEvents);
       return outcome.result;
+    },
+    async resolve<TResult extends JsonValue>(
+      request: ResolutionRequest,
+      options?: ExecuteOperationOptions,
+    ): Promise<ResolutionEnvelope<TResult>> {
+      const parsedRequest = resolutionRequestSchema.parse(request);
+      const candidate = clone(state);
+      const assessment = assessResolutionOperation<
+        JsonValue,
+        JsonValue,
+        TResult
+      >(
+        dependencies.game.operationRegistry,
+        parsedRequest.operation.id,
+        candidate,
+        parsedRequest.intent,
+        parsedRequest.operation.input,
+      );
+
+      const randomness = createLazyRandomnessStream(candidate.randomness);
+      const outcome = assessment.path === "uncertain"
+        ? resolveUncertainOperation<JsonValue, TResult>(
+            dependencies.game.operationRegistry,
+            parsedRequest.operation.id,
+            candidate,
+            assessment.prepared,
+            randomness.random,
+          )
+        : assessment.outcome;
+
+      if (
+        outcome.advanceTimeByMs > parsedRequest.intent.authorizedHorizonMs
+      ) {
+        throw new ResolutionValidationError(
+          `Resolution duration ${outcome.advanceTimeByMs}ms exceeds authorized horizon ${parsedRequest.intent.authorizedHorizonMs}ms`,
+        );
+      }
+
+      const canonicalEvents = await applyOutcome(candidate, outcome, options);
+      const randomnessTrace = randomness.trace();
+      if (randomnessTrace) {
+        candidate.randomness = randomnessStateSchema.parse({
+          ...candidate.randomness,
+          nextStream: candidate.randomness.nextStream + 1,
+        });
+      }
+      await commitCandidate(candidate, canonicalEvents);
+
+      return {
+        intent: clone(parsedRequest.intent),
+        operationId: parsedRequest.operation.id,
+        path: assessment.path,
+        basis: clone(assessment.basis),
+        result: clone(outcome.result),
+        advanceTimeByMs: outcome.advanceTimeByMs,
+        randomness: randomnessTrace ? clone(randomnessTrace) : null,
+        events: clone(canonicalEvents),
+      };
     },
     async save(slotName) {
       const timestamp = dependencies.wallClock.now();
@@ -317,7 +402,10 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies) {
     async createWorld(name: string): Promise<GameSession> {
       const timestamp = dependencies.wallClock.now();
       const id = dependencies.idGenerator.next("world");
-      const state = initializeCampaignWorld(dependencies.game);
+      const state = initializeCampaignWorld(
+        dependencies.game,
+        dependencies.worldSeedSource.nextSeed(),
+      );
       const initialEvents = initializeCampaignHistory(dependencies.game);
       const metadata: WorldMetadata = {
         id,

@@ -17,6 +17,7 @@ import type {
   WorldMetadata,
   WorldState,
   ActionPressureState,
+  RandomnessState,
   ScheduledTrigger,
   SimulationCursor,
 } from "@llm-ttrpg/engine";
@@ -26,6 +27,7 @@ import {
   canonicalEventSchema,
   eventQuerySchema,
   fictionalInstant,
+  randomnessStateSchema,
 } from "@llm-ttrpg/engine";
 import type { SqlBindValue, SqlClient } from "./sql-client.js";
 
@@ -72,6 +74,12 @@ interface EventRow {
 
 interface ActionPressureRow {
   level: number | null;
+}
+
+interface RandomnessRow {
+  algorithm: string;
+  root_seed: number;
+  next_stream: number;
 }
 
 function parse<T>(value: string): T {
@@ -121,7 +129,7 @@ async function readState(
   checkpointId: string | null,
 ): Promise<WorldState> {
   const worldId = "world_id" in owner ? owner.world_id : owner.id;
-  const [entities, facts, beliefs, documents, scheduledTriggers, simulationCursors, actionPressure] = await Promise.all([
+  const [entities, facts, beliefs, documents, scheduledTriggers, simulationCursors, actionPressure, randomness] = await Promise.all([
     payloads<Entity>(database, "entities", worldId, checkpointId, "entity_id"),
     payloads<CanonicalFact>(database, "facts", worldId, checkpointId, "fact_id"),
     payloads<Belief>(database, "beliefs", worldId, checkpointId, "belief_id"),
@@ -129,6 +137,7 @@ async function readState(
     payloads<ScheduledTrigger>(database, "scheduled_triggers", worldId, checkpointId, "due_at, trigger_id"),
     payloads<SimulationCursor>(database, "simulation_cursors", worldId, checkpointId, "scope_id"),
     readActionPressure(database, worldId, checkpointId),
+    readRandomness(database, worldId, checkpointId),
   ]);
   const sectionsByDocument = new Map<string, DocumentSection[]>();
   const sectionRows = await database.select<Array<PayloadRow & { document_id: string }>>(
@@ -147,6 +156,7 @@ async function readState(
     initializedFromCampaign: owner.initialized_from_campaign,
     fictionalTime: fictionalInstant(owner.fictional_time),
     actionPressure,
+    randomness,
     entities,
     facts,
     beliefs,
@@ -157,6 +167,33 @@ async function readState(
     scheduledTriggers,
     simulationCursors,
   };
+}
+
+async function readRandomness(
+  database: SqlClient,
+  worldId: string,
+  checkpointId: string | null,
+): Promise<RandomnessState> {
+  const rows = await database.select<RandomnessRow[]>(
+    `SELECT algorithm, root_seed, next_stream FROM randomness_states WHERE world_id = $1 AND ${
+      checkpointId === null ? "checkpoint_id IS NULL" : "checkpoint_id = $2"
+    }`,
+    checkpointId === null ? [worldId] : [worldId, checkpointId],
+  );
+  if (rows.length !== 1) {
+    const scope = checkpointId
+      ? `checkpoint ${checkpointId}`
+      : `current world ${worldId}`;
+    throw new PersistenceConflictError(
+      `Expected exactly one randomness state for ${scope}; found ${rows.length}`,
+    );
+  }
+  const row = rows[0]!;
+  return randomnessStateSchema.parse({
+    algorithm: row.algorithm,
+    rootSeed: row.root_seed,
+    nextStream: row.next_stream,
+  });
 }
 
 async function readActionPressure(

@@ -36,6 +36,7 @@ export async function createMigratedSqlitePersistence() {
     "0001_persistence_foundation.sql",
     "0002_fictional_time_event_history.sql",
     "0003_action_pressure.sql",
+    "0004_resolution_randomness.sql",
   ]) {
     database.exec(
       migrationSql(file),

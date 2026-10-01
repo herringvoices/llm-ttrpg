@@ -32,6 +32,11 @@ import {
   actionPressureStateSchema,
   type ActionPressureState,
 } from "./action-pressure.js";
+import {
+  initialRandomnessState,
+  randomnessStateSchema,
+  type RandomnessState,
+} from "./randomness.js";
 
 export const simulationCursorSchema = z
   .object({
@@ -60,6 +65,7 @@ export const worldStateSchema = z
     initializedFromCampaign: z.string().min(1),
     fictionalTime: fictionalInstantSchema,
     actionPressure: actionPressureStateSchema,
+    randomness: randomnessStateSchema,
     entities: z.array(entitySchema),
     facts: z.array(canonicalFactSchema),
     documents: z.array(longFormDocumentSchema),
@@ -105,6 +111,7 @@ export interface WorldState {
   initializedFromCampaign: string;
   fictionalTime: FictionalInstant;
   actionPressure: ActionPressureState;
+  randomness: RandomnessState;
   entities: Entity[];
   facts: CanonicalFact[];
   documents: LongFormDocument[];
@@ -119,6 +126,7 @@ export function validateWorldState(input: unknown): WorldState {
 
 export function initializeCampaignWorld(
   game: LoadedGameDefinition,
+  rootSeed: number,
 ): WorldState {
   const content = JSON.parse(
     JSON.stringify(game.campaign.content),
@@ -128,6 +136,7 @@ export function initializeCampaignWorld(
     initializedFromCampaign: game.campaign.identity.id,
     fictionalTime: game.campaign.startTime,
     actionPressure: { status: "unassessed" },
+    randomness: initialRandomnessState(rootSeed),
     entities: content.entities,
     facts: content.facts,
     documents: content.documents,

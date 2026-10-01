@@ -4,8 +4,14 @@ import {
   jsonValueSchema,
   type JsonValue,
 } from "./content.js";
+import {
+  executableIntentSchema,
+  type ExecutableIntent,
+} from "./action-pressure.js";
 import { eventAccessSchema, eventOriginSchema } from "./events.js";
 import { stableIdSchema } from "./identity.js";
+import type { DeterministicRandom } from "./randomness.js";
+import { resolutionPathSchema } from "./resolution.js";
 import {
   fictionalDurationMsSchema,
   type FictionalDurationMs,
@@ -27,11 +33,11 @@ export const operationCategorySchema = z
 export const operationMetadataSchema = z
   .object({
     id: stableIdSchema,
+    kind: z.enum(["ordinary", "resolution"]),
     description: z.string().min(1),
     category: operationCategorySchema,
   })
   .strict();
-
 export type OperationMetadata = z.infer<typeof operationMetadataSchema>;
 
 export const mutationProposalSchema = z.discriminatedUnion("kind", [
@@ -73,12 +79,24 @@ export const proposedEventSchema = z
   .strict();
 export type ProposedEvent = z.infer<typeof proposedEventSchema>;
 
-export interface DeterministicRandom {
-  next(): number;
-}
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly (infer TValue)[]
+    ? readonly DeepReadonly<TValue>[]
+    : T extends object
+      ? { readonly [TKey in keyof T]: DeepReadonly<T[TKey]> }
+      : T;
 
 export interface RuleOperationContext {
-  readonly world: Readonly<WorldState>;
+  readonly world: DeepReadonly<WorldState>;
+}
+
+export interface ResolutionAssessmentContext {
+  readonly world: DeepReadonly<WorldState>;
+}
+
+export interface ResolutionExecutionContext {
+  readonly world: DeepReadonly<WorldState>;
   readonly rng: DeterministicRandom;
 }
 
@@ -90,7 +108,7 @@ export interface OperationResult<TResult> {
 }
 
 export interface RulesOperation<TInput = unknown, TResult = unknown> {
-  readonly metadata: OperationMetadata;
+  readonly metadata: OperationMetadata & { readonly kind: "ordinary" };
   readonly inputSchema: z.ZodType<TInput>;
   readonly outputSchema: z.ZodType<TResult>;
   readonly execute: (
@@ -99,13 +117,49 @@ export interface RulesOperation<TInput = unknown, TResult = unknown> {
   ) => OperationResult<TResult>;
 }
 
-// A registry is intentionally heterogeneous. Type safety is recovered at the
-// execution boundary by each operation's runtime input/output schemas.
+export type ResolutionAssessment<TPrepared, TResult> =
+  | {
+      readonly path: "automatic" | "impossible";
+      readonly basis: JsonValue;
+      readonly outcome: OperationResult<TResult>;
+    }
+  | {
+      readonly path: "uncertain";
+      readonly basis: JsonValue;
+      readonly prepared: TPrepared;
+    };
+
+export interface ResolutionOperation<
+  TInput = JsonValue,
+  TPrepared = JsonValue,
+  TResult = JsonValue,
+> {
+  readonly metadata: OperationMetadata & { readonly kind: "resolution" };
+  readonly inputSchema: z.ZodType<TInput>;
+  readonly preparedSchema: z.ZodType<TPrepared>;
+  readonly outputSchema: z.ZodType<TResult>;
+  readonly assess: (
+    context: ResolutionAssessmentContext,
+    intent: ExecutableIntent,
+    input: TInput,
+  ) => ResolutionAssessment<TPrepared, TResult>;
+  readonly resolve: (
+    context: ResolutionExecutionContext,
+    prepared: TPrepared,
+  ) => OperationResult<TResult>;
+}
+
+// A registry is intentionally heterogeneous. Runtime schemas recover type
+// safety at the operation boundary.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type RegisteredRulesOperation = RulesOperation<any, any>;
+export type RegisteredRulesOperation =
+  | RulesOperation<any, any>
+  | ResolutionOperation<any, any, any>;
 
 export interface OperationRegistry {
-  get(id: string): RulesOperation;
+  get(id: string): RegisteredRulesOperation;
+  getOrdinary(id: string): RulesOperation;
+  getResolution(id: string): ResolutionOperation;
   listDomains(): readonly OperationMetadata["category"]["domain"][];
   listSubsystems(
     domainId: string,
@@ -129,6 +183,49 @@ function isZodSchema(value: unknown): value is z.ZodType<unknown> {
   );
 }
 
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const nested of Object.values(value)) {
+    deepFreeze(nested);
+  }
+  return Object.freeze(value);
+}
+
+export function immutableWorldSnapshot(
+  world: WorldState,
+): DeepReadonly<WorldState> {
+  return deepFreeze(
+    JSON.parse(JSON.stringify(world)) as WorldState,
+  ) as DeepReadonly<WorldState>;
+}
+
+function validateOperationResult<TResult>(
+  operation: { readonly outputSchema: z.ZodType<TResult> },
+  outcome: OperationResult<TResult>,
+  requireJsonResult: boolean,
+): OperationResult<TResult> {
+  const result = operation.outputSchema.parse(outcome.result);
+  if (requireJsonResult) jsonValueSchema.parse(result);
+  const advanceTimeByMs = fictionalDurationMsSchema.parse(
+    outcome.advanceTimeByMs,
+  );
+  const proposedMutations = z
+    .array(mutationProposalSchema)
+    .parse(outcome.proposedMutations);
+  const proposedEvents = z
+    .array(proposedEventSchema)
+    .parse(outcome.proposedEvents);
+
+  return {
+    result,
+    advanceTimeByMs,
+    proposedMutations,
+    proposedEvents,
+  };
+}
+
 export function createOperationRegistry(
   operations: readonly RegisteredRulesOperation[],
 ): OperationRegistry {
@@ -141,10 +238,23 @@ export function createOperationRegistry(
         `Operation ${metadata.id} must expose Zod input and output schemas`,
       );
     }
-    if (typeof operation.execute !== "function") {
-      throw new OperationValidationError(
-        `Operation ${metadata.id} must expose a deterministic implementation`,
-      );
+    if (metadata.kind === "ordinary") {
+      if (typeof (operation as RulesOperation).execute !== "function") {
+        throw new OperationValidationError(
+          `Ordinary operation ${metadata.id} must expose execute`,
+        );
+      }
+    } else {
+      const resolution = operation as ResolutionOperation;
+      if (
+        !isZodSchema(resolution.preparedSchema) ||
+        typeof resolution.assess !== "function" ||
+        typeof resolution.resolve !== "function"
+      ) {
+        throw new OperationValidationError(
+          `Resolution operation ${metadata.id} must expose preparedSchema, assess, and resolve`,
+        );
+      }
     }
     const prefix = `${metadata.category.domain.id}.${metadata.category.subsystem.id}.`;
     if (!metadata.id.startsWith(prefix)) {
@@ -160,13 +270,33 @@ export function createOperationRegistry(
     byId.set(metadata.id, operation);
   }
 
+  const get = (id: string): RegisteredRulesOperation => {
+    const operation = byId.get(id);
+    if (!operation) {
+      throw new OperationValidationError(`Unknown rules operation: ${id}`);
+    }
+    return operation;
+  };
+
   return {
-    get(id) {
-      const operation = byId.get(id);
-      if (!operation) {
-        throw new OperationValidationError(`Unknown rules operation: ${id}`);
+    get,
+    getOrdinary(id) {
+      const operation = get(id);
+      if (operation.metadata.kind !== "ordinary") {
+        throw new OperationValidationError(
+          `Operation ${id} is not an ordinary operation`,
+        );
       }
-      return operation;
+      return operation as RulesOperation;
+    },
+    getResolution(id) {
+      const operation = get(id);
+      if (operation.metadata.kind !== "resolution") {
+        throw new OperationValidationError(
+          `Operation ${id} is not a resolution operation`,
+        );
+      }
+      return operation as ResolutionOperation;
     },
     listDomains() {
       const domains = new Map<
@@ -205,7 +335,7 @@ export function createOperationRegistry(
             operation.metadata.category.domain.id === domainId &&
             operation.metadata.category.subsystem.id === subsystemId,
         )
-        .map((operation) => operation.metadata)
+        .map((operation) => operationMetadataSchema.parse(operation.metadata))
         .sort((a, b) => a.id.localeCompare(b.id));
     },
   };
@@ -214,42 +344,96 @@ export function createOperationRegistry(
 export function executeRulesOperation<TInput, TResult>(
   registry: OperationRegistry,
   operationId: string,
-  context: RuleOperationContext,
+  context: { readonly world: WorldState },
   input: TInput,
 ): OperationResult<TResult> {
-  const operation = registry.get(operationId) as RulesOperation<TInput, TResult>;
+  const operation = registry.getOrdinary(operationId) as RulesOperation<
+    TInput,
+    TResult
+  >;
   const parsedInput = operation.inputSchema.parse(input);
-  const outcome = operation.execute(context, parsedInput);
-  const parsedResult = operation.outputSchema.parse(outcome.result);
-  const advanceTimeByMs = fictionalDurationMsSchema.parse(
-    outcome.advanceTimeByMs,
+  const outcome = operation.execute(
+    { world: immutableWorldSnapshot(context.world) },
+    parsedInput,
   );
-  const proposedMutations = z
-    .array(mutationProposalSchema)
-    .parse(outcome.proposedMutations);
-  const proposedEvents = z
-    .array(proposedEventSchema)
-    .parse(outcome.proposedEvents);
+  return validateOperationResult(operation, outcome, false);
+}
 
+export type ValidatedResolutionAssessment<TPrepared, TResult> =
+  | {
+      readonly path: "automatic" | "impossible";
+      readonly basis: JsonValue;
+      readonly outcome: OperationResult<TResult>;
+    }
+  | {
+      readonly path: "uncertain";
+      readonly basis: JsonValue;
+      readonly prepared: TPrepared;
+    };
+
+export function assessResolutionOperation<TInput, TPrepared, TResult>(
+  registry: OperationRegistry,
+  operationId: string,
+  world: WorldState,
+  intent: ExecutableIntent,
+  input: TInput,
+): ValidatedResolutionAssessment<TPrepared, TResult> {
+  const operation = registry.getResolution(operationId) as unknown as ResolutionOperation<
+    TInput,
+    TPrepared,
+    TResult
+  >;
+  const parsedIntent = executableIntentSchema.parse(intent);
+  const parsedInput = operation.inputSchema.parse(input);
+  const assessment = operation.assess(
+    { world: immutableWorldSnapshot(world) },
+    parsedIntent,
+    parsedInput,
+  );
+  const path = resolutionPathSchema.parse(assessment.path);
+  const basis = jsonValueSchema.parse(assessment.basis);
+
+  if (path === "uncertain") {
+    if (!("prepared" in assessment)) {
+      throw new OperationValidationError(
+        `Uncertain resolution ${operationId} did not provide prepared data`,
+      );
+    }
+    const prepared = operation.preparedSchema.parse(assessment.prepared);
+    jsonValueSchema.parse(prepared);
+    return { path, basis, prepared };
+  }
+  if (!("outcome" in assessment)) {
+    throw new OperationValidationError(
+      `${path} resolution ${operationId} did not provide an outcome`,
+    );
+  }
   return {
-    result: parsedResult,
-    advanceTimeByMs,
-    proposedMutations,
-    proposedEvents,
+    path,
+    basis,
+    outcome: validateOperationResult(operation, assessment.outcome, true),
   };
 }
 
-export function createSeededRandom(seed: number): DeterministicRandom {
-  let state = seed >>> 0;
-  return {
-    next() {
-      state += 0x6d2b79f5;
-      let value = state;
-      value = Math.imul(value ^ (value >>> 15), value | 1);
-      value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-      return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
-    },
-  };
+export function resolveUncertainOperation<TPrepared, TResult>(
+  registry: OperationRegistry,
+  operationId: string,
+  world: WorldState,
+  prepared: TPrepared,
+  rng: DeterministicRandom,
+): OperationResult<TResult> {
+  const operation = registry.getResolution(operationId) as unknown as ResolutionOperation<
+    unknown,
+    TPrepared,
+    TResult
+  >;
+  const parsedPrepared = operation.preparedSchema.parse(prepared);
+  jsonValueSchema.parse(parsedPrepared);
+  const outcome = operation.resolve(
+    { world: immutableWorldSnapshot(world), rng },
+    parsedPrepared,
+  );
+  return validateOperationResult(operation, outcome, true);
 }
 
 export function jsonOutcome(value: JsonValue): JsonValue {
