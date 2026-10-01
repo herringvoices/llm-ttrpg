@@ -26,7 +26,7 @@ describe("game package contracts", () => {
       ruleset: { id: "reference-rules", version: "0.1.0" },
       setting: { id: "awakening-earth", version: "0.1.0" },
       adapter: {
-        id: "awakening-earth-reference-rules-adapter",
+        id: "awakening-earth-reference-adapter",
         version: "0.1.0",
       },
       campaign: { id: "nashville-contract-fixture", version: "0.1.0" },

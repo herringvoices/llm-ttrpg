@@ -22,8 +22,8 @@ function mapReinforcementToEffort(source: JsonValue): unknown {
   };
 }
 
-export const awakeningEarthReferenceRulesAdapter: SettingAdapter = {
-  identity: { id: "awakening-earth-reference-rules-adapter", version: "0.1.0" },
+export const awakeningEarthHunterAdapter: SettingAdapter = {
+  identity: { id: "awakening-earth-hunter-adapter", version: "0.1.0" },
   description:
     "Minimal pair-specific mapping between Awakening Earth and the reference rules fixture.",
   ruleset: { id: "reference-rules", version: "0.1.0" },
