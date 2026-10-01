@@ -56,9 +56,8 @@ export const resolveEffortOperation: RulesOperation<
   },
 };
 
-export const hunterRuleset: Ruleset = {
-  identity: { id: "hunter-rules", version: "0.1.0" },
-  description: "Minimal Hunter rules fixture; not the real game rules.",
+export const referenceRuleset: Ruleset = {
+  identity: { id: "reference-rules", version: "0.1.0" },
+  description: "Minimal rules fixture; not the real game rules.",
   operations: [resolveEffortOperation],
 };
-
