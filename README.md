@@ -58,7 +58,7 @@ The workspace keeps the native shell and game logic separated:
 - `packages/reference-game` — headless ruleset, setting, adapter, campaign, and presentation modules for a tiny fixture
 - `apps/desktop` — React/Vite presentation, the SQLite adapter, and a thin Tauri 2 host that registers migrations
 
-Canonical changes follow `validate -> apply -> persist atomically -> expose`. Worlds are persistent campaign lineages. Named save slots point to immutable checkpoints, so saving again moves the slot without rewriting history.
+Canonical changes follow `validate -> apply -> persist atomically -> expose`. Worlds are persistent campaign lineages. Current World State is separate from append-only meaningful event history and from future scheduled work. Named save slots point to immutable checkpoints of both state and the history visible at that point, so saving again moves the slot without rewriting history.
 
 Install dependencies with `npm install`, then run the complete verification suite with:
 

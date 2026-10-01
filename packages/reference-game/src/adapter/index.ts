@@ -22,12 +22,13 @@ function mapReinforcementToEffort(source: JsonValue): unknown {
   };
 }
 
-export const awakeningEarthHunterAdapter: SettingAdapter = {
-  identity: { id: "awakening-earth-hunter-adapter", version: "0.1.0" },
+export const awakeningEarthReferenceAdapter: SettingAdapter = {
+  identity: { id: "awakening-earth-reference-adapter", version: "0.1.0" },
   description:
     "Minimal pair-specific mapping between Awakening Earth and the reference rules fixture.",
   ruleset: { id: "reference-rules", version: "0.1.0" },
   setting: { id: "awakening-earth", version: "0.1.0" },
+  eventTypes: [],
   mappings: [
     {
       id: "adapter.mapping.magical-reinforcement",

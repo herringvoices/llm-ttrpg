@@ -3,6 +3,7 @@ import type { Setting } from "@llm-ttrpg/engine";
 export const awakeningEarthSetting: Setting = {
   identity: { id: "awakening-earth", version: "0.1.0" },
   description: "A deliberately tiny setting fixture for package contracts.",
+  eventTypes: [],
   content: {
     entities: [
       {
@@ -82,4 +83,3 @@ export const awakeningEarthSetting: Setting = {
     beliefs: [],
   },
 };
-

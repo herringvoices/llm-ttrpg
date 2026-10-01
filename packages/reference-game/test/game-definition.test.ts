@@ -5,6 +5,7 @@ import {
   createSeededRandom,
   executeRulesOperation,
   initializeCampaignWorld,
+  initializeCampaignHistory,
   loadGameDefinition,
   retrieveDocument,
   retrieveKnowledge,
@@ -212,6 +213,36 @@ describe("game package contracts", () => {
     expect(world.entities).not.toBe(game.campaign.content.entities);
     expect(Object.isFrozen(game.campaign.content)).toBe(true);
     expect(Object.isFrozen(game.campaign.content.entities)).toBe(true);
+  });
+
+  it("registers package event schemas and seeds ordered history separately", () => {
+    const history = initializeCampaignHistory(game);
+    expect(history).toEqual([
+      expect.objectContaining({
+        id: "campaign.event.store-notice-posted",
+        type: "campaign.notice-posted",
+        schemaVersion: 1,
+        sourceComponent: game.campaign.identity,
+        sequence: 1,
+      }),
+    ]);
+    expect(initializeCampaignWorld(game)).not.toHaveProperty("events");
+    expect(() => game.eventTypeRegistry.validatePayload(
+      "campaign.notice-posted",
+      1,
+      { documentId: 42 },
+    )).toThrow();
+  });
+
+  it("rejects duplicate package event registrations", () => {
+    const duplicate: GameDefinition = {
+      ...referenceGameDefinition,
+      setting: {
+        ...referenceGameDefinition.setting,
+        eventTypes: [...referenceGameDefinition.ruleset.eventTypes],
+      },
+    };
+    expect(() => loadGameDefinition(duplicate)).toThrow(/Duplicate event type/);
   });
 
   it("records and validates exact save composition versions", () => {

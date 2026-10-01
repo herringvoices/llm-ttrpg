@@ -1,11 +1,11 @@
 import type {
   Belief,
-  CanonicalEvent,
   CanonicalFact,
   DocumentSection,
   Entity,
   LongFormDocument,
 } from "./content.js";
+import type { CanonicalEvent, EventQuery } from "./events.js";
 import type { GameComposition } from "./contracts.js";
 import type { WorldState } from "./world.js";
 
@@ -24,6 +24,7 @@ export interface WorldMetadata {
 export interface PersistedWorld {
   readonly metadata: WorldMetadata;
   readonly revision: number;
+  readonly eventSequence: number;
   readonly state: WorldState;
 }
 
@@ -33,12 +34,14 @@ export interface CheckpointMetadata {
   readonly parentCheckpointId?: CheckpointId;
   readonly createdAt: string;
   readonly revision: number;
+  readonly eventSequence: number;
   readonly game: GameComposition;
 }
 
 export interface PersistedCheckpoint {
   readonly metadata: CheckpointMetadata;
   readonly state: WorldState;
+  readonly history: readonly CanonicalEvent[];
 }
 
 export interface SaveSlot {
@@ -53,6 +56,7 @@ export interface SaveSlot {
 export interface CreateWorldInput {
   readonly metadata: WorldMetadata;
   readonly state: WorldState;
+  readonly initialEvents: readonly CanonicalEvent[];
 }
 
 export interface CommitWorldInput {
@@ -60,6 +64,8 @@ export interface CommitWorldInput {
   readonly expectedRevision: number;
   readonly updatedAt: string;
   readonly state: WorldState;
+  readonly events: readonly CanonicalEvent[];
+  readonly eventSequence: number;
 }
 
 export interface SaveCheckpointInput {
@@ -93,7 +99,6 @@ export interface SaveStore {
 export interface WorldContentQueries {
   entities(worldId: WorldId): Promise<readonly Entity[]>;
   facts(worldId: WorldId): Promise<readonly CanonicalFact[]>;
-  events(worldId: WorldId): Promise<readonly CanonicalEvent[]>;
   beliefs(worldId: WorldId): Promise<readonly Belief[]>;
   documents(worldId: WorldId): Promise<readonly LongFormDocument[]>;
   documentSections(
@@ -102,10 +107,22 @@ export interface WorldContentQueries {
   ): Promise<readonly DocumentSection[]>;
 }
 
+export interface EventHistoryStore {
+  get(
+    worldId: WorldId,
+    eventId: string,
+  ): Promise<CanonicalEvent | undefined>;
+  query(
+    worldId: WorldId,
+    query?: EventQuery,
+  ): Promise<readonly CanonicalEvent[]>;
+}
+
 export interface PersistencePorts {
   readonly worlds: WorldStore;
   readonly saves: SaveStore;
   readonly content: WorldContentQueries;
+  readonly history: EventHistoryStore;
 }
 
 export class PersistenceConflictError extends Error {

@@ -1,11 +1,29 @@
-import type { Campaign } from "@llm-ttrpg/engine";
+import {
+  fictionalInstant,
+  type Campaign,
+  type EventTypeDefinition,
+} from "@llm-ttrpg/engine";
+import { z } from "zod";
+
+export const noticePostedPayloadSchema = z
+  .object({ documentId: z.string().min(1) })
+  .strict();
+
+export const noticePostedEventType: EventTypeDefinition<
+  z.infer<typeof noticePostedPayloadSchema>
+> = {
+  type: "campaign.notice-posted",
+  schemaVersion: 1,
+  payloadSchema: noticePostedPayloadSchema,
+};
 
 export const contractFixtureCampaign: Campaign = {
   identity: { id: "nashville-contract-fixture", version: "0.1.0" },
   description:
     "Tiny campaign fixture used only to prove package and content boundaries.",
   setting: { id: "awakening-earth", version: "0.1.0" },
-  startTime: "2026-04-12T14:00:00.000Z",
+  startTime: fictionalInstant("2026-04-12T14:00:00.000Z"),
+  eventTypes: [noticePostedEventType],
   content: {
     entities: [
       {
@@ -36,7 +54,26 @@ export const contractFixtureCampaign: Campaign = {
         tags: ["location"],
       },
     ],
-    events: [],
+    events: [
+      {
+        id: "campaign.event.store-notice-posted",
+        type: "campaign.notice-posted",
+        schemaVersion: 1,
+        occurredAt: fictionalInstant("2026-04-12T13:55:00.000Z"),
+        relatedEntityIds: ["campaign.location.brownbag-groceries"],
+        scopeIds: ["scope.reference-scene"],
+        causedByEventIds: [],
+        origin: {
+          kind: "campaign-initialization",
+          id: "nashville-contract-fixture",
+        },
+        summary: "Brownbag Groceries posted an early-closing notice.",
+        payload: {
+          documentId: "campaign.document.store-notice",
+        },
+        access: "public",
+      },
+    ],
     documents: [
       {
         id: "campaign.document.store-notice",

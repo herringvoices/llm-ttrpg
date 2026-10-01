@@ -32,7 +32,7 @@ These are project-level constraints. Implementation should work within them unle
 - The headless engine owns domain-oriented persistence ports and the logical unit of work. Desktop code supplies the SQLite adapter.
 - A canonical change is exposed only after validation, deterministic application, and atomic persistence succeed.
 - A world is a stable campaign lineage. A world can have many immutable checkpoints.
-- Friendly save slots are mutable pointers to checkpoints. Saving to an existing slot creates a new checkpoint and moves only the pointer.
+- Friendly save slots are mutable pointers to checkpoints. A checkpoint preserves current World State and a separate exact history snapshot. Saving to an existing slot creates a new checkpoint and moves only the pointer.
 - The Rust/Tauri layer remains a thin native host for startup, plugin setup, and migrations; it is not a game backend.
 
 ## Context and knowledge
@@ -56,7 +56,15 @@ These are project-level constraints. Implementation should work within them unle
 
 ## Time
 
-- Time is fictional game time, not wall-clock time.
+- Fictional time and wall-clock metadata use distinct types and dependencies. Wall time timestamps files/records; it never decides when a fictional event happened.
+- A fictional instant is a normalized UTC ISO value. Advancement uses exact nonnegative integer millisecond durations, is deterministic, and never moves backward. Calendar presentation remains a setting/presentation concern.
+- Current World State, future scheduled triggers, and historical events are distinct. A scheduled possibility is not an event until normal simulation/operation resolution makes it happen.
+- Meaningful event history is append-only, separately queried, and is not an event-sourcing log. Current state remains authoritative and is not reconstructed by replaying history.
+- Events have a deterministic total order by fictional instant and engine-assigned sequence. Causal references point only to prior events; execution provenance remains separate from causality.
+- Active packages register versioned event payload schemas. The engine owns and validates the generic envelope without interpreting game-specific payload meaning.
+- Operation code receives current state, not the world's entire historical record. Relevant history must be requested through targeted queries.
+- Persist all meaningful canonical events for MVP. Do not compact or delete them before real scale evidence exists.
+- Simulation cursors persist the last fictional instant at which a generic scope was brought current, and may never exceed world time.
 - The world does not continuously tick every simulated object.
 - Off-screen systems sleep and catch up when they become relevant.
 - Meaningful events form a causal history that can drive later catch-up and retrieval.

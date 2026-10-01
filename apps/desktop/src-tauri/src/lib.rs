@@ -9,6 +9,11 @@ pub fn run() {
         description: "persistence_foundation",
         sql: include_str!("../migrations/0001_persistence_foundation.sql"),
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 2,
+        description: "fictional_time_event_history",
+        sql: include_str!("../migrations/0002_fictional_time_event_history.sql"),
+        kind: MigrationKind::Up,
     }];
 
     tauri::Builder::default()

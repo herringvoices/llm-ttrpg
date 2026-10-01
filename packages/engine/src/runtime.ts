@@ -1,4 +1,9 @@
-import type { CanonicalEvent } from "./content.js";
+import {
+  canonicalEventSchema,
+  type CanonicalEvent,
+  type EventOrigin,
+  type EventQuery,
+} from "./events.js";
 import type { LoadedGameDefinition } from "./contracts.js";
 import {
   createSeededRandom,
@@ -15,33 +20,55 @@ import type {
 import { PersistenceNotFoundError } from "./persistence.js";
 import { validateGameCompositionForGame } from "./save.js";
 import {
+  advanceFictionalInstant,
+  fictionalDurationMs,
+  fictionalInstant,
+  type FictionalInstant,
+} from "./time.js";
+import {
+  initializeCampaignHistory,
   initializeCampaignWorld,
+  scheduledTriggerSchema,
   validateWorldState,
+  type ScheduledTrigger,
   type WorldState,
 } from "./world.js";
 
-export interface Clock {
+export interface WallClock {
   now(): string;
 }
 
 export interface IdGenerator {
-  next(kind: "world" | "checkpoint" | "slot" | "event"): string;
+  next(
+    kind: "world" | "checkpoint" | "slot" | "event" | "scheduled-trigger",
+  ): string;
 }
 
 export interface GameRuntimeDependencies {
   readonly persistence: PersistencePorts;
-  readonly clock: Clock;
+  readonly wallClock: WallClock;
   readonly idGenerator: IdGenerator;
   readonly game: LoadedGameDefinition;
 }
 
 export interface ExecuteOperationOptions {
   readonly seed?: number;
+  readonly causedByEventIds?: readonly string[];
+  readonly origin?: EventOrigin;
 }
 
 export interface GameSession {
   readonly worldId: string;
   snapshot(): WorldState;
+  advanceTime(durationMs: number): Promise<WorldState>;
+  setSimulationCursor(
+    scopeId: string,
+    lastSimulatedAt: FictionalInstant,
+  ): Promise<WorldState>;
+  scheduleTrigger(
+    trigger: Omit<ScheduledTrigger, "id">,
+  ): Promise<ScheduledTrigger>;
+  eventHistory(query?: EventQuery): Promise<readonly CanonicalEvent[]>;
   executeOperation<TResult = unknown>(
     operationId: string,
     input: unknown,
@@ -84,11 +111,77 @@ function openSession(
 ): GameSession {
   let state = clone(persisted.state);
   let revision = persisted.revision;
+  let eventSequence = persisted.eventSequence;
+
+  async function commitCandidate(
+    candidate: WorldState,
+    events: readonly CanonicalEvent[] = [],
+  ): Promise<void> {
+    validateWorldState(candidate);
+    const nextSequence = eventSequence + events.length;
+    const committed = await dependencies.persistence.worlds.commit({
+      worldId: persisted.metadata.id,
+      expectedRevision: revision,
+      updatedAt: dependencies.wallClock.now(),
+      state: candidate,
+      events,
+      eventSequence: nextSequence,
+    });
+    state = clone(committed.state);
+    revision = committed.revision;
+    eventSequence = committed.eventSequence;
+  }
 
   return {
     worldId: persisted.metadata.id,
     snapshot() {
       return clone(state);
+    },
+    async advanceTime(durationMs) {
+      const duration = fictionalDurationMs(durationMs);
+      if (duration === 0) return clone(state);
+      const candidate = clone(state);
+      candidate.fictionalTime = advanceFictionalInstant(
+        candidate.fictionalTime,
+        duration,
+      );
+      await commitCandidate(candidate);
+      return clone(state);
+    },
+    async setSimulationCursor(scopeId, lastSimulatedAt) {
+      const candidate = clone(state);
+      const normalized = fictionalInstant(lastSimulatedAt);
+      const index = candidate.simulationCursors.findIndex(
+        (cursor) => cursor.scopeId === scopeId,
+      );
+      const cursor = { scopeId, lastSimulatedAt: normalized };
+      if (index === -1) candidate.simulationCursors.push(cursor);
+      else candidate.simulationCursors[index] = cursor;
+      await commitCandidate(candidate);
+      return clone(state);
+    },
+    async scheduleTrigger(trigger) {
+      const sourceIsActive = Object.values(state.game).some(
+        (component) =>
+          component.id === trigger.sourceComponent.id &&
+          component.version === trigger.sourceComponent.version,
+      );
+      if (!sourceIsActive) {
+        throw new Error(
+          `Scheduled trigger source is not active: ${trigger.sourceComponent.id}@${trigger.sourceComponent.version}`,
+        );
+      }
+      const scheduled = scheduledTriggerSchema.parse({
+        ...trigger,
+        id: dependencies.idGenerator.next("scheduled-trigger"),
+      });
+      const candidate = clone(state);
+      candidate.scheduledTriggers.push(scheduled);
+      await commitCandidate(candidate);
+      return clone(scheduled);
+    },
+    eventHistory(query) {
+      return dependencies.persistence.history.query(persisted.metadata.id, query);
     },
     async executeOperation<TResult>(
       operationId: string,
@@ -103,33 +196,66 @@ function openSession(
         input,
       );
       applyMutations(candidate, outcome.proposedMutations);
+      candidate.fictionalTime = advanceFictionalInstant(
+        candidate.fictionalTime,
+        outcome.advanceTimeByMs,
+      );
+      const canonicalEvents: CanonicalEvent[] = [];
       for (const event of outcome.proposedEvents) {
-        const canonicalEvent: CanonicalEvent = {
+        const definition = dependencies.game.eventTypeRegistry.resolve(
+          event.type,
+          event.schemaVersion,
+        );
+        const causedByEventIds = [
+          ...new Set([
+            ...(options?.causedByEventIds ?? []),
+            ...event.causedByEventIds,
+          ]),
+        ];
+        for (const causeId of causedByEventIds) {
+          const earlierInBatch = canonicalEvents.some(
+            (candidateEvent) => candidateEvent.id === causeId,
+          );
+          if (
+            !earlierInBatch &&
+            !(await dependencies.persistence.history.get(
+              persisted.metadata.id,
+              causeId,
+            ))
+          ) {
+            throw new PersistenceNotFoundError(
+              `Event cause not found: ${causeId}`,
+            );
+          }
+        }
+        const canonicalEvent = canonicalEventSchema.parse({
           id: dependencies.idGenerator.next("event"),
-          kind: event.kind,
-          occurredAt: dependencies.clock.now(),
+          type: event.type,
+          schemaVersion: event.schemaVersion,
+          sourceComponent: definition.sourceComponent,
+          occurredAt: candidate.fictionalTime,
+          sequence: eventSequence + canonicalEvents.length + 1,
           summary: event.summary,
-          participantIds: [...event.participantIds],
-          details: clone(event.details),
-          visibility: "public",
-        };
-        candidate.events.push(canonicalEvent);
+          relatedEntityIds: [...event.relatedEntityIds],
+          scopeIds: [...event.scopeIds],
+          causedByEventIds,
+          ...(event.origin ?? options?.origin
+            ? { origin: clone(event.origin ?? options!.origin!) }
+            : {}),
+          payload: dependencies.game.eventTypeRegistry.validatePayload(
+            event.type,
+            event.schemaVersion,
+            event.payload,
+          ),
+          access: event.access,
+        });
+        canonicalEvents.push(canonicalEvent);
       }
-
-      validateWorldState(candidate);
-
-      const committed = await dependencies.persistence.worlds.commit({
-        worldId: persisted.metadata.id,
-        expectedRevision: revision,
-        updatedAt: dependencies.clock.now(),
-        state: candidate,
-      });
-      state = clone(committed.state);
-      revision = committed.revision;
+      await commitCandidate(candidate, canonicalEvents);
       return outcome.result;
     },
     async save(slotName) {
-      const timestamp = dependencies.clock.now();
+      const timestamp = dependencies.wallClock.now();
       const existingSlot = await dependencies.persistence.saves.findSlot(
         persisted.metadata.id,
         slotName,
@@ -142,6 +268,7 @@ function openSession(
           : {}),
         createdAt: timestamp,
         revision,
+        eventSequence,
         game: clone(state.game),
       };
       return dependencies.persistence.saves.saveCheckpoint({
@@ -164,9 +291,10 @@ function openSession(
 export function createGameRuntime(dependencies: GameRuntimeDependencies) {
   return {
     async createWorld(name: string): Promise<GameSession> {
-      const timestamp = dependencies.clock.now();
+      const timestamp = dependencies.wallClock.now();
       const id = dependencies.idGenerator.next("world");
       const state = initializeCampaignWorld(dependencies.game);
+      const initialEvents = initializeCampaignHistory(dependencies.game);
       const metadata: WorldMetadata = {
         id,
         name,
@@ -177,6 +305,7 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies) {
       const world = await dependencies.persistence.worlds.create({
         metadata,
         state,
+        initialEvents,
       });
       return openSession(dependencies, {
         ...world,

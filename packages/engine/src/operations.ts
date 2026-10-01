@@ -4,7 +4,12 @@ import {
   jsonValueSchema,
   type JsonValue,
 } from "./content.js";
+import { eventAccessSchema, eventOriginSchema } from "./events.js";
 import { stableIdSchema } from "./identity.js";
+import {
+  fictionalDurationMsSchema,
+  type FictionalDurationMs,
+} from "./time.js";
 import type { WorldState } from "./world.js";
 
 export const operationCategorySchema = z
@@ -55,10 +60,15 @@ export type MutationProposal = z.infer<typeof mutationProposalSchema>;
 
 export const proposedEventSchema = z
   .object({
-    kind: stableIdSchema,
+    type: stableIdSchema,
+    schemaVersion: z.number().int().positive(),
     summary: z.string().min(1),
-    participantIds: z.array(stableIdSchema),
-    details: z.record(jsonValueSchema),
+    relatedEntityIds: z.array(stableIdSchema),
+    scopeIds: z.array(stableIdSchema),
+    causedByEventIds: z.array(stableIdSchema),
+    origin: eventOriginSchema.optional(),
+    payload: jsonValueSchema,
+    access: eventAccessSchema,
   })
   .strict();
 export type ProposedEvent = z.infer<typeof proposedEventSchema>;
@@ -74,6 +84,7 @@ export interface RuleOperationContext {
 
 export interface OperationResult<TResult> {
   readonly result: TResult;
+  readonly advanceTimeByMs: FictionalDurationMs;
   readonly proposedMutations: readonly MutationProposal[];
   readonly proposedEvents: readonly ProposedEvent[];
 }
@@ -210,6 +221,9 @@ export function executeRulesOperation<TInput, TResult>(
   const parsedInput = operation.inputSchema.parse(input);
   const outcome = operation.execute(context, parsedInput);
   const parsedResult = operation.outputSchema.parse(outcome.result);
+  const advanceTimeByMs = fictionalDurationMsSchema.parse(
+    outcome.advanceTimeByMs,
+  );
   const proposedMutations = z
     .array(mutationProposalSchema)
     .parse(outcome.proposedMutations);
@@ -219,6 +233,7 @@ export function executeRulesOperation<TInput, TResult>(
 
   return {
     result: parsedResult,
+    advanceTimeByMs,
     proposedMutations,
     proposedEvents,
   };

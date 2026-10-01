@@ -1,22 +1,12 @@
 import { z } from "zod";
 import { stableIdSchema } from "./identity.js";
-
-export type JsonPrimitive = string | number | boolean | null;
-export type JsonValue =
-  | JsonPrimitive
-  | JsonValue[]
-  | { [key: string]: JsonValue };
-
-export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.number().finite(),
-    z.boolean(),
-    z.null(),
-    z.array(jsonValueSchema),
-    z.record(jsonValueSchema),
-  ]),
-);
+import { authoredEventSchema, type AuthoredEvent } from "./events.js";
+import { jsonValueSchema } from "./json.js";
+export {
+  jsonValueSchema,
+  type JsonPrimitive,
+  type JsonValue,
+} from "./json.js";
 
 export const visibilitySchema = z.enum(["public", "hidden"]);
 export type Visibility = z.infer<typeof visibilitySchema>;
@@ -43,19 +33,6 @@ export const canonicalFactSchema = z
   })
   .strict();
 export type CanonicalFact = z.infer<typeof canonicalFactSchema>;
-
-export const canonicalEventSchema = z
-  .object({
-    id: stableIdSchema,
-    kind: stableIdSchema,
-    occurredAt: z.string().datetime(),
-    summary: z.string().min(1),
-    participantIds: z.array(stableIdSchema),
-    details: z.record(jsonValueSchema),
-    visibility: visibilitySchema,
-  })
-  .strict();
-export type CanonicalEvent = z.infer<typeof canonicalEventSchema>;
 
 export const documentMetadataSchema = z
   .object({
@@ -136,12 +113,13 @@ export const contentBundleSchema = z
   .object({
     entities: z.array(entitySchema),
     facts: z.array(canonicalFactSchema),
-    events: z.array(canonicalEventSchema),
+    events: z.array(authoredEventSchema),
     documents: z.array(longFormDocumentSchema),
     beliefs: z.array(beliefSchema),
   })
   .strict();
 export type ContentBundle = z.infer<typeof contentBundleSchema>;
+export type { AuthoredEvent };
 
 export function emptyContentBundle(): ContentBundle {
   return {

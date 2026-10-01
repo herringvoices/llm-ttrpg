@@ -8,6 +8,7 @@ import type {
   DocumentSection,
   Entity,
   LongFormDocument,
+  EventQuery,
   PersistedCheckpoint,
   PersistedWorld,
   PersistencePorts,
@@ -15,9 +16,16 @@ import type {
   SaveSlot,
   WorldMetadata,
   WorldState,
+  ScheduledTrigger,
+  SimulationCursor,
 } from "@llm-ttrpg/engine";
-import { PersistenceConflictError } from "@llm-ttrpg/engine";
-import type { SqlClient } from "./sql-client.js";
+import {
+  PersistenceConflictError,
+  canonicalEventSchema,
+  eventQuerySchema,
+  fictionalInstant,
+} from "@llm-ttrpg/engine";
+import type { SqlBindValue, SqlClient } from "./sql-client.js";
 
 interface WorldRow {
   id: string;
@@ -25,6 +33,7 @@ interface WorldRow {
   created_at: string;
   updated_at: string;
   revision: number;
+  event_sequence: number;
   composition_json: string;
   initialized_from_campaign: string;
   fictional_time: string;
@@ -36,6 +45,7 @@ interface CheckpointRow {
   parent_checkpoint_id: string | null;
   created_at: string;
   revision: number;
+  event_sequence: number;
   composition_json: string;
   initialized_from_campaign: string;
   fictional_time: string;
@@ -52,6 +62,10 @@ interface SlotRow {
 
 interface PayloadRow {
   payload_json: string;
+}
+
+interface EventRow {
+  canonical_json: string;
 }
 
 function parse<T>(value: string): T {
@@ -101,12 +115,13 @@ async function readState(
   checkpointId: string | null,
 ): Promise<WorldState> {
   const worldId = "world_id" in owner ? owner.world_id : owner.id;
-  const [entities, facts, events, beliefs, documents] = await Promise.all([
+  const [entities, facts, beliefs, documents, scheduledTriggers, simulationCursors] = await Promise.all([
     payloads<Entity>(database, "entities", worldId, checkpointId, "entity_id"),
     payloads<CanonicalFact>(database, "facts", worldId, checkpointId, "fact_id"),
-    payloads<CanonicalEvent>(database, "events", worldId, checkpointId, "occurred_at, event_id"),
     payloads<Belief>(database, "beliefs", worldId, checkpointId, "belief_id"),
     payloads<LongFormDocument>(database, "documents", worldId, checkpointId, "document_id"),
+    payloads<ScheduledTrigger>(database, "scheduled_triggers", worldId, checkpointId, "due_at, trigger_id"),
+    payloads<SimulationCursor>(database, "simulation_cursors", worldId, checkpointId, "scope_id"),
   ]);
   const sectionsByDocument = new Map<string, DocumentSection[]>();
   const sectionRows = await database.select<Array<PayloadRow & { document_id: string }>>(
@@ -123,16 +138,94 @@ async function readState(
   return {
     game: parse(owner.composition_json),
     initializedFromCampaign: owner.initialized_from_campaign,
-    fictionalTime: owner.fictional_time,
+    fictionalTime: fictionalInstant(owner.fictional_time),
     entities,
     facts,
-    events,
     beliefs,
     documents: documents.map((document) => ({
       ...document,
       sections: sectionsByDocument.get(document.id) ?? [],
     })),
+    scheduledTriggers,
+    simulationCursors,
   };
+}
+
+async function readEvents(
+  database: SqlClient,
+  worldId: string,
+  checkpointId: string | null,
+  query: EventQuery = {},
+): Promise<CanonicalEvent[]> {
+  const parsedQuery = eventQuerySchema.parse(query);
+  const bindings: SqlBindValue[] = [worldId];
+  const bind = (value: SqlBindValue): string => {
+    bindings.push(value);
+    return `$${bindings.length}`;
+  };
+  const conditions = [
+    "world_id = $1",
+    checkpointId === null
+      ? "checkpoint_id IS NULL"
+      : `checkpoint_id = ${bind(checkpointId)}`,
+  ];
+  if (parsedQuery.from) conditions.push(`occurred_at >= ${bind(parsedQuery.from)}`);
+  if (parsedQuery.to) conditions.push(`occurred_at <= ${bind(parsedQuery.to)}`);
+  if (parsedQuery.types?.length) {
+    conditions.push(
+      `event_type IN (${parsedQuery.types.map((type) => bind(type)).join(", ")})`,
+    );
+  }
+  if (parsedQuery.relatedEntityId) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM json_each(related_entity_ids_json) WHERE value = ${bind(parsedQuery.relatedEntityId)})`,
+    );
+  }
+  if (parsedQuery.scopeId) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM json_each(scope_ids_json) WHERE value = ${bind(parsedQuery.scopeId)})`,
+    );
+  }
+  if (parsedQuery.causedByEventId) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM json_each(caused_by_event_ids_json) WHERE value = ${bind(parsedQuery.causedByEventId)})`,
+    );
+  }
+  if (parsedQuery.originKind) conditions.push(`origin_kind = ${bind(parsedQuery.originKind)}`);
+  if (parsedQuery.originId) conditions.push(`origin_id = ${bind(parsedQuery.originId)}`);
+  if (parsedQuery.access?.length) {
+    conditions.push(
+      `access IN (${parsedQuery.access.map((access) => bind(access)).join(", ")})`,
+    );
+  }
+  const direction = parsedQuery.direction ?? "ascending";
+  if (parsedQuery.cursor) {
+    const time = bind(parsedQuery.cursor.occurredAt);
+    const sequence = bind(parsedQuery.cursor.sequence);
+    const operator = direction === "ascending" ? ">" : "<";
+    conditions.push(
+      `(occurred_at ${operator} ${time} OR (occurred_at = ${time} AND sequence ${operator} ${sequence}))`,
+    );
+  }
+  const limit = parsedQuery.limit ?? 100;
+  const order = direction === "ascending" ? "ASC" : "DESC";
+  const rows = await database.select<EventRow[]>(
+    `SELECT canonical_json FROM events WHERE ${conditions.join(" AND ")} ORDER BY occurred_at ${order}, sequence ${order} LIMIT ${bind(limit)}`,
+    bindings,
+  );
+  return rows.map((row) => canonicalEventSchema.parse(parse(row.canonical_json)));
+}
+
+async function readCheckpointEvents(
+  database: SqlClient,
+  worldId: string,
+  checkpointId: string,
+): Promise<CanonicalEvent[]> {
+  const rows = await database.select<EventRow[]>(
+    "SELECT canonical_json FROM events WHERE world_id = $1 AND checkpoint_id = $2 ORDER BY occurred_at, sequence",
+    [worldId, checkpointId],
+  );
+  return rows.map((row) => canonicalEventSchema.parse(parse(row.canonical_json)));
 }
 
 async function issueCommand(database: SqlClient, command: unknown): Promise<void> {
@@ -156,7 +249,12 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
     );
     const row = rows[0];
     if (!row) return undefined;
-    return { metadata: asMetadata(row), revision: row.revision, state: await readState(database, row, null) };
+    return {
+      metadata: asMetadata(row),
+      revision: row.revision,
+      eventSequence: row.event_sequence,
+      state: await readState(database, row, null),
+    };
   };
 
   return {
@@ -199,9 +297,14 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
           ...(row.parent_checkpoint_id ? { parentCheckpointId: row.parent_checkpoint_id } : {}),
           createdAt: row.created_at,
           revision: row.revision,
+          eventSequence: row.event_sequence,
           game: parse(row.composition_json),
         };
-        return { metadata, state: await readState(database, row, row.id) };
+        return {
+          metadata,
+          state: await readState(database, row, row.id),
+          history: await readCheckpointEvents(database, row.world_id, row.id),
+        };
       },
       async listCheckpoints(worldId: string) {
         const rows = await database.select<CheckpointRow[]>(
@@ -214,6 +317,7 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
           ...(row.parent_checkpoint_id ? { parentCheckpointId: row.parent_checkpoint_id } : {}),
           createdAt: row.created_at,
           revision: row.revision,
+          eventSequence: row.event_sequence,
           game: parse(row.composition_json),
         }));
       },
@@ -235,7 +339,6 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
     content: {
       entities: (worldId) => payloads(database, "entities", worldId, null, "entity_id"),
       facts: (worldId) => payloads(database, "facts", worldId, null, "fact_id"),
-      events: (worldId) => payloads(database, "events", worldId, null, "occurred_at, event_id"),
       beliefs: (worldId) => payloads(database, "beliefs", worldId, null, "belief_id"),
       async documents(worldId) {
         return (await loadWorld(worldId))?.state.documents ?? [];
@@ -243,6 +346,20 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
       async documentSections(worldId, documentId) {
         const documents = (await loadWorld(worldId))?.state.documents ?? [];
         return documents.find((document) => document.id === documentId)?.sections ?? [];
+      },
+    },
+    history: {
+      async get(worldId, eventId) {
+        const rows = await database.select<EventRow[]>(
+          "SELECT canonical_json FROM events WHERE world_id = $1 AND checkpoint_id IS NULL AND event_id = $2",
+          [worldId, eventId],
+        );
+        return rows[0]
+          ? canonicalEventSchema.parse(parse(rows[0].canonical_json))
+          : undefined;
+      },
+      query(worldId, query) {
+        return readEvents(database, worldId, null, query);
       },
     },
   };

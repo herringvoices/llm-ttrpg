@@ -4,14 +4,23 @@ import type {
   OperationRegistry,
   RegisteredRulesOperation,
 } from "./operations.js";
+import type {
+  EventTypeRegistry,
+  RegisteredEventType,
+} from "./events.js";
+import type { FictionalInstant } from "./time.js";
 
-export interface Ruleset {
+export interface EventTypeProvider {
+  readonly eventTypes: readonly RegisteredEventType[];
+}
+
+export interface Ruleset extends EventTypeProvider {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly operations: readonly RegisteredRulesOperation[];
 }
 
-export interface Setting {
+export interface Setting extends EventTypeProvider {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly content: ContentBundle;
@@ -25,7 +34,7 @@ export interface SettingRuleMapping {
   readonly mapInput: (source: JsonValue) => unknown;
 }
 
-export interface SettingAdapter {
+export interface SettingAdapter extends EventTypeProvider {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly ruleset: ComponentReference;
@@ -33,11 +42,11 @@ export interface SettingAdapter {
   readonly mappings: readonly SettingRuleMapping[];
 }
 
-export interface Campaign {
+export interface Campaign extends EventTypeProvider {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly setting: ComponentReference;
-  readonly startTime: string;
+  readonly startTime: FictionalInstant;
   readonly content: ContentBundle;
 }
 
@@ -67,6 +76,7 @@ export interface GameComposition {
 
 export interface LoadedGameDefinition extends GameDefinition {
   readonly operationRegistry: OperationRegistry;
+  readonly eventTypeRegistry: EventTypeRegistry;
   readonly composition: GameComposition;
 }
 

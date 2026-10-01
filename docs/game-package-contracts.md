@@ -39,17 +39,21 @@ Rulesets register operations under `domain -> subsystem -> operation`. Every ope
 
 `executeRulesOperation` validates both sides of the call. Operations return a result plus proposed mutations/events; they do not write storage or mutate authoritative state directly.
 
+Each operation also returns an exact nonnegative fictional-time duration. The runtime applies mutations, advances the fictional clock, validates package-owned event payloads, assigns sequence/order and source-component metadata, and atomically commits state plus newly meaningful events. Wall-clock metadata is supplied through a separate `wallClock` dependency.
+
+Rulesets, settings, adapters, and campaigns may register versioned event-type definitions containing a stable type, schema version, and Zod payload schema. `loadGameDefinition` combines these into an event registry and rejects duplicate or malformed definitions. The engine persists the generic event envelope and opaque JSON payload; the owning package retains mechanical meaning.
+
 ## Campaigns and saves
 
-`initializeCampaignWorld` deep-clones campaign content into mutable World State. The campaign definition remains immutable source content.
+`initializeCampaignWorld` deep-clones campaign content into mutable World State. Authored campaign events separately seed canonical history in deterministic fictional-time/array order. The campaign definition remains immutable source content.
 
 `createSaveMetadata` preserves issue #27's small compatibility envelope, recording the active component IDs and versions. `validateSaveMetadataForGame` rejects it if any component differs. The persistence runtime validates composition directly and does not treat the legacy `saveId` field as a world ID or as proof that a world can have only one save.
 
-Issue #5 adds persistence around those contracts without changing the five-part game composition. A world is a persistent lineage with its own opaque identity and current revision. Each immutable checkpoint records its world, optional parent checkpoint, exact game composition, revision, timestamp, and relational snapshot. A named save slot has a separate stable identity and points to one checkpoint; saving again creates a successor checkpoint and moves the slot.
+Issue #5 adds persistence around those contracts without changing the five-part game composition. A world is a persistent lineage with its own opaque identity and current revision. Issue #6 separates current state from append-only event history. Each immutable checkpoint records its world, optional parent checkpoint, exact game composition, state revision, event-sequence head, relational state snapshot, and separate exact history snapshot. A named save slot has a separate stable identity and points to one checkpoint; saving again creates a successor checkpoint and moves the slot.
 
-The engine defines three cohesive persistence capabilities: world lifecycle/atomic commits, checkpoint and save-slot operations, and generic content queries. `createGameRuntime({ persistence, clock, idGenerator, game })` owns the `validate -> apply -> persist -> expose` boundary. The desktop provides the SQLite implementation; headless tests use the in-memory implementation.
+The engine defines cohesive persistence capabilities for world lifecycle/atomic commits, checkpoint/save-slot operations, generic current-content queries, and targeted event-history queries. `createGameRuntime({ persistence, wallClock, idGenerator, game })` owns the `validate -> apply -> persist -> expose` boundary. The desktop provides the SQLite implementation; headless tests use the in-memory implementation.
 
-The SQLite model is deliberately coarse and generic: worlds, checkpoints, save slots, entities, facts, events, beliefs, documents, and document sections. Flexible values remain JSON. No ruleset-specific mechanic tables are part of this contract.
+The SQLite model is deliberately coarse and generic: worlds, checkpoints, save slots, entities, facts, append-only events, beliefs, documents, document sections, scheduled triggers, and simulation cursors. Flexible values remain JSON. No ruleset-specific mechanic tables are part of this contract. Ordinary commits append new events instead of rewriting historical rows; checkpoints copy history into an immutable checkpoint scope so future divergence remains possible without a timeline UI.
 
 The official Tauri SQL JavaScript API does not expose a connection-bound transaction callback. The adapter therefore submits each logical write as one insert into a private command table; a migration-owned SQLite trigger expands that command into the relational tables within the same SQLite statement. Revision/composition guards abort the statement before any partial state is exposed. This keeps transaction semantics in SQLite without creating a custom Rust repository layer.
 

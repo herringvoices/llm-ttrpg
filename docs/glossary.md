@@ -30,7 +30,23 @@ A player intention that has been interpreted and narrowed enough to be resolved 
 
 ## Meaningful event
 
-A persisted fact about something that happened in the world and may matter to later simulation, retrieval, causality, or narration.
+A persisted occurrence that may durably matter to future causal resolution, lazy simulation, actor/world knowledge, historical retrieval, campaign-planning triggers, meaningful narration, or diagnostics. Event history is selective and append-only, not a record of every low-level mutation and not an event-sourcing mechanism for rebuilding current state.
+
+## Fictional instant
+
+A normalized UTC ISO timestamp on the world's internal timeline. It is independent of wall-clock metadata and may be rendered through a setting-specific calendar later.
+
+## Fictional duration
+
+An exact nonnegative integer number of milliseconds used for deterministic advancement of fictional time. Zero is a legal no-op; negative advancement is invalid.
+
+## Scheduled trigger
+
+Persisted future engine work that may later resolve into state changes or meaningful events. A trigger records what should be evaluated, not an assertion that its possible outcome has already happened.
+
+## Simulation cursor
+
+The last fictional instant at which a generic simulation scope was brought current. A cursor may not be later than the world's fictional time.
 
 ## Operation
 
@@ -48,7 +64,7 @@ The hierarchy is at least **domain → subsystem → operation**. It is MCP-like
 
 ## World event history
 
-The causal record of meaningful world changes. It helps catch-up systems determine what happened while they were inactive and gives context retrieval a grounded source of past events.
+The separately persisted causal record of meaningful occurrences. Events carry fictional time, deterministic sequence, related entities/scopes, backward causal links, execution provenance, explicit access, source-package identity/version, and a package-validated payload. History helps catch-up systems and targeted retrieval without being embedded in current World State.
 
 ## Ruleset
 
@@ -80,7 +96,7 @@ A persistent campaign/world lineage with an opaque stable identity, current cano
 
 ## Checkpoint
 
-An immutable snapshot of a world's canonical state and exact game composition at one committed revision. A checkpoint may identify a parent checkpoint, allowing later divergence without rewriting history.
+An immutable snapshot of a world's canonical current state, exact game composition, and separate event-history view at one committed state revision/event-sequence head. A checkpoint may identify a parent checkpoint, allowing later divergence without rewriting history.
 
 ## Save slot
 

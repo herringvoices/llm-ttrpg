@@ -17,7 +17,7 @@ export interface DesktopApplication {
 
 function createIdGenerator() {
   return {
-    next(kind: "world" | "checkpoint" | "slot" | "event") {
+    next(kind: "world" | "checkpoint" | "slot" | "event" | "scheduled-trigger") {
       return `${kind}.${crypto.randomUUID()}`;
     },
   };
@@ -26,7 +26,7 @@ function createIdGenerator() {
 export function createDesktopApplication(database: SqlClient): DesktopApplication {
   const runtime = createGameRuntime({
     persistence: createSqlitePersistence(database),
-    clock: { now: () => new Date().toISOString() },
+    wallClock: { now: () => new Date().toISOString() },
     idGenerator: createIdGenerator(),
     game: loadGameDefinition(referenceGameDefinition),
   });

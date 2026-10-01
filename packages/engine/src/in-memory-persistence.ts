@@ -11,6 +11,12 @@ import type {
   WorldMetadata,
 } from "./persistence.js";
 import {
+  eventQuerySchema,
+  type CanonicalEvent,
+  type EventQuery,
+} from "./events.js";
+import { compareFictionalInstants } from "./time.js";
+import {
   PersistenceConflictError,
   PersistenceNotFoundError,
 } from "./persistence.js";
@@ -27,6 +33,7 @@ export function createInMemoryPersistence(): PersistencePorts {
   const worlds = new Map<string, PersistedWorld>();
   const checkpoints = new Map<string, PersistedCheckpoint>();
   const slots = new Map<string, SaveSlot>();
+  const histories = new Map<string, CanonicalEvent[]>();
 
   function loadRequiredWorld(worldId: WorldId): PersistedWorld {
     const world = worlds.get(worldId);
@@ -34,6 +41,91 @@ export function createInMemoryPersistence(): PersistencePorts {
       throw new PersistenceNotFoundError(`World not found: ${worldId}`);
     }
     return world;
+  }
+
+  function validateAppendedEvents(
+    world: PersistedWorld,
+    events: readonly CanonicalEvent[],
+    eventSequence: number,
+    fictionalTime: PersistedWorld["state"]["fictionalTime"],
+  ): void {
+    if (eventSequence !== world.eventSequence + events.length) {
+      throw new PersistenceConflictError("Event sequence is not contiguous");
+    }
+    const history = histories.get(world.metadata.id) ?? [];
+    const knownIds = new Set(history.map((event) => event.id));
+    let lastOccurredAt = history.at(-1)?.occurredAt;
+    for (const [index, event] of events.entries()) {
+      if (event.sequence !== world.eventSequence + index + 1) {
+        throw new PersistenceConflictError("Event sequence is not contiguous");
+      }
+      if (knownIds.has(event.id)) {
+        throw new PersistenceConflictError(`Event already exists: ${event.id}`);
+      }
+      if (compareFictionalInstants(event.occurredAt, fictionalTime) > 0) {
+        throw new PersistenceConflictError("Event cannot occur after world time");
+      }
+      if (
+        lastOccurredAt &&
+        compareFictionalInstants(event.occurredAt, lastOccurredAt) < 0
+      ) {
+        throw new PersistenceConflictError(
+          "Event occurrence time cannot move backward",
+        );
+      }
+      for (const causeId of event.causedByEventIds) {
+        if (!knownIds.has(causeId)) {
+          throw new PersistenceConflictError(
+            `Event ${event.id} has unknown or non-prior cause ${causeId}`,
+          );
+        }
+      }
+      knownIds.add(event.id);
+      lastOccurredAt = event.occurredAt;
+    }
+  }
+
+  function queryHistory(
+    worldId: string,
+    query: EventQuery = {},
+  ): CanonicalEvent[] {
+    const parsedQuery = eventQuerySchema.parse(query);
+    const direction = parsedQuery.direction ?? "ascending";
+    const limit = parsedQuery.limit ?? 100;
+    return clone(histories.get(worldId) ?? [])
+      .filter((event) => {
+        if (parsedQuery.from && event.occurredAt < parsedQuery.from) return false;
+        if (parsedQuery.to && event.occurredAt > parsedQuery.to) return false;
+        if (parsedQuery.types && !parsedQuery.types.includes(event.type)) return false;
+        if (
+          parsedQuery.relatedEntityId &&
+          !event.relatedEntityIds.includes(parsedQuery.relatedEntityId)
+        ) return false;
+        if (parsedQuery.scopeId && !event.scopeIds.includes(parsedQuery.scopeId)) return false;
+        if (
+          parsedQuery.causedByEventId &&
+          !event.causedByEventIds.includes(parsedQuery.causedByEventId)
+        ) return false;
+        if (parsedQuery.originKind && event.origin?.kind !== parsedQuery.originKind) return false;
+        if (parsedQuery.originId && event.origin?.id !== parsedQuery.originId) return false;
+        if (parsedQuery.access && !parsedQuery.access.includes(event.access)) return false;
+        if (parsedQuery.cursor) {
+          const comparison =
+            event.occurredAt.localeCompare(parsedQuery.cursor.occurredAt) ||
+            event.sequence - parsedQuery.cursor.sequence;
+          if (direction === "ascending" ? comparison <= 0 : comparison >= 0) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .sort((left, right) => {
+        const comparison =
+          left.occurredAt.localeCompare(right.occurredAt) ||
+          left.sequence - right.sequence;
+        return direction === "ascending" ? comparison : -comparison;
+      })
+      .slice(0, limit);
   }
 
   return {
@@ -52,8 +144,18 @@ export function createInMemoryPersistence(): PersistencePorts {
         const world: PersistedWorld = {
           metadata: clone(input.metadata),
           revision: 0,
+          eventSequence: input.initialEvents.length,
           state: clone(input.state),
         };
+        const emptyWorld = { ...world, eventSequence: 0 };
+        histories.set(input.metadata.id, []);
+        validateAppendedEvents(
+          emptyWorld,
+          input.initialEvents,
+          input.initialEvents.length,
+          input.state.fictionalTime,
+        );
+        histories.set(input.metadata.id, clone([...input.initialEvents]));
         worlds.set(input.metadata.id, world);
         return clone(world);
       },
@@ -78,6 +180,22 @@ export function createInMemoryPersistence(): PersistencePorts {
             "A commit cannot change the world's game composition",
           );
         }
+        if (
+          compareFictionalInstants(
+            input.state.fictionalTime,
+            current.state.fictionalTime,
+          ) < 0
+        ) {
+          throw new PersistenceConflictError(
+            "Fictional time cannot move backward",
+          );
+        }
+        validateAppendedEvents(
+          current,
+          input.events,
+          input.eventSequence,
+          input.state.fictionalTime,
+        );
         const committed: PersistedWorld = {
           metadata: {
             ...current.metadata,
@@ -85,8 +203,13 @@ export function createInMemoryPersistence(): PersistencePorts {
             game: clone(input.state.game),
           },
           revision: current.revision + 1,
+          eventSequence: input.eventSequence,
           state: clone(input.state),
         };
+        histories.set(input.worldId, [
+          ...(histories.get(input.worldId) ?? []),
+          ...clone(input.events),
+        ]);
         worlds.set(input.worldId, committed);
         return clone(committed);
       },
@@ -102,6 +225,11 @@ export function createInMemoryPersistence(): PersistencePorts {
         if (world.revision !== input.checkpoint.revision) {
           throw new PersistenceConflictError(
             `Cannot checkpoint world revision ${input.checkpoint.revision}; current revision is ${world.revision}`,
+          );
+        }
+        if (world.eventSequence !== input.checkpoint.eventSequence) {
+          throw new PersistenceConflictError(
+            `Cannot checkpoint event sequence ${input.checkpoint.eventSequence}; current sequence is ${world.eventSequence}`,
           );
         }
         if (
@@ -125,6 +253,7 @@ export function createInMemoryPersistence(): PersistencePorts {
         checkpoints.set(input.checkpoint.id, {
           metadata: clone(input.checkpoint),
           state: clone(input.state),
+          history: clone(histories.get(input.checkpoint.worldId) ?? []),
         });
         const slot: SaveSlot = {
           id: input.slot.id,
@@ -167,9 +296,6 @@ export function createInMemoryPersistence(): PersistencePorts {
       async facts(worldId) {
         return clone(loadRequiredWorld(worldId).state.facts);
       },
-      async events(worldId) {
-        return clone(loadRequiredWorld(worldId).state.events);
-      },
       async beliefs(worldId) {
         return clone(loadRequiredWorld(worldId).state.beliefs);
       },
@@ -181,6 +307,19 @@ export function createInMemoryPersistence(): PersistencePorts {
           (candidate) => candidate.id === documentId,
         );
         return clone(document?.sections ?? []);
+      },
+    },
+    history: {
+      async get(worldId, eventId) {
+        loadRequiredWorld(worldId);
+        const event = (histories.get(worldId) ?? []).find(
+          (candidate) => candidate.id === eventId,
+        );
+        return event ? clone(event) : undefined;
+      },
+      async query(worldId, query) {
+        loadRequiredWorld(worldId);
+        return queryHistory(worldId, query);
       },
     },
   };

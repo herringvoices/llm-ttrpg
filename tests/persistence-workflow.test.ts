@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import initSqlJs, { type Database } from "sql.js";
 import { describe, expect, it } from "vitest";
 import {
   createGameRuntime,
@@ -8,11 +6,7 @@ import {
   type PersistencePorts,
 } from "@llm-ttrpg/engine";
 import { referenceGameDefinition } from "@llm-ttrpg/reference-game";
-import { createSqlitePersistence } from "../apps/desktop/src/persistence/sqlite-persistence.js";
-import type {
-  SqlBindValue,
-  SqlClient,
-} from "../apps/desktop/src/persistence/sql-client.js";
+import { createMigratedSqlitePersistence } from "./support/sqlite.js";
 
 function createDependencies(persistence: PersistencePorts) {
   let id = 0;
@@ -20,32 +14,13 @@ function createDependencies(persistence: PersistencePorts) {
   return {
     persistence,
     game: loadGameDefinition(referenceGameDefinition),
-    clock: {
+    wallClock: {
       now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString(),
     },
     idGenerator: {
-      next(kind: "world" | "checkpoint" | "slot" | "event") {
+      next(kind: "world" | "checkpoint" | "slot" | "event" | "scheduled-trigger") {
         return `${kind}.test-${++id}`;
       },
-    },
-  };
-}
-
-function createSqlJsClient(database: Database): SqlClient {
-  return {
-    async execute(query: string, bindValues?: readonly SqlBindValue[]) {
-      database.run(query, bindValues ? [...bindValues] : undefined);
-    },
-    async select<T>(query: string, bindValues?: readonly SqlBindValue[]) {
-      const statement = database.prepare(query);
-      try {
-        if (bindValues) statement.bind([...bindValues]);
-        const rows: unknown[] = [];
-        while (statement.step()) rows.push(statement.getAsObject());
-        return rows as T;
-      } finally {
-        statement.free();
-      }
     },
   };
 }
@@ -56,12 +31,14 @@ async function exercisePersistence(persistence: PersistencePorts) {
   const originalSession = await firstRuntime.createWorld("First campaign");
   const worldId = originalSession.worldId;
   const originalState = originalSession.snapshot();
+  const originalHistory = await originalSession.eventHistory();
   const firstSlot = await originalSession.save("Manual save");
   const firstCheckpoint = await persistence.saves.loadCheckpoint(
     firstSlot.checkpointId,
   );
 
   expect(firstCheckpoint?.state).toEqual(originalState);
+  expect(firstCheckpoint?.history).toEqual(originalHistory);
 
   // This is a new application/runtime boundary using only persisted state.
   const secondRuntime = createGameRuntime(dependencies);
@@ -82,7 +59,9 @@ async function exercisePersistence(persistence: PersistencePorts) {
     { seed: 7 },
   );
   const changedState = reopened.snapshot();
-  expect(changedState.events).toHaveLength(originalState.events.length + 1);
+  const changedHistory = await reopened.eventHistory();
+  expect(changedHistory).toHaveLength(originalHistory.length + 1);
+  expect(changedState).not.toHaveProperty("events");
 
   const secondSlot = await reopened.save("Manual save");
   expect(secondSlot.id).toBe(firstSlot.id);
@@ -95,9 +74,13 @@ async function exercisePersistence(persistence: PersistencePorts) {
     .toEqual(originalState);
   expect((await persistence.saves.loadCheckpoint(secondSlot.checkpointId))?.state)
     .toEqual(changedState);
+  expect((await persistence.saves.loadCheckpoint(firstSlot.checkpointId))?.history)
+    .toEqual(originalHistory);
+  expect((await persistence.saves.loadCheckpoint(secondSlot.checkpointId))?.history)
+    .toEqual(changedHistory);
   expect((await persistence.saves.findSlot(worldId, "Manual save"))?.checkpointId)
     .toBe(secondSlot.checkpointId);
-  expect(await persistence.content.events(worldId)).toEqual(changedState.events);
+  expect(await persistence.history.query(worldId)).toEqual(changedHistory);
 }
 
 describe("project shell persistence workflow", () => {
@@ -106,14 +89,7 @@ describe("project shell persistence workflow", () => {
   });
 
   it("runs against the relational SQLite adapter and immutable schema", async () => {
-    const SQL = await initSqlJs();
-    const database = new SQL.Database();
-    const migration = readFileSync(
-      "apps/desktop/src-tauri/migrations/0001_persistence_foundation.sql",
-      "utf8",
-    );
-    database.exec(migration);
-    const persistence = createSqlitePersistence(createSqlJsClient(database));
+    const { database, persistence } = await createMigratedSqlitePersistence();
 
     await exercisePersistence(persistence);
 
@@ -132,6 +108,8 @@ describe("project shell persistence workflow", () => {
       "beliefs",
       "documents",
       "document_sections",
+      "scheduled_triggers",
+      "simulation_cursors",
     ]));
     database.close();
   });
@@ -152,6 +130,7 @@ describe("project shell persistence workflow", () => {
     await first.executeOperation("rules.actions.resolve-effort", input);
     await expect(stale.executeOperation("rules.actions.resolve-effort", input))
       .rejects.toThrow(/revision changed/);
-    expect(stale.snapshot().events).toHaveLength(0);
+    expect(stale.snapshot()).not.toHaveProperty("events");
+    expect(await stale.eventHistory()).toHaveLength(2);
   });
 });

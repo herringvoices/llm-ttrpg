@@ -18,12 +18,14 @@ import {
   createOperationRegistry,
   type RegisteredRulesOperation,
 } from "./operations.js";
+import { createEventTypeRegistry } from "./events.js";
 
 const rulesetBoundarySchema = z
   .object({
     identity: componentIdentitySchema,
     description: z.string().min(1),
     operations: z.array(z.unknown()),
+    eventTypes: z.array(z.unknown()),
   })
   .strict();
 
@@ -32,6 +34,7 @@ const settingBoundarySchema = z
     identity: componentIdentitySchema,
     description: z.string().min(1),
     content: contentBundleSchema,
+    eventTypes: z.array(z.unknown()),
   })
   .strict();
 
@@ -55,6 +58,7 @@ const adapterBoundarySchema = z
     ruleset: componentIdentitySchema,
     setting: componentIdentitySchema,
     mappings: z.array(settingRuleMappingBoundarySchema),
+    eventTypes: z.array(z.unknown()),
   })
   .strict();
 
@@ -65,6 +69,7 @@ const campaignBoundarySchema = z
     setting: componentIdentitySchema,
     startTime: z.string().datetime(),
     content: contentBundleSchema,
+    eventTypes: z.array(z.unknown()),
   })
   .strict();
 
@@ -140,10 +145,10 @@ function validateContentReferences(
     }
   }
   for (const event of content.events) {
-    for (const participantId of event.participantIds) {
-      if (!entityIds.has(participantId)) {
+    for (const relatedEntityId of event.relatedEntityIds) {
+      if (!entityIds.has(relatedEntityId)) {
         throw new GameValidationError(
-          `${label} event ${event.id} references missing participant ${participantId}`,
+          `${label} event ${event.id} references missing entity ${relatedEntityId}`,
         );
       }
     }
@@ -216,6 +221,27 @@ function validateMappings(
   }
 }
 
+function validateAuthoredEventCausality(content: ContentBundle): void {
+  const ordered = content.events
+    .map((event, index) => ({ event, index }))
+    .sort(
+      (left, right) =>
+        left.event.occurredAt.localeCompare(right.event.occurredAt) ||
+        left.index - right.index,
+    );
+  const prior = new Set<string>();
+  for (const { event } of ordered) {
+    for (const causeId of event.causedByEventIds) {
+      if (!prior.has(causeId)) {
+        throw new GameValidationError(
+          `Event ${event.id} references non-prior cause ${causeId}`,
+        );
+      }
+    }
+    prior.add(event.id);
+  }
+}
+
 export function loadGameDefinition(input: unknown): LoadedGameDefinition {
   const parsed = gameDefinitionBoundarySchema.parse(input);
   const game = parsed as unknown as GameDefinition;
@@ -262,10 +288,32 @@ export function loadGameDefinition(input: unknown): LoadedGameDefinition {
   }
   validateContentReferences("Setting", game.setting.content, game.setting.content);
   validateContentReferences("Campaign", game.campaign.content, combinedContent);
+  validateAuthoredEventCausality(game.setting.content);
+  validateAuthoredEventCausality(game.campaign.content);
+  for (const event of game.campaign.content.events) {
+    if (event.occurredAt > game.campaign.startTime) {
+      throw new GameValidationError(
+        `Campaign event ${event.id} occurs after campaign start time`,
+      );
+    }
+  }
 
   const operationRegistry = createOperationRegistry(
     game.ruleset.operations as readonly RegisteredRulesOperation[],
   );
+  const eventTypeRegistry = createEventTypeRegistry([
+    game.ruleset,
+    game.setting,
+    game.adapter,
+    game.campaign,
+  ]);
+  for (const event of combinedContent.events) {
+    eventTypeRegistry.validatePayload(
+      event.type,
+      event.schemaVersion,
+      event.payload,
+    );
+  }
   const operationIds = new Set(
     game.ruleset.operations.map((operation) => operation.metadata.id),
   );
@@ -279,6 +327,7 @@ export function loadGameDefinition(input: unknown): LoadedGameDefinition {
   return {
     ...game,
     operationRegistry,
+    eventTypeRegistry,
     composition: compositionFromGame(game),
   };
 }
