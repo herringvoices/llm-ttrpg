@@ -23,6 +23,9 @@ The first milestone succeeds when a player can enter a small world, act freely, 
 - Local LLM integration
 - Save/load
 - Simulation and diagnostic test harness
+- Minimal persistent high/medium/low campaign-plan seam
+- One targeted replanning scenario after a meaningful unexpected player choice
+- Protected GM-only plan context with proof that replanning does not mutate canonical state
 
 ## Explicitly deferred
 
@@ -36,6 +39,9 @@ The first milestone succeeds when a player can enter a small world, act freely, 
 - Deep graphical inventory/equipment interfaces
 - Highly detailed economy or ecology everywhere
 - Continuous simulation of the whole world
+- A perfect autonomous campaign director
+- Full planner passes after every action
+- Sophisticated long-campaign pacing optimization or a guaranteed authored climax
 
 These are not rejected ideas. They are deferred until the engine proves the core premise.
 

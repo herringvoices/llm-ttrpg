@@ -16,9 +16,9 @@ Good ideas that are intentionally outside the current design/implementation focu
 
 Important capabilities whose contracts or behavior are still unresolved.
 
-### Ready for Codex
+### Ready for Dev
 
-The design questions are resolved enough to hand the entire issue to Codex as a coherent implementation slice.
+The design questions are resolved enough to hand the entire issue to an implementation agent as a coherent implementation slice.
 
 A card should not move here until its outcome, boundaries, acceptance criteria, and verification scenario are clear.
 

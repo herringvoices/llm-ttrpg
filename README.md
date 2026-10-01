@@ -1,12 +1,16 @@
-# LLM TTRPG
+# LLM RPG Engine
 
-A local, single-player, text-first RPG where the player describes actions naturally, an LLM interprets those actions, and an authoritative simulation owns what is actually true.
+A local, single-player, text-first RPG engine where the player describes actions naturally, an LLM interprets those actions, and an authoritative simulation owns what is actually true. Awakening Earth is the first reference game built on the engine.
 
 ## North Star
 
 The LLM is the player's interface to a persistent simulated world, not the source of truth for that world.
 
-The engine/database owns canonical state, calculations, constraints, time, mutations, and consequences. The LLM interprets intent, retrieves relevant context, selects appropriate operations/checks, reasons about NPC behavior, and narrates validated outcomes.
+The engine/database owns canonical state, generic orchestration, time, validated mutations, and consequences. The active ruleset owns game-specific mechanics. The LLM interprets intent, retrieves relevant context, selects appropriate operations, reasons about NPC behavior, and narrates validated outcomes.
+
+The engine does not know which game it is running. A `GameDefinition` composes one ruleset, setting, pair-specific setting adapter, campaign, and presentation configuration.
+
+The LLM may also maintain a persistent, revisable GM plan across high, medium, and low horizons. That hidden plan guides attention and pacing; it never establishes truth, overrides simulation, or forces the player to preserve a plot.
 
 ## MVP
 
@@ -20,6 +24,7 @@ The first playable version should prove that a player can:
 6. interact naturally with NPCs,
 7. leave and later return,
 8. discover plausible changes produced by lazy world simulation while they were away.
+9. adapt near-term campaign direction after a meaningful unexpected choice without treating the revised plan as a canonical event.
 
 The MVP is text-first. Graphics are deliberately deferred until the engine works.
 
@@ -43,7 +48,21 @@ See:
 - [MVP boundary](docs/mvp-boundary.md)
 - [Board workflow](docs/board-workflow.md)
 - [Glossary](docs/glossary.md)
+- [Game package contracts](docs/game-package-contracts.md)
+
+## Development
+
+The initial workspace intentionally contains only the headless foundation needed by issue #27:
+
+- `packages/engine` — game-agnostic TypeScript contracts and runtime boundaries
+- `packages/reference-game` — explicit ruleset, setting, adapter, campaign, and presentation modules for a tiny fixture
+
+Install dependencies with `npm install`, then run the complete verification suite with:
+
+```sh
+npm run check
+```
 
 ## Core principle
 
-**Simulation owns truth. The LLM interprets and narrates it.**
+**Simulation owns truth. The LLM interprets, plans, and narrates around it without rewriting it.**

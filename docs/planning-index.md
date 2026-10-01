@@ -25,9 +25,21 @@ This file records the intended initial GitHub Project placement for the seeded i
 | #14 | NPC Interaction & Conversation | NPCs & Social, Context & Tools |
 | #15 | Local LLM Runtime Adapter | LLM Runtime, Core Engine |
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
-| #17 | First Playable World Slice | World / Content, Player UX |
-| #18 | Hunter/LitRPG Rules & World Model | World / Content, Actions & Rules |
+| #17 | First Region / Town Design | World / Content, Player UX |
+| #18 | Hunter/LitRPG Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
 | #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
+| #21 | Core Game Rules & Resolution Model | Actions & Rules, World / Content |
+| #22 | Character Progression & Abilities | Actions & Rules, World / Content |
+| #23 | Setting & World Premise | World / Content |
+| #24 | Institutions, Economy & Society | Time & World Simulation, World / Content |
+| #25 | Player Fantasy & Starting Situation | World / Content, Player UX |
+| #26 | Content & Encounter Principles | NPCs & Social, World / Content |
+| #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
+
+## Done
+
+- #27 — Game Package Contracts & Content Model
+  - Labels: Core Engine
 
 ## Icebox
 
@@ -38,7 +50,7 @@ This file records the intended initial GitHub Project placement for the seeded i
 
 Move capability issues through:
 
-**Needs Design → Ready for Codex → In Progress → Verify / Playtest → Done**
+**Needs Design → Ready for Dev → In Progress → Verify / Playtest → Done**
 
 Use **Blocked** as a label rather than a status column.
 

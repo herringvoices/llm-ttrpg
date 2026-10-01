@@ -49,3 +49,51 @@ The hierarchy is at least **domain → subsystem → operation**. It is MCP-like
 ## World event history
 
 The causal record of meaningful world changes. It helps catch-up systems determine what happened while they were inactive and gives context retrieval a grounded source of past events.
+
+## Ruleset
+
+A versioned package boundary that defines mechanics and discoverable deterministic rules operations. It does not define the fictional world in which those mechanics are used.
+
+## Setting
+
+A versioned package boundary that defines reusable fictional reality: history, geography, cultures, institutions, ontology, public facts, and hidden canonical truths.
+
+## Setting adapter
+
+A versioned, pair-specific bridge that maps concepts from exactly one setting to mechanics in exactly one ruleset. It is not a second rules engine.
+
+## Campaign
+
+Authored starting content for a particular playable instance. Campaign content initializes mutable World State and is not itself mutated during play.
+
+## Presentation configuration
+
+Non-authoritative narration, terminology, formatting, and UI guidance. It may change how an event is described but never what happened.
+
+## Game definition
+
+The explicit composition of one ruleset, setting, compatible setting adapter, campaign, and presentation configuration. Saves record the stable IDs and versions of this composition.
+
+## Campaign plan
+
+Hidden, persisted, non-authoritative GM state that tracks revisable campaign direction. It can guide attention, pacing, and context selection, but it cannot establish events, mutate World State, or force player/NPC actions.
+
+## Planning horizon
+
+One of three linked scopes within a campaign plan:
+
+- **high-level** — long-running conflicts, themes, faction agendas, mysteries, arcs, and possible end states
+- **medium-level** — the current adventure/arc, developing situations, revelations, faction moves, and consequences likely to matter over coming days/sessions/locations
+- **low-level** — near-term tensions, accessible clues/opportunities, callbacks, complications, and likely-relevant NPC actions for the next few scenes
+
+## Narrative thread
+
+A developing conflict, mystery, goal, relationship, pressure, opportunity, or consequence that may receive future attention. A thread is not a promise that any event will occur.
+
+## Replanning
+
+Revising the living campaign plan after meaningful developments. Replanning begins at the lowest affected horizon and expands upward only when the current campaign direction has genuinely changed.
+
+## Planning trigger
+
+A lightweight signal that recorded developments may require targeted replanning, such as a major player decision, changed NPC allegiance, faction success/failure, revelation, large time jump, exhausted plan, or contradiction between plan assumptions and current state.
