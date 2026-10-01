@@ -28,7 +28,7 @@ The first playable version should prove that a player can:
 
 The MVP is text-first. Graphics are deliberately deferred until the engine works.
 
-## Planned stack
+## Stack
 
 - Tauri 2
 - React + Vite
@@ -52,10 +52,13 @@ See:
 
 ## Development
 
-The initial workspace intentionally contains only the headless foundation needed by issue #27:
+The workspace keeps the native shell and game logic separated:
 
-- `packages/engine` — game-agnostic TypeScript contracts and runtime boundaries
-- `packages/reference-game` — explicit ruleset, setting, adapter, campaign, and presentation modules for a tiny fixture
+- `packages/engine` — DOM-free, game-agnostic TypeScript contracts, runtime orchestration, persistence ports, and an in-memory adapter
+- `packages/reference-game` — headless ruleset, setting, adapter, campaign, and presentation modules for a tiny fixture
+- `apps/desktop` — React/Vite presentation, the SQLite adapter, and a thin Tauri 2 host that registers migrations
+
+Canonical changes follow `validate -> apply -> persist atomically -> expose`. Worlds are persistent campaign lineages. Named save slots point to immutable checkpoints, so saving again moves the slot without rewriting history.
 
 Install dependencies with `npm install`, then run the complete verification suite with:
 

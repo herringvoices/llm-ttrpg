@@ -70,13 +70,18 @@ export function validateSaveMetadataForGame(
   game: LoadedGameDefinition,
 ): SaveMetadata {
   const metadata = saveMetadataSchema.parse(input);
-  const mismatch = describeCompositionMismatch(
-    metadata.game,
-    game.composition,
-  );
-  if (mismatch) {
-    throw new SaveCompatibilityError(`Incompatible save composition: ${mismatch}`);
-  }
+  validateGameCompositionForGame(metadata.game, game);
   return metadata;
 }
 
+export function validateGameCompositionForGame(
+  input: unknown,
+  game: LoadedGameDefinition,
+): GameComposition {
+  const composition = gameCompositionSchema.parse(input);
+  const mismatch = describeCompositionMismatch(composition, game.composition);
+  if (mismatch) {
+    throw new SaveCompatibilityError(`Incompatible save composition: ${mismatch}`);
+  }
+  return composition;
+}

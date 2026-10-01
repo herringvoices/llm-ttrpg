@@ -74,6 +74,18 @@ Non-authoritative narration, terminology, formatting, and UI guidance. It may ch
 
 The explicit composition of one ruleset, setting, compatible setting adapter, campaign, and presentation configuration. Saves record the stable IDs and versions of this composition.
 
+## World
+
+A persistent campaign/world lineage with an opaque stable identity, current canonical state, and zero or more saves. A display name is not canonical identity.
+
+## Checkpoint
+
+An immutable snapshot of a world's canonical state and exact game composition at one committed revision. A checkpoint may identify a parent checkpoint, allowing later divergence without rewriting history.
+
+## Save slot
+
+A friendly named pointer to a checkpoint. Saving to an existing slot creates a new immutable checkpoint and moves the pointer; it never mutates the old checkpoint.
+
 ## Campaign plan
 
 Hidden, persisted, non-authoritative GM state that tracks revisable campaign direction. It can guide attention, pacing, and context selection, but it cannot establish events, mutate World State, or force player/NPC actions.

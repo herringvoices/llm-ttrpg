@@ -26,7 +26,7 @@ This file records the intended initial GitHub Project placement for the seeded i
 | #15 | Local LLM Runtime Adapter | LLM Runtime, Core Engine |
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
 | #17 | First Region / Town Design | World / Content, Player UX |
-| #18 | Hunter/LitRPG Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
+| #18 | Reference Game Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
 | #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
 | #21 | Core Game Rules & Resolution Model | Actions & Rules, World / Content |
 | #22 | Character Progression & Abilities | Actions & Rules, World / Content |

@@ -23,10 +23,10 @@ describe("game package contracts", () => {
 
   it("loads one explicit, versioned game composition", () => {
     expect(game.composition).toEqual({
-      ruleset: { id: "hunter-rules", version: "0.1.0" },
+      ruleset: { id: "reference-rules", version: "0.1.0" },
       setting: { id: "awakening-earth", version: "0.1.0" },
       adapter: {
-        id: "awakening-earth-hunter-adapter",
+        id: "awakening-earth-reference-rules-adapter",
         version: "0.1.0",
       },
       campaign: { id: "nashville-contract-fixture", version: "0.1.0" },
@@ -145,7 +145,7 @@ describe("game package contracts", () => {
       ...referenceGameDefinition,
       adapter: {
         ...referenceGameDefinition.adapter,
-        ruleset: { id: "hunter-rules", version: "9.9.9" },
+        ruleset: { id: "reference-rules", version: "9.9.9" },
       },
     };
 

@@ -1,0 +1,117 @@
+import type {
+  Belief,
+  CanonicalEvent,
+  CanonicalFact,
+  DocumentSection,
+  Entity,
+  LongFormDocument,
+} from "./content.js";
+import type { GameComposition } from "./contracts.js";
+import type { WorldState } from "./world.js";
+
+export type WorldId = string;
+export type CheckpointId = string;
+export type SaveSlotId = string;
+
+export interface WorldMetadata {
+  readonly id: WorldId;
+  readonly name: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly game: GameComposition;
+}
+
+export interface PersistedWorld {
+  readonly metadata: WorldMetadata;
+  readonly revision: number;
+  readonly state: WorldState;
+}
+
+export interface CheckpointMetadata {
+  readonly id: CheckpointId;
+  readonly worldId: WorldId;
+  readonly parentCheckpointId?: CheckpointId;
+  readonly createdAt: string;
+  readonly revision: number;
+  readonly game: GameComposition;
+}
+
+export interface PersistedCheckpoint {
+  readonly metadata: CheckpointMetadata;
+  readonly state: WorldState;
+}
+
+export interface SaveSlot {
+  readonly id: SaveSlotId;
+  readonly worldId: WorldId;
+  readonly name: string;
+  readonly checkpointId: CheckpointId;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CreateWorldInput {
+  readonly metadata: WorldMetadata;
+  readonly state: WorldState;
+}
+
+export interface CommitWorldInput {
+  readonly worldId: WorldId;
+  readonly expectedRevision: number;
+  readonly updatedAt: string;
+  readonly state: WorldState;
+}
+
+export interface SaveCheckpointInput {
+  readonly checkpoint: CheckpointMetadata;
+  readonly state: WorldState;
+  readonly slot: {
+    readonly id: SaveSlotId;
+    readonly name: string;
+    readonly createdAt: string;
+    readonly updatedAt: string;
+  };
+}
+
+export interface WorldStore {
+  create(input: CreateWorldInput): Promise<PersistedWorld>;
+  list(): Promise<readonly WorldMetadata[]>;
+  load(worldId: WorldId): Promise<PersistedWorld | undefined>;
+  commit(input: CommitWorldInput): Promise<PersistedWorld>;
+}
+
+export interface SaveStore {
+  saveCheckpoint(input: SaveCheckpointInput): Promise<SaveSlot>;
+  loadCheckpoint(
+    checkpointId: CheckpointId,
+  ): Promise<PersistedCheckpoint | undefined>;
+  listCheckpoints(worldId: WorldId): Promise<readonly CheckpointMetadata[]>;
+  listSlots(worldId: WorldId): Promise<readonly SaveSlot[]>;
+  findSlot(worldId: WorldId, name: string): Promise<SaveSlot | undefined>;
+}
+
+export interface WorldContentQueries {
+  entities(worldId: WorldId): Promise<readonly Entity[]>;
+  facts(worldId: WorldId): Promise<readonly CanonicalFact[]>;
+  events(worldId: WorldId): Promise<readonly CanonicalEvent[]>;
+  beliefs(worldId: WorldId): Promise<readonly Belief[]>;
+  documents(worldId: WorldId): Promise<readonly LongFormDocument[]>;
+  documentSections(
+    worldId: WorldId,
+    documentId: string,
+  ): Promise<readonly DocumentSection[]>;
+}
+
+export interface PersistencePorts {
+  readonly worlds: WorldStore;
+  readonly saves: SaveStore;
+  readonly content: WorldContentQueries;
+}
+
+export class PersistenceConflictError extends Error {
+  override readonly name = "PersistenceConflictError";
+}
+
+export class PersistenceNotFoundError extends Error {
+  override readonly name = "PersistenceNotFoundError";
+}

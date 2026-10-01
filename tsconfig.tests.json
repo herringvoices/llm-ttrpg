@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2022"],
+    "types": ["node", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@llm-ttrpg/engine": ["packages/engine/src/index.ts"],
+      "@llm-ttrpg/reference-game": ["packages/reference-game/src/index.ts"],
+      "@llm-ttrpg/desktop/*": ["apps/desktop/src/*"]
+    }
+  },
+  "include": ["packages/**/*.test.ts", "tests/**/*.ts", "vitest.config.ts"]
+}

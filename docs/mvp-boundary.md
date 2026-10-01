@@ -21,7 +21,7 @@ The first milestone succeeds when a player can enter a small world, act freely, 
 - NPC state, knowledge, goals, relationships, and conversation
 - Lazy off-screen simulation / catch-up
 - Local LLM integration
-- Save/load
+- Save/load through immutable checkpoints and named save-slot pointers
 - Simulation and diagnostic test harness
 - Minimal persistent high/medium/low campaign-plan seam
 - One targeted replanning scenario after a meaningful unexpected player choice

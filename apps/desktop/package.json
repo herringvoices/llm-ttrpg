@@ -1,0 +1,28 @@
+{
+  "name": "@llm-ttrpg/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@llm-ttrpg/engine": "*",
+    "@llm-ttrpg/reference-game": "*",
+    "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/plugin-sql": "^2.5.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^5.7.2",
+    "vite": "^8.3.2"
+  }
+}

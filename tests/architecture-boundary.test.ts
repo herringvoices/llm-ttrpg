@@ -8,18 +8,28 @@ function findTypeScriptFiles(directory: string): string[] {
     if (entry.isDirectory()) {
       return findTypeScriptFiles(path);
     }
-    return extname(entry.name) === ".ts" ? [path] : [];
+    return [".ts", ".tsx"].includes(extname(entry.name)) ? [path] : [];
   });
 }
 
 describe("engine package boundary", () => {
-  it("does not import the reference game", () => {
+  it("does not import reference-game, desktop, React, Tauri, or SQLite", () => {
     const engineFiles = findTypeScriptFiles("packages/engine/src");
     const violations = engineFiles.filter((path) => {
       const source = readFileSync(path, "utf8");
-      return /(?:from|import\s*\()["'][^"']*reference-game/.test(source);
+      return /(?:from|import\s*\()["'][^"']*(?:reference-game|apps\/desktop|react|@tauri-apps|sqlite)/i.test(source);
     });
 
+    expect(violations).toEqual([]);
+  });
+
+  it("keeps SQL out of React components", () => {
+    const componentFiles = findTypeScriptFiles("apps/desktop/src").filter(
+      (path) => path.endsWith(".tsx"),
+    );
+    const violations = componentFiles.filter((path) =>
+      /(?:SELECT|INSERT|UPDATE|DELETE)\s/i.test(readFileSync(path, "utf8")),
+    );
     expect(violations).toEqual([]);
   });
 });

@@ -37,7 +37,28 @@ export const contractFixtureCampaign: Campaign = {
       },
     ],
     events: [],
-    documents: [],
+    documents: [
+      {
+        id: "campaign.document.store-notice",
+        metadata: {
+          title: "Brownbag Closing Notice",
+          kind: "notice",
+          authors: ["Brownbag Groceries"],
+          tags: ["fixture"],
+          relatedEntityIds: ["campaign.location.brownbag-groceries"],
+          visibility: "public",
+        },
+        summary: "A short public notice used to verify document persistence.",
+        sections: [
+          {
+            id: "campaign.document-section.store-hours",
+            title: "Store hours",
+            summary: "The store closes early today.",
+            content: "Brownbag Groceries will close at 6 PM today.",
+          },
+        ],
+      },
+    ],
     beliefs: [
       {
         id: "campaign.belief.amelia-gate-origin",
@@ -50,4 +71,3 @@ export const contractFixtureCampaign: Campaign = {
     ],
   },
 };
-

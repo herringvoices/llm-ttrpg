@@ -26,6 +26,15 @@ These are project-level constraints. Implementation should work within them unle
 - These are application-level tool trees. They are **not literal MCP servers**, and there is no plan to convert them into MCP servers.
 - Rules operations use the same hierarchy. They expose schemas and deterministic implementations, then return outcomes and proposed mutations/events instead of directly mutating persistence.
 
+## Persistence and application boundaries
+
+- React is presentation and does not own canonical World State, execute rules, or issue SQL.
+- The headless engine owns domain-oriented persistence ports and the logical unit of work. Desktop code supplies the SQLite adapter.
+- A canonical change is exposed only after validation, deterministic application, and atomic persistence succeed.
+- A world is a stable campaign lineage. A world can have many immutable checkpoints.
+- Friendly save slots are mutable pointers to checkpoints. Saving to an existing slot creates a new checkpoint and moves only the pointer.
+- The Rust/Tauri layer remains a thin native host for startup, plugin setup, and migrations; it is not a game backend.
+
 ## Context and knowledge
 
 - The LLM should receive a small always-present rules/context layer plus selectively retrieved information.

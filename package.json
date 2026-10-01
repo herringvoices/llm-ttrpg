@@ -3,11 +3,12 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.tests.json --pretty false",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test && npm run build"
   },
@@ -16,6 +17,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/sql.js": "^1.4.9",
+    "sql.js": "^1.13.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vite": "^8.3.2",

@@ -43,7 +43,15 @@ Rulesets register operations under `domain -> subsystem -> operation`. Every ope
 
 `initializeCampaignWorld` deep-clones campaign content into mutable World State. The campaign definition remains immutable source content.
 
-`createSaveMetadata` records only the active component IDs and versions. `validateSaveMetadataForGame` rejects a save if any active component ID or version differs.
+`createSaveMetadata` preserves issue #27's small compatibility envelope, recording the active component IDs and versions. `validateSaveMetadataForGame` rejects it if any component differs. The persistence runtime validates composition directly and does not treat the legacy `saveId` field as a world ID or as proof that a world can have only one save.
+
+Issue #5 adds persistence around those contracts without changing the five-part game composition. A world is a persistent lineage with its own opaque identity and current revision. Each immutable checkpoint records its world, optional parent checkpoint, exact game composition, revision, timestamp, and relational snapshot. A named save slot has a separate stable identity and points to one checkpoint; saving again creates a successor checkpoint and moves the slot.
+
+The engine defines three cohesive persistence capabilities: world lifecycle/atomic commits, checkpoint and save-slot operations, and generic content queries. `createGameRuntime({ persistence, clock, idGenerator, game })` owns the `validate -> apply -> persist -> expose` boundary. The desktop provides the SQLite implementation; headless tests use the in-memory implementation.
+
+The SQLite model is deliberately coarse and generic: worlds, checkpoints, save slots, entities, facts, events, beliefs, documents, and document sections. Flexible values remain JSON. No ruleset-specific mechanic tables are part of this contract.
+
+The official Tauri SQL JavaScript API does not expose a connection-bound transaction callback. The adapter therefore submits each logical write as one insert into a private command table; a migration-owned SQLite trigger expands that command into the relational tables within the same SQLite statement. Revision/composition guards abort the statement before any partial state is exposed. This keeps transaction semantics in SQLite without creating a custom Rust repository layer.
 
 ## Campaign planning ownership
 
@@ -59,4 +67,4 @@ Exact planner schemas and persistence are intentionally deferred to [issue #28](
 
 ## Intentionally deferred
 
-There is no dynamic loader, plugin marketplace, mod SDK, SQLite implementation, LLM integration, campaign-planner runtime, real combat/progression system, desktop UI, or full Awakening Earth content in this slice.
+There is no dynamic loader, plugin marketplace, mod SDK, LLM integration, campaign-planner runtime, real combat/progression system, sophisticated desktop UI, or full Awakening Earth content in this slice.
