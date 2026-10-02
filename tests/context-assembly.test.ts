@@ -486,13 +486,33 @@ describe("context assembly and perspective boundaries", () => {
       derivation: "projected" as const,
       relevance: 90,
     };
+    const canonicalSecret: ContextItem = {
+      localId: "retrieved.fact.001",
+      kind: "canonical-fact",
+      salience: "retrieved",
+      content: { concealed: true },
+      provenance: {
+        sourceKind: "fact",
+        sourceIds: ["campaign.fact.hidden-door"],
+        worldRevision: 2,
+      },
+      access: {
+        audience: ["actor", "orchestrator"],
+        perspective: { kind: "canonical" },
+        actorAware: false,
+        identityRecognized: false,
+        privileged: true,
+      },
+      derivation: "raw",
+      relevance: 100,
+    };
     const actor = assembleContext({
       game,
       world,
       worldRevision: 2,
       request: request("actor", bobId),
       sceneSource: referenceSceneSource,
-      retrieved: [planItem],
+      retrieved: [planItem, canonicalSecret],
     });
     expect(actor.retrieved).toEqual([]);
 
@@ -502,9 +522,9 @@ describe("context assembly and perspective boundaries", () => {
       worldRevision: 2,
       request: request("orchestrator", bobId),
       sceneSource: referenceSceneSource,
-      retrieved: [planItem, staleItem],
+      retrieved: [planItem, staleItem, canonicalSecret],
     });
-    expect(orchestrator.retrieved).toEqual([planItem]);
+    expect(orchestrator.retrieved).toEqual([canonicalSecret, planItem]);
     expect(renderContextForModel(orchestrator)).toContain('"sourceKind":"plan"');
     expect(orchestrator.diagnostics.decisions).toContainEqual(
       expect.objectContaining({

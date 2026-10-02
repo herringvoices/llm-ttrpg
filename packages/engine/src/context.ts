@@ -425,8 +425,9 @@ export function assembleContext(input: AssembleContextInput): ContextPackage {
     )
     .filter((item) => {
       const units = estimateContextUnits(item);
-      const samePerspective = item.access.perspective.kind === "canonical" ||
-        JSON.stringify(item.access.perspective) === JSON.stringify(request.perspective);
+      const samePerspective = item.access.perspective.kind === "canonical"
+        ? request.role !== "actor"
+        : JSON.stringify(item.access.perspective) === JSON.stringify(request.perspective);
       const stale = item.provenance.worldRevision !== undefined &&
         item.provenance.worldRevision !== input.worldRevision;
       const accessible = item.access.audience.includes(request.role) &&
