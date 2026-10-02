@@ -133,4 +133,10 @@ Exact planner schemas and persistence are intentionally deferred to [issue #28](
 
 ## Intentionally deferred
 
-There is no dynamic loader, plugin marketplace, mod SDK, player-action orchestrator, LLM integration, campaign-planner runtime, sophisticated desktop UI, or full Awakening Earth content in this slice. Context assembly deliberately uses deterministic size units rather than a provider tokenizer and deterministic structured retrieval rather than embeddings/vector search.
+There is no dynamic loader, plugin marketplace, mod SDK, player-action orchestrator, model-driven gameplay orchestration, campaign-planner runtime, sophisticated desktop UI, or full Awakening Earth content in this slice. Context assembly deliberately uses deterministic size units rather than a provider tokenizer and deterministic structured retrieval rather than embeddings/vector search.
+
+## Local model transport
+
+The provider-neutral [Local Model Runtime](model-runtime.md) is game-agnostic infrastructure and is not a sixth `GameDefinition` component. It accepts semantic prompt ingredients plus text or Zod-validated structured output contracts. The desktop Ollama adapter owns provider messages/HTTP and receives its endpoint/model from application configuration. Switching game composition and switching inference providers remain independent decisions.
+
+Model output cannot mutate package content or World State. A later orchestration layer must still resolve a validated structured selection through the authoritative catalog/runtime paths. Provider-native tool calls, prompt token counts, streaming chunks, and runtime lifecycle observations have no canonical authority.

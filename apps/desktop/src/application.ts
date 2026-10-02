@@ -2,6 +2,7 @@ import {
   createGameRuntime,
   loadGameDefinition,
   type GameSession,
+  type ModelRuntime,
   type WorldMetadata,
 } from "@llm-ttrpg/engine";
 import {
@@ -13,9 +14,14 @@ import { createSqlitePersistence } from "./persistence/sqlite-persistence.js";
 import type { SqlClient } from "./persistence/sql-client.js";
 
 export interface DesktopApplication {
+  readonly modelRuntime?: ModelRuntime;
   createWorld(name: string): Promise<GameSession>;
   listWorlds(): Promise<readonly WorldMetadata[]>;
   openWorld(worldId: string): Promise<GameSession>;
+}
+
+export interface DesktopApplicationOptions {
+  readonly modelRuntime?: ModelRuntime;
 }
 
 function createIdGenerator() {
@@ -26,7 +32,10 @@ function createIdGenerator() {
   };
 }
 
-export function createDesktopApplication(database: SqlClient): DesktopApplication {
+export function createDesktopApplication(
+  database: SqlClient,
+  options: DesktopApplicationOptions = {},
+): DesktopApplication {
   const runtime = createGameRuntime({
     persistence: createSqlitePersistence(database),
     wallClock: { now: () => new Date().toISOString() },
@@ -41,9 +50,14 @@ export function createDesktopApplication(database: SqlClient): DesktopApplicatio
     game: loadGameDefinition(referenceGameDefinition),
     context: { sceneSource: referenceSceneSource },
   });
-  return runtime;
+  return {
+    ...runtime,
+    ...(options.modelRuntime ? { modelRuntime: options.modelRuntime } : {}),
+  };
 }
 
-export async function startDesktopApplication(): Promise<DesktopApplication> {
-  return createDesktopApplication(await openApplicationDatabase());
+export async function startDesktopApplication(
+  options: DesktopApplicationOptions = {},
+): Promise<DesktopApplication> {
+  return createDesktopApplication(await openApplicationDatabase(), options);
 }

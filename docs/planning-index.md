@@ -17,7 +17,6 @@ This file records the current GitHub Project placement for the seeded issues.
 | #12 | Lazy World Simulation & Catch-Up | Time & World Simulation, Persistence |
 | #13 | NPC State, Knowledge, Goals & Relationships | NPCs & Social, Time & World Simulation |
 | #14 | NPC Interaction & Conversation | NPCs & Social, Context & Tools |
-| #15 | Local LLM Runtime Adapter | LLM Runtime, Core Engine |
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
 | #17 | First Region / Town Design | World / Content, Player UX |
 | #18 | Reference Game Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
@@ -43,6 +42,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Context & Tools, Core Engine
 - #10 — Context Assembly & Knowledge Retrieval
   - Labels: Context & Tools
+- #15 — Local LLM Runtime Adapter
+  - Labels: LLM Runtime, Core Engine
 - #21 — Core Game Rules & Resolution Model
   - Labels: Actions & Rules, World / Content
 - #27 — Game Package Contracts & Content Model

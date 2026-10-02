@@ -1,0 +1,75 @@
+# Local Model Runtime
+
+Issue #15 defines the transport boundary between model-safe semantic input and a local inference provider. The model runtime is infrastructure. It does not own gameplay authorization, context retrieval, tool selection semantics, rules, or authoritative mutation.
+
+## Provider-neutral contract
+
+Callers provide a `ModelPrompt` containing:
+
+- behavioral `instructions`
+- optional opaque, already-authorized `context`
+- optional semantic conversation turns using `user` / `model` speakers
+- the current `input`
+
+The core contract is deliberately not an OpenAI-style message array and contains no Ollama request fields. The provider adapter owns conversion to its native system/user/assistant representation. Trace metadata such as an operation or invocation ID is diagnostic only and never changes prompt behavior.
+
+There are exactly two semantic output modes:
+
+- `text` for narration or other free prose
+- `structured` with a stable schema ID and authoritative Zod schema
+
+For structured calls, the adapter derives JSON Schema for provider-side constrained generation, parses the complete returned JSON, validates it again with Zod, and returns the validated value only on success. Provider constraint support improves reliability but is not the authority boundary. Invalid or malformed output returns `invalid-output`; the adapter sends no hidden repair request.
+
+Operation selection is ordinary structured data such as `{ toolId, arguments }`. Native provider tool-calling is not the engine abstraction. #9 remains the authoritative catalog/binding layer and #11 will decide when to resolve or execute a selection.
+
+## Results, failures, and capabilities
+
+Successful results distinguish text from schema-validated structured values. Provider-neutral metadata may report runtime/model identifiers, elapsed duration, trace correlation, and input/output token counts when the provider actually supplies them.
+
+Failures are normalized as:
+
+- `cancelled`
+- `timeout`
+- `runtime-unavailable`
+- `invalid-output`
+- `capability`
+- `context-too-large`
+
+Raw Ollama response objects never cross the adapter. A bounded diagnostic string may be retained for developer logging. Runtime lifecycle observations use an optional transport observer and are never appended to canonical game event history.
+
+Capabilities report structured-output support, text-streaming support, and a context-window size only when configured/known. A structured request fails with `capability` rather than silently degrading to prose when its runtime cannot honor the contract.
+
+## Cancellation and streaming
+
+The fundamental `generate` operation is non-streaming and supports a structural `AbortSignal` plus an optional provider-neutral timeout. The structural signal keeps `packages/engine` free of DOM dependencies. Cancellation and timeouts race the transport, so even a misbehaving custom transport cannot later return an actionable result.
+
+Streaming is optional and text-only. It emits text deltas followed by provider-neutral completion metadata or one normalized failure. Partial structured JSON is never exposed as a semantic result.
+
+## Ollama implementation
+
+`apps/desktop/src/model/ollama-model-runtime.ts` contains all Ollama message, HTTP, response, and NDJSON-streaming types. `OllamaModelRuntime` accepts a base URL and model through application configuration. It maps semantic prompts internally, requests JSON-Schema-constrained structured generation, revalidates with Zod, supports native text streaming, and normalizes transport failures.
+
+During development, Ollama is an externally managed local service. This issue does not install, launch, monitor, or stop it. A future Tauri-managed bundled llama.cpp-compatible implementation can satisfy the same `ModelRuntime` interface and own its separate process lifecycle without changing engine or gameplay contracts.
+
+The desktop application accepts an optional provider-neutral `ModelRuntime` dependency. It does not import Ollama types, and the headless game runtime remains independent of model transport.
+
+## Context boundary
+
+#10's deterministic serialized-character budget answers which authorized information is important enough to include. #15's provider token usage and optional context-window metadata answer whether a configured model can physically process that invocation. They remain separate. Provider token counts never feed back into context selection in this slice.
+
+`renderContextForModel` can provide opaque safe context text. #15 does not parse scene, role, perspective, pressure, plan, rules, or world semantics out of that text.
+
+## Verification
+
+Automated tests mock the Ollama transport; they require no running service. They cover prompt mapping, JSON Schema generation, Zod validation, malformed/invalid output, no repair retry, cancellation, timeout, unavailable/context-overflow normalization, capabilities, observability, and text streaming.
+
+For an optional live smoke test with Ollama already running:
+
+```powershell
+$env:OLLAMA_SMOKE = "1"
+$env:OLLAMA_MODEL = "qwen3:4b" # choose an installed model
+$env:OLLAMA_BASE_URL = "http://localhost:11434"
+npm.cmd test -- --run tests/ollama-smoke.manual.test.ts
+```
+
+The smoke test accepts one Zod-validated intent-style result, then uses an intentionally rejecting Zod refinement to prove another provider result becomes `invalid-output` and cannot reach the guarded operation boundary. It does not execute a real operation or implement the player-action pipeline.

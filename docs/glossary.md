@@ -48,6 +48,18 @@ Disposable interaction-local continuity such as a conversation partner, inspecte
 
 A deterministic size ceiling used to prioritize required current constraints, prominent/task-relevant material, ambient existence, and retrieved detail. A budget is not an authority rule and never lets omitted material become false.
 
+## Model prompt
+
+Provider-neutral semantic input containing behavioral instructions, optional already-authorized context, semantic user/model conversation turns, and current input. Provider message roles and wire payloads are adapter concerns.
+
+## Model runtime
+
+The transport boundary that formats semantic prompts for a configured local provider and returns either text or a Zod-validated structured value with normalized diagnostics/failures. It is not a gameplay subsystem or mutation authority.
+
+## Structured model output
+
+A complete JSON value requested with an authoritative Zod schema. Provider-side JSON Schema constraints improve reliability; Zod validation after parsing determines whether the value is usable. Invalid output is never partially exposed or automatically repaired by a hidden retry.
+
 ## Executable intent
 
 A validated, bounded form of interpreted intent. It preserves the actor, goal, and relevant targets while recording the requested horizon, accepted pressure level, authorized horizon, and whether the request was narrowed.

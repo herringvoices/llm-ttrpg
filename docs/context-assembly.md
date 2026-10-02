@@ -52,3 +52,5 @@ Every included or omitted candidate has an inspectable decision. Provenance reco
 ## Authority and issue boundaries
 
 Assembly, retrieval, budget trimming, and rendering do not mutate World State, append events, advance time, consume RNG, change pressure, or alter beliefs. Issue #11 will choose and execute capabilities; #13 will define durable NPC memory/goals/relationships; #15 owns model transport and prompt formatting; #28 owns campaign-plan schemas, persistence, and replanning. #10 only provides the protected role/provenance seam through which later plan material may be supplied.
+
+Provider token accounting remains downstream. The [Local Model Runtime](model-runtime.md) may report actual provider usage or reject a request that exceeds a known model context window, but it does not reinterpret or replace this layer's deterministic selection budget.

@@ -61,6 +61,18 @@ These are project-level constraints. Implementation should work within them unle
 - Context assembly, retrieval, compression, and rendering are read-only. They cannot mutate state, advance time, append events, consume RNG, change pressure, or alter beliefs.
 - Plan material is protected from actor/NPC roles and remains visibly non-authoritative even when supplied to orchestration/planning context.
 
+## Local model runtime
+
+- Model callers provide semantic instructions, opaque already-authorized context, semantic conversation turns, and current input. Provider message arrays and Ollama types remain adapter-private.
+- Runtime output is either free text or a complete structured value validated by its authoritative Zod schema. JSON Schema may constrain provider generation but never replaces Zod validation.
+- Provider-native tool calling is not the engine operation-selection contract. Models select capabilities through ordinary structured values that later orchestration resolves against the #9 catalog.
+- Invalid structured output returns a normalized failure. The runtime performs no hidden repair request and exposes no partial structured JSON.
+- Non-streaming generation is fundamental. Streaming is optional and text-only; cancellation and timeouts cannot produce a later actionable result.
+- Runtime capabilities and diagnostics are provider-neutral. Unknown context-window sizes are not fabricated, and model lifecycle diagnostics never become canonical world events.
+- #10's deterministic context budget remains provider-independent. Provider token counts/context overflow belong to transport diagnostics and do not change context selection.
+- Ollama is an externally managed development service. A future bundled llama.cpp-compatible adapter/process lifecycle must fit the same semantic interface without changing gameplay contracts.
+- The model runtime transports prompts/results only. It owns no authorization, state mutation, time, rules, action pressure, NPC behavior, campaign planning, or world simulation.
+
 ## Campaign planning
 
 - The LLM may maintain a persistent, revisable GM plan at linked high, medium, and low horizons.

@@ -57,4 +57,31 @@ describe("engine package boundary", () => {
     );
     expect(source).not.toMatch(/resolve-effort|resolve-contract-fixture|fixture/i);
   });
+
+  it("keeps provider types out of engine and model-runtime callers", () => {
+    const engineSource = findTypeScriptFiles("packages/engine/src")
+      .map((path) => readFileSync(path, "utf8"))
+      .join("\n");
+    const applicationSource = readFileSync(
+      "apps/desktop/src/application.ts",
+      "utf8",
+    );
+    expect(engineSource).not.toMatch(/\bollama\b|llama\.cpp/i);
+    expect(applicationSource).not.toMatch(/\bollama\b|OllamaChat/i);
+  });
+
+  it("keeps gameplay and context authorization semantics out of the Ollama adapter", () => {
+    const source = readFileSync(
+      "apps/desktop/src/model/ollama-model-runtime.ts",
+      "utf8",
+    );
+    expect(source).not.toMatch(
+      /WorldState|ActionPressure|KnowledgePerspective|SceneManifest|CampaignPlan|Awakening Earth|reference-game/i,
+    );
+    const contextSource = readFileSync(
+      "packages/engine/src/context-contracts.ts",
+      "utf8",
+    );
+    expect(contextSource).not.toMatch(/inputTokens|outputTokens|contextWindowTokens/);
+  });
 });
