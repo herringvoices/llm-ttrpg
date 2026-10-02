@@ -51,10 +51,15 @@ These are project-level constraints. Implementation should work within them unle
 
 ## Context and knowledge
 
-- The LLM should receive a small always-present rules/context layer plus selectively retrieved information.
-- It should not receive the entire world database.
-- NPC ignorance and player ignorance should be enforced by available context, not merely requested in a prompt.
-- Relevant memories, facts, world events, and operations should be retrieved based on the current situation and perspective.
+- Model role (`actor`, `orchestrator`, `planner`, or `debug`) and knowledge perspective are separate access dimensions. Actor calls cannot use canonical perspective as an omniscience shortcut.
+- Every context package separates a tiny authority/composition bootstrap, a freshly derived automatic situation frame, and progressively retrieved material. The full world, history, ruleset, and tool catalog are never dumped automatically.
+- The scene manifest and context-local working references are disposable projections, not persisted canonical state. Rebuild them from current authoritative sources after meaningful changes.
+- NPC ignorance and player ignorance are enforced by access filtering and perspective-safe identity projection, not merely requested in prose. Model-facing local references must not reveal canonical identity.
+- Orchestration may receive tightly scoped latent scene truth with explicit actor-awareness, identity-recognition, discovery, access, and provenance metadata. Privileged role is not permission to dump the canonical database.
+- Access is checked before relevance. Retrieved facts, beliefs, documents, event history, scene details, tools, and future plan fragments use validated paths and contextual policy; guessed IDs do not bypass authorization.
+- Context budgets and salience ordering are deterministic and inspectable. Required current constraints remain, prominent/current-task material outranks ambient detail, and detail is reduced before existence where practical.
+- Context assembly, retrieval, compression, and rendering are read-only. They cannot mutate state, advance time, append events, consume RNG, change pressure, or alter beliefs.
+- Plan material is protected from actor/NPC roles and remains visibly non-authoritative even when supplied to orchestration/planning context.
 
 ## Campaign planning
 

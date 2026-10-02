@@ -91,6 +91,11 @@ describe("hierarchical tool catalog", () => {
         id: "fixture",
         description: "Test-only engine query capabilities.",
       },
+      {
+        id: "knowledge",
+        description:
+          "Progressive, perspective-filtered access to current world knowledge and history.",
+      },
       { id: "test", description: "Test-only engine contract fixtures." },
     ]);
     expect(JSON.stringify(domains)).not.toContain(ordinaryToolId);
@@ -169,6 +174,7 @@ describe("hierarchical tool catalog", () => {
 
     const denyQuery: ToolAvailabilityPolicy = (tool) => tool.id !== queryToolId;
     expect(catalog.listDomains(denyQuery).map((item) => item.id)).toEqual([
+      "knowledge",
       "test",
     ]);
     expect(() => catalog.resolveBinding(queryToolId, denyQuery))
@@ -203,7 +209,7 @@ describe("tool registration and authoritative bindings", () => {
     };
     expect(loadCatalogGame([compatible]).toolCatalog.listDomains().map(
       (item) => item.id,
-    )).toEqual(["fixture", "test"]);
+    )).toEqual(["fixture", "knowledge", "test"]);
 
     const conflictingDomain: SourcedToolCatalogContribution = {
       ...compatible,
@@ -335,7 +341,7 @@ describe("tool registration and authoritative bindings", () => {
     )).toThrow();
   });
 
-  it("executes a validated read-only engine query without exposing its handler", () => {
+  it("executes a validated read-only engine query without exposing its handler", async () => {
     const game = loadCatalogGame();
     const world = initializeCampaignWorld(game, 0x1234_5678);
     const before = structuredClone(world);
@@ -349,12 +355,12 @@ describe("tool registration and authoritative bindings", () => {
     expect(contract).not.toHaveProperty("binding");
     expect(contract).not.toHaveProperty("kind");
     expect(JSON.stringify(contract)).not.toContain("function");
-    expect(executeEngineQueryTool(binding, world, {
+    await expect(executeEngineQueryTool(binding, world, {
       entityId: "campaign.entity.amelia",
-    })).toEqual({ name: "Amelia" });
-    expect(() => executeEngineQueryTool(binding, world, {
+    })).resolves.toEqual({ name: "Amelia" });
+    await expect(executeEngineQueryTool(binding, world, {
       entityId: 42,
-    })).toThrow();
+    })).rejects.toThrow();
     expect(world).toEqual(before);
   });
 

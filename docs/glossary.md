@@ -10,7 +10,11 @@ Low pressure allows broad intentions spanning long fictional time. High pressure
 
 ## Active scene
 
-The currently relevant people, places, objects, constraints, and events that should be available to the action-resolution loop.
+The interaction-local people, places, objects, conditions, constraints, and commitments relevant to the current moment. It is not only a spatial radius.
+
+## Scene manifest
+
+A compact, freshly derived model-facing projection of the active scene. It distinguishes prominent, ambient, participating, interacting, condition, and privileged latent elements without persisting a competing scene database.
 
 ## Authoritative state
 
@@ -22,7 +26,27 @@ Advancing a sleeping/off-screen system from its last simulated fictional time to
 
 ## Context assembly
 
-Building the LLM's working context from the small always-present rules layer plus selectively retrieved world facts, memories, events, and tools.
+Building a structured, disposable model context from a tiny authority/composition bootstrap, a fresh automatic situation frame, and selectively retrieved facts, beliefs, events, documents, scene details, plan fragments, and tool descriptions.
+
+## Context-local reference
+
+An opaque alias assigned inside one context package that lets a model refer to an entity without revealing its canonical identity. Private diagnostics/bindings retain the authoritative linkage.
+
+## Model role
+
+The job performed by a model invocation: actor reasoning, scene orchestration, protected campaign planning, or developer diagnostics. Role controls capability/access policy but is distinct from whose knowledge constrains the call.
+
+## Knowledge perspective
+
+The actor, group, or canonical diagnostic viewpoint that constrains available facts, beliefs, recognition, and identity. Role and perspective are separate: an orchestrator may know tightly scoped hidden scene truth that its focal actor does not.
+
+## Working context
+
+Disposable interaction-local continuity such as a conversation partner, inspected object, recent referents, or local aliases. It may span nearby calls but is neither canonical World State nor durable NPC memory.
+
+## Context budget
+
+A deterministic size ceiling used to prioritize required current constraints, prominent/task-relevant material, ambient existence, and retrieved detail. A budget is not an authority rule and never lets omitted material become false.
 
 ## Executable intent
 
@@ -148,7 +172,7 @@ The engine-private connection from a registered catalog tool to its real backend
 
 ## Tool availability policy
 
-A replaceable predicate that decides whether a registered tool is currently available. The same decision governs listings, detailed inspection, and binding resolution. Issue #10 will define actual player/NPC/GM perspective and knowledge semantics.
+A replaceable predicate that decides whether a registered tool is currently available. The same decision governs listings, detailed inspection, and binding resolution. Context assembly supplies current model-role, knowledge-perspective, and situation inputs without moving those semantics into the low-level catalog.
 
 ## World event history
 

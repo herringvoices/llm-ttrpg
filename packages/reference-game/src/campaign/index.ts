@@ -18,7 +18,7 @@ export const noticePostedEventType: EventTypeDefinition<
 };
 
 export const contractFixtureCampaign: Campaign = {
-  identity: { id: "nashville-contract-fixture", version: "0.1.0" },
+  identity: { id: "nashville-contract-fixture", version: "0.2.0" },
   description:
     "Tiny campaign fixture used only to prove package and content boundaries.",
   setting: { id: "awakening-earth", version: "0.1.0" },
@@ -34,6 +34,18 @@ export const contractFixtureCampaign: Campaign = {
         data: {
           descriptors: ["experienced-kickboxer", "fire-themed-powers"],
           currentLocation: "campaign.location.brownbag-groceries",
+          context: {
+            locationId: "campaign.location.brownbag-groceries",
+            category: "participant",
+            prominence: "prominent",
+            observable: true,
+            activeParticipant: true,
+            orchestratorVisible: true,
+            knownBy: [
+              { kind: "actor", id: "campaign.entity.amelia" },
+            ],
+            identities: [],
+          },
           mechanics: {
             attributes: {
               strength: 58,
@@ -96,7 +108,20 @@ export const contractFixtureCampaign: Campaign = {
         kind: "location",
         name: "Brownbag Groceries",
         summary: "A neighborhood grocery store used by the fixture campaign.",
-        data: { open: true },
+        data: {
+          open: true,
+          context: {
+            locationId: "campaign.location.brownbag-groceries",
+            category: "feature",
+            prominence: "prominent",
+            observable: true,
+            activeParticipant: false,
+            orchestratorVisible: true,
+            knownBy: [],
+            identities: [],
+            coarseState: { open: true },
+          },
+        },
       },
     ],
     facts: [

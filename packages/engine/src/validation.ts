@@ -23,6 +23,7 @@ import {
   createToolCatalog,
   type SourcedToolCatalogContribution,
 } from "./tool-catalog.js";
+import { createContextToolCatalogContribution } from "./context-tools.js";
 
 const rulesetBoundarySchema = z
   .object({
@@ -333,6 +334,7 @@ export function loadGameDefinition(
     operationRegistry,
     rulesetSource: game.ruleset.identity,
     contributions: [
+      createContextToolCatalogContribution(game),
       ...(options.engineToolCatalogContributions ?? []),
       ...packageToolCatalogContributions,
     ],

@@ -61,11 +61,19 @@ Rules operations are projected from the existing `OperationRegistry`; the catalo
 
 The first concrete selected ruleset now supplies its reusable attributes, open-ended skills, Performance/Resistance action resolution, Effect, stress/status, recovery, and learning-evidence operations through these opaque contracts. See [Reference Rules](reference-rules.md). The engine does not interpret any of those mechanics, while the pair-specific adapter may translate established setting concepts into validated ruleset inputs.
 
-Deterministic read-only engine queries may contribute Zod input/output schemas plus a private query handler. They share the same model-facing catalog while remaining a distinct backend type and receive the same frozen rules-visible world view without private RNG progression. Query input and output are validated by their authoritative Zod schemas.
+Deterministic read-only engine queries may contribute Zod input/output schemas plus a private query handler. They share the same model-facing catalog while remaining a distinct backend type and receive the same frozen rules-visible world view without private RNG progression. Query handlers may be asynchronous and may receive narrowly scoped read-only persistence services, such as bounded event-history access, plus #10 role/perspective authorization and private context-local reference maps. These services and handlers are never model-facing. Query input and output are validated by their authoritative Zod schemas.
 
 Concise domain/subsystem/tool listings contain no schemas or implementation references. Individual inspection generates JSON-compatible input/output documentation from the authoritative Zod schemas. This representation guides the model; runtime Zod validation remains authoritative where JSON Schema cannot perfectly represent a Zod construct.
 
-An availability predicate is applied consistently to listings, inspection, and private binding resolution. Availability is separate from disclosure history: an allowed registered tool can be addressed directly, but knowing an unavailable tool ID cannot bypass policy. Issue #10 owns actual perspective/knowledge-aware policies. Issue #11 will consume bindings for player-action planning/execution, and issue #15 will carry structured model requests without owning catalog authority.
+An availability predicate is applied consistently to listings, inspection, and private binding resolution. Availability is separate from disclosure history: an allowed registered tool can be addressed directly, but knowing an unavailable tool ID cannot bypass policy. Issue #10 now supplies role/perspective/situation-aware policy construction while retaining #9's same authorization point. Issue #11 will consume bindings for player-action planning/execution, and issue #15 will carry structured model requests without owning catalog authority.
+
+## Context assembly and retrieval
+
+The engine's [Context Assembly and Knowledge Retrieval](context-assembly.md) contracts create structured, disposable context packages. The bootstrap identifies the exact five-part game composition; the automatic frame is rebuilt from current World State; and selected retrieved items retain access, salience, derivation, provenance, and freshness metadata.
+
+Scene content is supplied by a trusted game/application `SceneSourceProvider` that projects authoritative state into generic prominent, ambient, participant, condition, interaction, and latent records. This does not add a sixth game-definition component. The reference game's provider interprets its own opaque `data.context` convention, while the engine validates and access-filters the result. Presentation may affect descriptive emphasis but cannot create a scene fact.
+
+The engine contributes progressive world detail, facts/beliefs, bounded event history, and document queries through the same hierarchical catalog. Actor-facing scene and intent projections use opaque context-local references instead of canonical entity IDs. Full diagnostic linkage remains private and is excluded from the model renderer. Working context is interaction-local and non-authoritative; it is not durable NPC memory.
 
 ### Resolution operations
 
@@ -125,4 +133,4 @@ Exact planner schemas and persistence are intentionally deferred to [issue #28](
 
 ## Intentionally deferred
 
-There is no dynamic loader, plugin marketplace, mod SDK, final perspective/context policy, player-action orchestrator, LLM integration, campaign-planner runtime, real combat/progression system, sophisticated desktop UI, or full Awakening Earth content in this slice.
+There is no dynamic loader, plugin marketplace, mod SDK, player-action orchestrator, LLM integration, campaign-planner runtime, sophisticated desktop UI, or full Awakening Earth content in this slice. Context assembly deliberately uses deterministic size units rather than a provider tokenizer and deterministic structured retrieval rather than embeddings/vector search.

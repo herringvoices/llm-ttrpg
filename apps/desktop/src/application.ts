@@ -4,7 +4,10 @@ import {
   type GameSession,
   type WorldMetadata,
 } from "@llm-ttrpg/engine";
-import { referenceGameDefinition } from "@llm-ttrpg/reference-game";
+import {
+  referenceGameDefinition,
+  referenceSceneSource,
+} from "@llm-ttrpg/reference-game";
 import { openApplicationDatabase } from "./database.js";
 import { createSqlitePersistence } from "./persistence/sqlite-persistence.js";
 import type { SqlClient } from "./persistence/sql-client.js";
@@ -36,6 +39,7 @@ export function createDesktopApplication(database: SqlClient): DesktopApplicatio
       },
     },
     game: loadGameDefinition(referenceGameDefinition),
+    context: { sceneSource: referenceSceneSource },
   });
   return runtime;
 }

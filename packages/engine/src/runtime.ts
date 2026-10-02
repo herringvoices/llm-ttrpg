@@ -53,6 +53,16 @@ import {
   type ScheduledTrigger,
   type WorldState,
 } from "./world.js";
+import {
+  assembleContext,
+  type SceneSourceProvider,
+} from "./context.js";
+import type {
+  ContextAssemblyRequest,
+  ContextItem,
+  ContextPackage,
+} from "./context-contracts.js";
+import type { ToolAvailabilityPolicy } from "./tool-catalog.js";
 
 export interface WallClock {
   now(): string;
@@ -70,6 +80,14 @@ export interface GameRuntimeDependencies {
   readonly idGenerator: IdGenerator;
   readonly worldSeedSource: WorldSeedSource;
   readonly game: LoadedGameDefinition;
+  readonly context?: {
+    readonly sceneSource?: SceneSourceProvider;
+  };
+}
+
+export interface AssembleSessionContextOptions {
+  readonly retrieved?: readonly ContextItem[];
+  readonly toolPolicy?: ToolAvailabilityPolicy;
 }
 
 export interface ExecuteOperationOptions {
@@ -92,6 +110,10 @@ export interface GameSession {
     trigger: Omit<ScheduledTrigger, "id">,
   ): Promise<ScheduledTrigger>;
   eventHistory(query?: EventQuery): Promise<readonly CanonicalEvent[]>;
+  assembleContext(
+    request: ContextAssemblyRequest,
+    options?: AssembleSessionContextOptions,
+  ): ContextPackage;
   executeOperation<TResult = unknown>(
     operationId: string,
     input: unknown,
@@ -289,6 +311,20 @@ function openSession(
     },
     eventHistory(query) {
       return dependencies.persistence.history.query(persisted.metadata.id, query);
+    },
+    assembleContext(request, options = {}) {
+      return assembleContext({
+        game: dependencies.game,
+        world: state,
+        worldRevision: revision,
+        eventSequence,
+        request,
+        ...(dependencies.context?.sceneSource
+          ? { sceneSource: dependencies.context.sceneSource }
+          : {}),
+        ...(options.retrieved ? { retrieved: options.retrieved } : {}),
+        ...(options.toolPolicy ? { toolPolicy: options.toolPolicy } : {}),
+      });
     },
     async executeOperation<TResult>(
       operationId: string,

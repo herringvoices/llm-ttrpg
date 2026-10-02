@@ -49,6 +49,7 @@ See:
 - [Board workflow](docs/board-workflow.md)
 - [Glossary](docs/glossary.md)
 - [Game package contracts](docs/game-package-contracts.md)
+- [Context assembly and knowledge retrieval](docs/context-assembly.md)
 
 ## Development
 

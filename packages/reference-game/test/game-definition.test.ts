@@ -29,7 +29,7 @@ describe("game package contracts", () => {
         id: "awakening-earth-reference-adapter",
         version: "0.1.0",
       },
-      campaign: { id: "nashville-contract-fixture", version: "0.1.0" },
+      campaign: { id: "nashville-contract-fixture", version: "0.2.0" },
       presentation: { id: "grounded-dramatic", version: "0.1.0" },
     });
   });

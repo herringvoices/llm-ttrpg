@@ -20,6 +20,8 @@ import {
   type ResolutionRequest,
 } from "./resolution.js";
 import type { WorldState } from "./world.js";
+import type { EventHistoryStore, WorldId } from "./persistence.js";
+import type { ContextQueryAuthorization } from "./context-contracts.js";
 
 export const toolDomainDescriptorSchema = z
   .object({
@@ -57,6 +59,12 @@ export interface ToolContract extends ToolDescriptor {
 
 export interface EngineQueryContext {
   readonly world: DeepReadonly<OperationWorldView>;
+  readonly worldId?: WorldId;
+  readonly history?: Pick<EventHistoryStore, "query">;
+  readonly authorization?: ContextQueryAuthorization;
+  readonly localReferences: Readonly<Record<string, string>>;
+  readonly localDisplays: Readonly<Record<string, string>>;
+  readonly localDetails: Readonly<Record<string, JsonValue>>;
 }
 
 export interface EngineQueryTool<
@@ -72,7 +80,7 @@ export interface EngineQueryTool<
   readonly query: (
     context: EngineQueryContext,
     input: TInput,
-  ) => TOutput;
+  ) => TOutput | Promise<TOutput>;
 }
 
 // Catalog composition is intentionally heterogeneous and recovers concrete
@@ -115,6 +123,15 @@ export interface EngineQueryToolBinding {
   readonly inputSchema: z.ZodType<unknown>;
   readonly outputSchema: z.ZodType<unknown>;
   readonly query: RegisteredEngineQueryTool["query"];
+}
+
+export interface EngineQueryExecutionOptions {
+  readonly worldId?: WorldId;
+  readonly history?: Pick<EventHistoryStore, "query">;
+  readonly authorization?: ContextQueryAuthorization;
+  readonly localReferences?: Readonly<Record<string, string>>;
+  readonly localDisplays?: Readonly<Record<string, string>>;
+  readonly localDetails?: Readonly<Record<string, JsonValue>>;
 }
 
 export type ToolBinding =
@@ -502,19 +519,32 @@ export function createResolutionRequestFromBinding(
   });
 }
 
-export function executeEngineQueryTool<TResult extends JsonValue = JsonValue>(
+export async function executeEngineQueryTool<
+  TResult extends JsonValue = JsonValue,
+>(
   binding: ToolBinding,
   world: WorldState,
   input: unknown,
-): TResult {
+  options: EngineQueryExecutionOptions = {},
+): Promise<TResult> {
   if (binding.kind !== "engine-query") {
     throw new ToolCatalogValidationError(
       "Engine query execution requires an engine-query binding",
     );
   }
   const parsedInput = binding.inputSchema.parse(input);
-  const output = binding.query(
-    { world: immutableOperationWorldView(world) },
+  const output = await binding.query(
+    {
+      world: immutableOperationWorldView(world),
+      ...(options.worldId ? { worldId: options.worldId } : {}),
+      ...(options.history ? { history: options.history } : {}),
+      ...(options.authorization
+        ? { authorization: options.authorization }
+        : {}),
+      localReferences: Object.freeze({ ...(options.localReferences ?? {}) }),
+      localDisplays: Object.freeze({ ...(options.localDisplays ?? {}) }),
+      localDetails: Object.freeze({ ...(options.localDetails ?? {}) }),
+    },
     parsedInput,
   );
   const parsedOutput = binding.outputSchema.parse(output);

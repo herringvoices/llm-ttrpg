@@ -7,6 +7,9 @@ import type {
 } from "./content.js";
 import type { LoadedGameDefinition } from "./contracts.js";
 import type { WorldState } from "./world.js";
+import type { CanonicalEvent, EventQuery } from "./events.js";
+import type { EventHistoryStore, WorldId } from "./persistence.js";
+import type { ModelRole } from "./context-contracts.js";
 
 export type Perspective =
   | { readonly kind: "canonical" }
@@ -168,3 +171,71 @@ export function retrieveDocument(
   }
 }
 
+export interface RetrievedEvent {
+  readonly id: string;
+  readonly type: string;
+  readonly schemaVersion: number;
+  readonly occurredAt: string;
+  readonly sequence: number;
+  readonly summary: string;
+  readonly relatedRefs: readonly string[];
+  readonly scopeIds: readonly string[];
+  readonly causedByEventIds: readonly string[];
+  readonly origin?: CanonicalEvent["origin"];
+  readonly payload: CanonicalEvent["payload"];
+  readonly access: CanonicalEvent["access"];
+  readonly sourceComponent: CanonicalEvent["sourceComponent"];
+}
+
+export interface EventRetrievalRequest {
+  readonly role: ModelRole;
+  readonly perspective: Perspective;
+  readonly query: EventQuery;
+  readonly localReferences?: Readonly<Record<string, string>>;
+}
+
+export async function retrieveEventHistory(
+  history: Pick<EventHistoryStore, "query">,
+  worldId: WorldId,
+  request: EventRetrievalRequest,
+): Promise<readonly RetrievedEvent[]> {
+  const privileged = request.role === "orchestrator" ||
+    request.role === "planner" || request.role === "debug";
+  const requestedAccess = request.query.access ?? (privileged
+    ? ["public", "gm-only"] as const
+    : ["public"] as const);
+  const access = privileged
+    ? requestedAccess
+    : requestedAccess.filter((value) => value === "public");
+  if (access.length === 0) return [];
+  const boundedQuery: EventQuery = {
+    ...request.query,
+    access: [...access],
+    limit: Math.min(request.query.limit ?? 25, 100),
+  };
+  const events = await history.query(worldId, boundedQuery);
+  const refByCanonical = new Map(
+    Object.entries(request.localReferences ?? {}).map(([ref, canonical]) => [
+      canonical,
+      ref,
+    ]),
+  );
+  return events.map((event) => ({
+    id: event.id,
+    type: event.type,
+    schemaVersion: event.schemaVersion,
+    occurredAt: event.occurredAt,
+    sequence: event.sequence,
+    summary: event.summary,
+    relatedRefs: event.relatedEntityIds.flatMap((id) => {
+      const ref = refByCanonical.get(id);
+      return ref ? [ref] : [];
+    }),
+    scopeIds: [...event.scopeIds],
+    causedByEventIds: [...event.causedByEventIds],
+    ...(event.origin ? { origin: { ...event.origin } } : {}),
+    payload: JSON.parse(JSON.stringify(event.payload)) as CanonicalEvent["payload"],
+    access: event.access,
+    sourceComponent: { ...event.sourceComponent },
+  }));
+}
