@@ -19,9 +19,10 @@ import {
   type ToolCatalogContribution,
 } from "@llm-ttrpg/engine";
 import { referenceGameDefinition } from "@llm-ttrpg/reference-game";
+import { contractTestGameDefinition } from "./support/contract-game.js";
 
-const ordinaryToolId = "rules.actions.resolve-effort";
-const resolutionToolId = "rules.resolution.resolve-contract-fixture";
+const ordinaryToolId = "test.actions.resolve-effort";
+const resolutionToolId = "test.resolution.resolve-contract-fixture";
 const queryToolId = "fixture.state.inspect-entity-name";
 
 const fixtureQueryContribution: SourcedToolCatalogContribution = {
@@ -63,7 +64,7 @@ const fixtureQueryContribution: SourcedToolCatalogContribution = {
 function loadCatalogGame(
   extra: readonly SourcedToolCatalogContribution[] = [],
 ): LoadedGameDefinition {
-  return loadGameDefinition(referenceGameDefinition, {
+  return loadGameDefinition(contractTestGameDefinition, {
     engineToolCatalogContributions: [fixtureQueryContribution, ...extra],
   });
 }
@@ -90,18 +91,14 @@ describe("hierarchical tool catalog", () => {
         id: "fixture",
         description: "Test-only engine query capabilities.",
       },
-      {
-        id: "rules",
-        description:
-          "Disposable fixture mechanics used to verify rules-tool discovery.",
-      },
+      { id: "test", description: "Test-only engine contract fixtures." },
     ]);
     expect(JSON.stringify(domains)).not.toContain(ordinaryToolId);
     expect(JSON.stringify(domains)).not.toContain(resolutionToolId);
     expect(JSON.stringify(domains)).not.toContain(queryToolId);
     expect(JSON.stringify(domains)).not.toContain("inputSchema");
 
-    const subsystems = catalog.listSubsystems("rules");
+    const subsystems = catalog.listSubsystems("test");
     expect(subsystems.map((item) => item.id)).toEqual([
       "actions",
       "resolution",
@@ -109,11 +106,11 @@ describe("hierarchical tool catalog", () => {
     expect(JSON.stringify(subsystems)).not.toContain(resolutionToolId);
     expect(JSON.stringify(subsystems)).not.toContain("inputSchema");
 
-    const tools = catalog.listTools("rules", "actions");
+    const tools = catalog.listTools("test", "actions");
     expect(tools).toEqual([
       expect.objectContaining({
         id: ordinaryToolId,
-        domainId: "rules",
+        domainId: "test",
         subsystemId: "actions",
         sourceComponent: referenceGameDefinition.ruleset.identity,
       }),
@@ -146,9 +143,9 @@ describe("hierarchical tool catalog", () => {
     const catalog = loadCatalogGame().toolCatalog;
     expect(() => catalog.listSubsystems("missing"))
       .toThrow(ToolCatalogNotFoundError);
-    expect(() => catalog.listTools("rules", "missing"))
+    expect(() => catalog.listTools("test", "missing"))
       .toThrow(/unknown tool subsystem/i);
-    expect(() => catalog.inspectTool("rules.actions.missing"))
+    expect(() => catalog.inspectTool("test.actions.missing"))
       .toThrow(/unknown tool/i);
     expect(() => catalog.resolveBinding("arbitrary.guessed.tool"))
       .toThrow(ToolCatalogNotFoundError);
@@ -159,10 +156,10 @@ describe("hierarchical tool catalog", () => {
     const denyResolution: ToolAvailabilityPolicy =
       (tool) => tool.id !== resolutionToolId;
 
-    expect(catalog.listSubsystems("rules", denyResolution).map(
+    expect(catalog.listSubsystems("test", denyResolution).map(
       (item) => item.id,
     )).toEqual(["actions"]);
-    expect(catalog.listTools("rules", "resolution", denyResolution)).toEqual(
+    expect(catalog.listTools("test", "resolution", denyResolution)).toEqual(
       [],
     );
     expect(() => catalog.inspectTool(resolutionToolId, denyResolution))
@@ -172,7 +169,7 @@ describe("hierarchical tool catalog", () => {
 
     const denyQuery: ToolAvailabilityPolicy = (tool) => tool.id !== queryToolId;
     expect(catalog.listDomains(denyQuery).map((item) => item.id)).toEqual([
-      "rules",
+      "test",
     ]);
     expect(() => catalog.resolveBinding(queryToolId, denyQuery))
       .toThrow(ToolUnavailableError);
@@ -190,16 +187,15 @@ describe("tool registration and authoritative bindings", () => {
       contribution: {
         domains: [
           {
-            id: "rules",
-            description:
-              "Disposable fixture mechanics used to verify rules-tool discovery.",
+            id: "test",
+            description: "Test-only engine contract fixtures.",
           },
         ],
         subsystems: [
           {
             id: "actions",
-            domainId: "rules",
-            description: "Tiny deterministic action fixtures.",
+            domainId: "test",
+            description: "Test-only ordinary operation fixtures.",
           },
         ],
         queries: [],
@@ -207,14 +203,14 @@ describe("tool registration and authoritative bindings", () => {
     };
     expect(loadCatalogGame([compatible]).toolCatalog.listDomains().map(
       (item) => item.id,
-    )).toEqual(["fixture", "rules"]);
+    )).toEqual(["fixture", "test"]);
 
     const conflictingDomain: SourcedToolCatalogContribution = {
       ...compatible,
       sourceComponent: { id: "conflicting-domain", version: "0.1.0" },
       contribution: {
         ...compatible.contribution,
-        domains: [{ id: "rules", description: "Conflicting description." }],
+        domains: [{ id: "test", description: "Conflicting description." }],
       },
     };
     expect(() => loadCatalogGame([conflictingDomain]))
@@ -227,7 +223,7 @@ describe("tool registration and authoritative bindings", () => {
         ...compatible.contribution,
         subsystems: [{
           id: "actions",
-          domainId: "rules",
+          domainId: "test",
           description: "Conflicting subsystem description.",
         }],
       },
@@ -280,7 +276,7 @@ describe("tool registration and authoritative bindings", () => {
         queries: [{
           id: ordinaryToolId,
           description: "Illicit duplicate of a rules operation.",
-          domainId: "rules",
+          domainId: "test",
           subsystemId: "actions",
           inputSchema: z.object({}).strict(),
           outputSchema: z.object({}).strict(),

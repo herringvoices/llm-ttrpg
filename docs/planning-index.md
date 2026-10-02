@@ -23,7 +23,6 @@ This file records the current GitHub Project placement for the seeded issues.
 | #17 | First Region / Town Design | World / Content, Player UX |
 | #18 | Reference Game Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
 | #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
-| #21 | Core Game Rules & Resolution Model | Actions & Rules, World / Content |
 | #22 | Character Progression & Abilities | Actions & Rules, World / Content |
 | #23 | Setting & World Premise | World / Content |
 | #24 | Institutions, Economy & Society | Time & World Simulation, World / Content |
@@ -43,6 +42,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Actions & Rules, Core Engine
 - #9 — Hierarchical Tool Catalog
   - Labels: Context & Tools, Core Engine
+- #21 — Core Game Rules & Resolution Model
+  - Labels: Actions & Rules, World / Content
 - #27 — Game Package Contracts & Content Model
   - Labels: Core Engine
 

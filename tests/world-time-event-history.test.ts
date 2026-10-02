@@ -9,6 +9,7 @@ import {
   type PersistencePorts,
 } from "@llm-ttrpg/engine";
 import { referenceGameDefinition } from "@llm-ttrpg/reference-game";
+import { contractTestGameDefinition } from "./support/contract-game.js";
 import {
   createMigratedSqlitePersistence,
   migrationSql,
@@ -19,7 +20,7 @@ function dependencies(persistence: PersistencePorts) {
   let wallSecond = 0;
   return {
     persistence,
-    game: loadGameDefinition(referenceGameDefinition),
+    game: loadGameDefinition(contractTestGameDefinition),
     wallClock: {
       now: () =>
         new Date(Date.UTC(2035, 0, 1, 0, 0, wallSecond++)).toISOString(),
@@ -113,13 +114,13 @@ async function exerciseTimeAndHistory(persistence: PersistencePorts) {
     scopeId: "scope.reference-scene",
     durationMs: 30_000,
   };
-  await session.executeOperation("rules.actions.resolve-effort", operationInput);
+  await session.executeOperation("test.actions.resolve-effort", operationInput);
   expect(session.snapshot().fictionalTime).toBe("2026-04-12T14:01:30.000Z");
   const firstEvent = (await session.eventHistory()).at(-1)!;
   const firstSlot = await session.save("History");
 
   await session.executeOperation(
-    "rules.actions.resolve-effort",
+    "test.actions.resolve-effort",
     { ...operationInput, durationMs: 0 },
     { causedByEventIds: [firstEvent.id] },
   );
@@ -140,11 +141,11 @@ async function exerciseTimeAndHistory(persistence: PersistencePorts) {
   expect(history[2]?.causedByEventIds).toEqual([firstEvent.id]);
 
   expect(await session.eventHistory({
-    types: ["rules.effort-resolved"],
+    types: ["test.effort-resolved"],
     relatedEntityId: "campaign.entity.amelia",
     scopeId: "scope.reference-scene",
     originKind: "rules-operation",
-    originId: "rules.actions.resolve-effort",
+    originId: "test.actions.resolve-effort",
     access: ["public"],
     from: fictionalInstant("2026-04-12T14:01:30.000Z"),
     to: fictionalInstant("2026-04-12T14:01:30.000Z"),
@@ -165,7 +166,7 @@ async function exerciseTimeAndHistory(persistence: PersistencePorts) {
   })).rejects.toThrow(/start must not be later/);
 
   expect(() => runtimeDependencies.game.eventTypeRegistry.validatePayload(
-    "rules.effort-resolved",
+    "test.effort-resolved",
     1,
     { total: "invalid", difficulty: 4 },
   )).toThrow();

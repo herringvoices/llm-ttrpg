@@ -1,42 +1,50 @@
 import type { JsonValue, SettingAdapter } from "@llm-ttrpg/engine";
+import { z } from "zod";
+import { resolveActionInputSchema } from "../ruleset/action-operation.js";
 
-function mapReinforcementToEffort(source: JsonValue): unknown {
-  if (typeof source !== "object" || source === null || Array.isArray(source)) {
-    throw new Error("Reinforcement mapping requires an object input");
-  }
-  const actorId = source.actorId;
-  const base = source.base;
-  const difficulty = source.difficulty;
-  if (
-    typeof actorId !== "string" ||
-    typeof base !== "number" ||
-    typeof difficulty !== "number"
-  ) {
-    throw new Error("Reinforcement mapping input is malformed");
-  }
+const reinforcementMappingSchema = z
+  .object({
+    action: resolveActionInputSchema,
+    reinforced: z.boolean(),
+  })
+  .strict();
+
+function mapReinforcementToPerformance(source: JsonValue): unknown {
+  const input = reinforcementMappingSchema.parse(source);
   return {
-    actorId,
-    base,
-    modifier: source.reinforced === true ? 2 : 0,
-    difficulty,
+    ...input.action,
+    performance: {
+      ...input.action.performance,
+      performanceModifiers: input.reinforced
+        ? [
+            ...input.action.performance.performanceModifiers,
+            {
+              id: "setting.magical-reinforcement",
+              description:
+                "The setting adapter maps established reinforcement to overall capability.",
+              percent: 10,
+            },
+          ]
+        : input.action.performance.performanceModifiers,
+    },
   };
 }
 
 export const awakeningEarthReferenceAdapter: SettingAdapter = {
   identity: { id: "awakening-earth-reference-adapter", version: "0.1.0" },
   description:
-    "Minimal pair-specific mapping between Awakening Earth and the reference rules fixture.",
-  ruleset: { id: "reference-rules", version: "0.1.0" },
+    "Pair-specific mappings from Awakening Earth concepts into reusable reference-rules inputs.",
+  ruleset: { id: "reference-rules", version: "0.2.0" },
   setting: { id: "awakening-earth", version: "0.1.0" },
   eventTypes: [],
   mappings: [
     {
       id: "adapter.mapping.magical-reinforcement",
       description:
-        "Translate fictional magical reinforcement into a rules modifier.",
+        "Translate established magical reinforcement into a significant overall Performance modifier.",
       settingConceptId: "setting.fact.magical-reinforcement",
-      operationId: "rules.actions.resolve-effort",
-      mapInput: mapReinforcementToEffort,
+      operationId: "rules.actions.resolve-action",
+      mapInput: mapReinforcementToPerformance,
     },
   ],
 };

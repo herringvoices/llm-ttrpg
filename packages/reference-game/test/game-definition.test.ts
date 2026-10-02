@@ -1,8 +1,9 @@
 import {
   GameValidationError,
   SaveCompatibilityError,
+  assessResolutionOperation,
   createSaveMetadata,
-  executeRulesOperation,
+  fictionalDurationMs,
   initializeCampaignWorld,
   initializeCampaignHistory,
   loadGameDefinition,
@@ -13,9 +14,8 @@ import {
 } from "@llm-ttrpg/engine";
 import {
   referenceGameDefinition,
-  type effortResultSchema,
+  resolveActionInputSchema,
 } from "@llm-ttrpg/reference-game";
-import type { z } from "zod";
 import { describe, expect, it } from "vitest";
 
 describe("game package contracts", () => {
@@ -23,7 +23,7 @@ describe("game package contracts", () => {
 
   it("loads one explicit, versioned game composition", () => {
     expect(game.composition).toEqual({
-      ruleset: { id: "reference-rules", version: "0.1.0" },
+      ruleset: { id: "reference-rules", version: "0.2.0" },
       setting: { id: "awakening-earth", version: "0.1.0" },
       adapter: {
         id: "awakening-earth-reference-adapter",
@@ -160,24 +160,56 @@ describe("game package contracts", () => {
     const mapping = game.adapter.mappings[0];
     expect(mapping).toBeDefined();
 
-    const mappedInput = mapping!.mapInput({
-      actorId: "campaign.entity.amelia",
-      base: 5,
-      difficulty: 7,
+    const mappedInput = resolveActionInputSchema.parse(mapping!.mapInput({
+      action: {
+        declaredActionId: "action.adapter-integration",
+        actorId: "campaign.entity.amelia",
+        approach: "push against a reinforced obstacle",
+        feasibility: { status: "feasible" },
+        performance: {
+          attributeIds: ["strength"],
+          applicableSkillIds: [],
+          attributeModifiers: [],
+          performanceModifiers: [],
+          helpers: [],
+          maxUsefulHelpers: 0,
+          combinedAttributeContributions: [],
+        },
+        resistance: {
+          kind: "fixed",
+          value: 1,
+          provenance: {
+            kind: "authored",
+            description: "Contract integration obstacle",
+          },
+        },
+        effect: { mode: "fixed", potentialEffect: 1 },
+        timeToMaterialEffectMs: 1_000,
+        scopeIds: ["scope.reference-scene"],
+      },
       reinforced: true,
-    });
-    const context = { world };
-    const first = executeRulesOperation<
-      typeof mappedInput,
-      z.infer<typeof effortResultSchema>
-    >(game.operationRegistry, mapping!.operationId, context, mappedInput);
-    const second = executeRulesOperation<
-      typeof mappedInput,
-      z.infer<typeof effortResultSchema>
-    >(
+    }));
+    const intent = {
+      actorId: "campaign.entity.amelia",
+      goal: "push through the obstacle",
+      targetIds: [],
+      pressureLevel: 6 as const,
+      requestedHorizonMs: fictionalDurationMs(10_000),
+      authorizedHorizonMs: fictionalDurationMs(10_000),
+      wasNarrowed: false,
+    };
+    const first = assessResolutionOperation(
       game.operationRegistry,
       mapping!.operationId,
-      { world },
+      world,
+      intent,
+      mappedInput,
+    );
+    const second = assessResolutionOperation(
+      game.operationRegistry,
+      mapping!.operationId,
+      world,
+      intent,
       mappedInput,
     );
 
@@ -186,23 +218,55 @@ describe("game package contracts", () => {
     ]);
     expect(game.operationRegistry.listSubsystems("rules")).toEqual([
       { id: "actions", label: "Actions" },
-      { id: "resolution", label: "Resolution" },
+      { id: "recovery", label: "Recovery" },
+      { id: "skills", label: "Skills" },
+      { id: "tasks", label: "Tasks" },
+      { id: "timing", label: "Timing" },
     ]);
-    expect(game.operationRegistry.listOperations("rules", "actions")).toHaveLength(
-      1,
-    );
-    expect(game.operationRegistry.listOperations("rules", "resolution"))
+    expect(game.operationRegistry.listOperations("rules", "actions"))
       .toEqual([
         expect.objectContaining({
-          id: "rules.resolution.resolve-contract-fixture",
+          id: "rules.actions.concede",
+          kind: "ordinary",
+        }),
+        expect.objectContaining({
+          id: "rules.actions.resolve-action",
           kind: "resolution",
         }),
       ]);
+    expect(first.path).toBe("automatic");
     expect(first).toEqual(second);
-    expect(first.result).toEqual({ total: 7, success: true });
-    expect(first.proposedMutations).toEqual([]);
-    expect(first.proposedEvents).toHaveLength(1);
+    if (first.path !== "automatic") throw new Error("Expected automatic path");
+    expect(first.outcome.result).toEqual(expect.objectContaining({
+      success: true,
+      realizedEffect: 1,
+    }));
+    expect(first.outcome.proposedEvents).toHaveLength(1);
     expect(world).toEqual(worldBefore);
+  });
+
+  it("publishes only real reference mechanics through the active tool catalog", () => {
+    expect(game.toolCatalog.listTools("rules", "actions").map(
+      (tool) => tool.id,
+    )).toEqual([
+      "rules.actions.concede",
+      "rules.actions.resolve-action",
+    ]);
+    expect(game.toolCatalog.listTools("rules", "skills").map(
+      (tool) => tool.id,
+    )).toEqual(["rules.skills.create-emergent-skill"]);
+    const contract = game.toolCatalog.inspectTool(
+      "rules.actions.resolve-action",
+    );
+    expect(contract).toHaveProperty(
+      "inputSchema.properties.input.properties.performance",
+    );
+    expect(contract).toHaveProperty(
+      "outputSchema.properties.result.properties.realizedEffect",
+    );
+    expect(JSON.stringify(game.toolCatalog.listDomains())).not.toMatch(
+      /fixture|resolve-effort|resolve-contract/i,
+    );
   });
 
   it("initializes mutable world state without mutating campaign definitions", () => {

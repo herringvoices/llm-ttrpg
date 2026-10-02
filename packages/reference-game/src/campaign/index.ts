@@ -34,6 +34,61 @@ export const contractFixtureCampaign: Campaign = {
         data: {
           descriptors: ["experienced-kickboxer", "fire-themed-powers"],
           currentLocation: "campaign.location.brownbag-groceries",
+          mechanics: {
+            attributes: {
+              strength: 58,
+              endurance: 62,
+              durability: 55,
+              agility: 68,
+              perception: 57,
+              "fine-motor-skills": 52,
+              "critical-thinking": 48,
+              learning: 50,
+              focus: 55,
+              memory: 46,
+              creativity: 51,
+              improvisation: 59,
+              presence: 60,
+              empathy: 47,
+              attractiveness: 56,
+              cool: 64,
+              "social-fluency": 54,
+              "self-awareness": 49,
+            },
+            skills: [
+              {
+                id: "skill.fighting",
+                name: "Fighting",
+                description:
+                  "Broad competency in reading and participating in physical contests.",
+                specificity: 1,
+                sp: 80,
+              },
+              {
+                id: "skill.kickboxing",
+                name: "Kickboxing",
+                description:
+                  "Focused striking, footwork, defense, and timing used in kickboxing.",
+                specificity: 3,
+                sp: 157,
+              },
+            ],
+            stress: {
+              injury: 0,
+              fear: 0,
+              anger: 0,
+              exhaustion: 0,
+              insecurity: 0,
+            },
+            statuses: [],
+            progression: {
+              characterLevel: 1,
+              skillPointsPerCharacterLevel: 5,
+              skillLearningRateMultiplier: 1,
+              skillUseEvidence: [],
+            },
+            isPlayerCharacter: false,
+          },
         },
       },
       {

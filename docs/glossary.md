@@ -82,6 +82,34 @@ These paths are not universal success/failure outcomes. In particular, `impossib
 
 The post-commit record returned for narration and diagnostics: executable intent, operation ID, resolution path, opaque ruleset basis/result, exact fictional duration, randomness trace or `null`, and produced canonical events.
 
+## Performance
+
+The selected reference ruleset's exact numeric capability for one attempted approach after relevant attributes are modified and averaged, the strongest applicable skill is applied, and broader circumstances, assistance, status, and stress modifiers are included. It is rules-owned opaque data, not an engine concept.
+
+## Resistance
+
+The selected reference ruleset's opposition to Performance. It is either fixed with direct/authored/benchmark provenance or produced by another actor through the same Performance rules. A tie does not overcome Resistance.
+
+## Potential Effect
+
+The pre-resolution magnitude from 1 through 3 that an attempted method can produce if successful. It follows from fictional method and scope, not capability, margin, or luck, and supplies the basis for uncertain-check skill SP.
+
+## Realized Effect
+
+The actual magnitude from 0 through 3 produced after resolution. Failure realizes 0. Successful Effect may be contextually fixed, deterministically derived, or independently checked, and cannot exceed Potential Effect.
+
+## Stress
+
+Transient functional pressure on one of the selected ruleset's Injury, Fear, Anger, Exhaustion, or Insecurity tracks. Each point applies -5% overall Performance, capped at -70% across tracks; a track reaching 5 means Taken Out. Stress is distinct from persistent statuses/injuries.
+
+## Taken Out
+
+A structured rules result indicating that one stress track reached 5 and the actor cannot continue normally in that dimension. The fiction determines surrender, flight, incapacity, emotional loss of control, or another contextual consequence. A normally fatal PC result still requires explicit player consent.
+
+## Skill specificity
+
+An authored semantic breadth band intrinsic to an open-ended skill: broad field (1), major subdomain (2), focused discipline (3), or specialization (4). Orchestration proposes and semantically reviews it; deterministic rules validate the 1–4 bound and use it in the skill contribution formula.
+
 ## Invalid resolution request
 
 A request that fails an execution boundary, such as malformed input, an unknown or wrong-kind operation, an illegal reference, invalid output/proposals, or an engine-owned constraint violation. It commits no state, time, event, or RNG progression.

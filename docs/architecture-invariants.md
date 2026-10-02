@@ -36,6 +36,9 @@ These are project-level constraints. Implementation should work within them unle
 - `impossible` is a valid local fictional resolution, distinct from an invalid request and from concluding that the player's overall goal is impossible.
 - Operations receive a deep-frozen, explicitly enumerated rules-visible world snapshot. Engine-private RNG progression is absent; uncertain resolution receives randomness only through its explicit RNG capability. Authoritative changes can occur only through validated mutation/event proposals committed by the runtime.
 - A ruleset must validate that its structured resolution input applies to the supplied executable intent. The engine does not infer actor, target, opposition, or other semantics from arbitrary ruleset fields.
+- The first concrete reference rules implement Performance versus Resistance, attributes, open-ended skills, Effect, stress, statuses, learning evidence, and recovery entirely inside `packages/reference-game`. These types and formulas must not migrate into generic engine contracts.
+- The reference rules use one operation model across calm, social, environmental, competitive, and dangerous action. Combat rounds, initiative, action points, universal reactions, and combat-specific resolution are not architectural primitives.
+- Orchestration may propose semantic applicability, scope, Potential Effect, and skill specificity. The ruleset owns deterministic calculation/classification and validates proposals; narration cannot revise the result after resolution.
 
 ## Persistence and application boundaries
 

@@ -36,7 +36,7 @@ describe("engine package boundary", () => {
   it("keeps game-specific check mechanics out of engine contracts", () => {
     const engineFiles = findTypeScriptFiles("packages/engine/src");
     const forbiddenMechanics =
-      /\b(?:dice|difficulty class|attack roll|saving throw|opposed check|success boolean|degree of success|critical hit)\b/i;
+      /\b(?:dice|difficulty class|attack roll|saving throw|opposed check|success boolean|degree of success|critical hit|attribute|skill specificity|potential effect|realized effect|stress track|taken out|initiative|combat round)\b/i;
     const violations = engineFiles.filter((path) =>
       forbiddenMechanics.test(readFileSync(path, "utf8")),
     );
@@ -48,5 +48,13 @@ describe("engine package boundary", () => {
     const source = readFileSync("packages/engine/src/tool-catalog.ts", "utf8");
     expect(source).not.toMatch(/domainId:\s*["']/);
     expect(source).not.toMatch(/(?:reference-game|awakening-earth)/i);
+  });
+
+  it("keeps disposable engine-contract fixtures out of the active ruleset", () => {
+    const source = readFileSync(
+      "packages/reference-game/src/ruleset/index.ts",
+      "utf8",
+    );
+    expect(source).not.toMatch(/resolve-effort|resolve-contract-fixture|fixture/i);
   });
 });

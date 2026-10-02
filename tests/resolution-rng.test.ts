@@ -24,8 +24,9 @@ import {
   createSqlJsClient,
   migrationSql,
 } from "./support/sqlite.js";
+import { contractTestGameDefinition } from "./support/contract-game.js";
 
-const fixtureOperationId = "rules.resolution.resolve-contract-fixture";
+const fixtureOperationId = "test.resolution.resolve-contract-fixture";
 
 function executableIntent(horizonMs = 60_000): ExecutableIntent {
   return {
@@ -42,7 +43,7 @@ function executableIntent(horizonMs = 60_000): ExecutableIntent {
 function dependencies(
   persistence: PersistencePorts,
   rootSeed = 0x1357_9bdf,
-  game: LoadedGameDefinition = loadGameDefinition(referenceGameDefinition),
+  game: LoadedGameDefinition = loadGameDefinition(contractTestGameDefinition),
 ) {
   let id = 0;
   let wallSecond = 0;
@@ -185,11 +186,11 @@ function gameWithOperations(
   operations: readonly RegisteredRulesOperation[],
 ): LoadedGameDefinition {
   const definition: GameDefinition = {
-    ...referenceGameDefinition,
+    ...contractTestGameDefinition,
     ruleset: {
-      ...referenceGameDefinition.ruleset,
+      ...contractTestGameDefinition.ruleset,
       operations: [
-        ...referenceGameDefinition.ruleset.operations,
+        ...contractTestGameDefinition.ruleset.operations,
         ...operations,
       ],
     },
@@ -199,13 +200,13 @@ function gameWithOperations(
 
 function gameWithSecondFixtureActor(): LoadedGameDefinition {
   const definition: GameDefinition = {
-    ...referenceGameDefinition,
+    ...contractTestGameDefinition,
     campaign: {
-      ...referenceGameDefinition.campaign,
+      ...contractTestGameDefinition.campaign,
       content: {
-        ...referenceGameDefinition.campaign.content,
+        ...contractTestGameDefinition.campaign.content,
         entities: [
-          ...referenceGameDefinition.campaign.content.entities,
+          ...contractTestGameDefinition.campaign.content.entities,
           {
             id: "campaign.entity.test-counterpart",
             kind: "actor",
@@ -277,12 +278,12 @@ describe("resolution paths and persistence", () => {
     } as never)).rejects.toThrow();
     await expect(session.resolve({
       ...request("automatic"),
-      operation: { id: "rules.resolution.missing", input: {} },
+      operation: { id: "test.resolution.missing", input: {} },
     })).rejects.toThrow(/unknown rules operation/i);
     await expect(session.resolve({
       ...request("automatic"),
       operation: {
-        id: "rules.actions.resolve-effort",
+        id: "test.actions.resolve-effort",
         input: {
           actorId: "campaign.entity.amelia",
           base: 1,
@@ -339,11 +340,11 @@ describe("resolution paths and persistence", () => {
       { value: number }
     > = {
       metadata: {
-        id: "rules.resolution.invalid-after-draw",
+        id: "test.resolution.invalid-after-draw",
         kind: "resolution",
         description: "Test-only invalid output after a tentative draw.",
         category: {
-          domain: { id: "rules", label: "Rules" },
+          domain: { id: "test", label: "Test" },
           subsystem: { id: "resolution", label: "Resolution" },
           tags: ["test"],
         },
@@ -412,11 +413,11 @@ describe("operation mutation authority", () => {
       }
     > = {
       metadata: {
-        id: "rules.actions.mutation-probe",
+        id: "test.actions.mutation-probe",
         kind: "ordinary",
         description: "Test-only deep-freeze probe.",
         category: {
-          domain: { id: "rules", label: "Rules" },
+          domain: { id: "test", label: "Test" },
           subsystem: { id: "actions", label: "Actions" },
           tags: ["test"],
         },
@@ -478,11 +479,11 @@ describe("operation mutation authority", () => {
       }
     > = {
       metadata: {
-        id: "rules.resolution.world-view-probe",
+        id: "test.resolution.world-view-probe",
         kind: "resolution",
         description: "Test-only operation-world-view visibility probe.",
         category: {
-          domain: { id: "rules", label: "Rules" },
+          domain: { id: "test", label: "Test" },
           subsystem: { id: "resolution", label: "Resolution" },
           tags: ["test"],
         },

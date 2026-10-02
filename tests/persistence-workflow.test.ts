@@ -5,7 +5,7 @@ import {
   loadGameDefinition,
   type PersistencePorts,
 } from "@llm-ttrpg/engine";
-import { referenceGameDefinition } from "@llm-ttrpg/reference-game";
+import { contractTestGameDefinition } from "./support/contract-game.js";
 import { createMigratedSqlitePersistence } from "./support/sqlite.js";
 
 function createDependencies(persistence: PersistencePorts) {
@@ -13,7 +13,7 @@ function createDependencies(persistence: PersistencePorts) {
   let tick = 0;
   return {
     persistence,
-    game: loadGameDefinition(referenceGameDefinition),
+    game: loadGameDefinition(contractTestGameDefinition),
     wallClock: {
       now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString(),
     },
@@ -50,7 +50,7 @@ async function exercisePersistence(persistence: PersistencePorts) {
   );
 
   await reopened.executeOperation(
-    "rules.actions.resolve-effort",
+    "test.actions.resolve-effort",
     {
       actorId: "campaign.entity.amelia",
       base: 3,
@@ -129,8 +129,8 @@ describe("project shell persistence workflow", () => {
       modifier: 0,
       difficulty: 2,
     };
-    await first.executeOperation("rules.actions.resolve-effort", input);
-    await expect(stale.executeOperation("rules.actions.resolve-effort", input))
+    await first.executeOperation("test.actions.resolve-effort", input);
+    await expect(stale.executeOperation("test.actions.resolve-effort", input))
       .rejects.toThrow(/revision changed/);
     expect(stale.snapshot()).not.toHaveProperty("events");
     expect(await stale.eventHistory()).toHaveLength(2);
