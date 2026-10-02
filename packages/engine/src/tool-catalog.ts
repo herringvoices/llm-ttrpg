@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { executableIntentSchema } from "./action-pressure.js";
-import { canonicalEventSchema } from "./events.js";
 import {
   componentIdentitySchema,
   stableIdSchema,
@@ -15,13 +14,11 @@ import {
   type OperationWorldView,
   type RegisteredRulesOperation,
 } from "./operations.js";
-import { randomnessTraceSchema } from "./randomness.js";
 import {
-  resolutionPathSchema,
+  createResolutionEnvelopeSchema,
   resolutionRequestSchema,
   type ResolutionRequest,
 } from "./resolution.js";
-import { fictionalDurationMsSchema } from "./time.js";
 import type { WorldState } from "./world.js";
 
 export const toolDomainDescriptorSchema = z
@@ -236,24 +233,6 @@ function validateToolLocation(
   }
 }
 
-function resolutionOutputSchema(
-  operationId: string,
-  resultSchema: z.ZodType<unknown>,
-): z.ZodType<unknown> {
-  return z
-    .object({
-      intent: executableIntentSchema,
-      operationId: z.literal(operationId),
-      path: resolutionPathSchema,
-      basis: jsonValueSchema,
-      result: resultSchema,
-      advanceTimeByMs: fictionalDurationMsSchema,
-      randomness: randomnessTraceSchema.nullable(),
-      events: z.array(canonicalEventSchema),
-    })
-    .strict();
-}
-
 function entryFromOperation(
   operation: RegisteredRulesOperation,
   sourceComponent: ComponentIdentity,
@@ -285,9 +264,9 @@ function entryFromOperation(
       input: operation.inputSchema,
     })
     .strict();
-  const outputSchema = resolutionOutputSchema(
-    operation.metadata.id,
+  const outputSchema = createResolutionEnvelopeSchema(
     operation.outputSchema,
+    operation.metadata.id,
   );
   return {
     descriptor,

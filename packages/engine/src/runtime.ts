@@ -32,6 +32,7 @@ import {
   type WorldSeedSource,
 } from "./randomness.js";
 import {
+  createResolutionEnvelopeSchema,
   ResolutionValidationError,
   resolutionRequestSchema,
   type ResolutionEnvelope,
@@ -350,9 +351,13 @@ function openSession(
           nextStream: candidate.randomness.nextStream + 1,
         });
       }
-      await commitCandidate(candidate, canonicalEvents);
-
-      return {
+      const operation = dependencies.game.operationRegistry.get(
+        parsedRequest.operation.id,
+      );
+      const envelope = createResolutionEnvelopeSchema(
+        operation.outputSchema,
+        operation.metadata.id,
+      ).parse({
         intent: clone(parsedRequest.intent),
         operationId: parsedRequest.operation.id,
         path: assessment.path,
@@ -361,7 +366,10 @@ function openSession(
         advanceTimeByMs: outcome.advanceTimeByMs,
         randomness: randomnessTrace ? clone(randomnessTrace) : null,
         events: clone(canonicalEvents),
-      };
+      }) as ResolutionEnvelope<TResult>;
+
+      await commitCandidate(candidate, canonicalEvents);
+      return envelope;
     },
     async save(slotName) {
       const timestamp = dependencies.wallClock.now();

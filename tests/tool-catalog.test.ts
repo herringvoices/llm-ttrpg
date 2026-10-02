@@ -407,6 +407,10 @@ describe("tool registration and authoritative bindings", () => {
     const result = await session.resolve(request);
     expect(result.path).toBe("automatic");
     expect(result.operationId).toBe(resolutionToolId);
+    if (binding.kind !== "resolution-operation") {
+      throw new Error("Expected a resolution-operation binding");
+    }
+    expect(binding.outputSchema.parse(result)).toEqual(result);
   });
 
   it("accepts empty optional contributions", () => {
