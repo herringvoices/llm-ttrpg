@@ -13,7 +13,6 @@ This file records the current GitHub Project placement for the seeded issues.
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
-| #9 | Hierarchical Tool Catalog | Context & Tools, Core Engine |
 | #10 | Context Assembly & Knowledge Retrieval | Context & Tools |
 | #11 | Player Action Execution Pipeline | Core Engine, Actions & Rules, Context & Tools |
 | #12 | Lazy World Simulation & Catch-Up | Time & World Simulation, Persistence |
@@ -42,6 +41,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Actions & Rules, Core Engine
 - #8 — Checks, Resolution & RNG
   - Labels: Actions & Rules, Core Engine
+- #9 — Hierarchical Tool Catalog
+  - Labels: Context & Tools, Core Engine
 - #27 — Game Package Contracts & Content Model
   - Labels: Core Engine
 

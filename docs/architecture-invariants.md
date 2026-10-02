@@ -21,9 +21,14 @@ These are project-level constraints. Implementation should work within them unle
 ## World operations
 
 - Expose reusable world operations rather than scenario-specific scripted actions.
-- Tool access is progressively disclosed.
-- The conceptual hierarchy is at least **domain → subsystem → operation**.
+- Tool access is progressively disclosed through **domain → subsystem → concise tool → detailed contract**. Listing a branch does not dump every schema.
 - These are application-level tool trees. They are **not literal MCP servers**, and there is no plan to convert them into MCP servers.
+- The authoritative operation registry and the model-facing tool catalog are distinct. The registry owns complete executable rules operations and runtime schemas; the catalog is a filtered documentation/binding projection over real registered capabilities.
+- A catalog tool need not be a rules operation. Deterministic read-only engine queries can participate through a separate validated backend binding without pretending to be game mechanics.
+- Potential tools and explicit domain/subsystem descriptions are assembled at game-composition time. The engine defines no universal domain taxonomy.
+- Tool availability is an authoritative policy decision applied to listing, inspection, and binding resolution. Prior disclosure is not authorization: an available registered tool may be addressed directly, while a guessed unavailable tool remains unusable.
+- Catalog discovery results never expose callbacks, persistence handles, RNG internals, or private registry/state objects. Detailed inspection derives JSON-compatible schema documentation from authoritative Zod schemas.
+- The catalog does not define player, NPC, or GM perspective semantics; issue #10 supplies those policies. Issue #11 later selects and executes catalog bindings through their real validated backend paths.
 - Rules operations use the same hierarchy. They expose schemas and deterministic implementations, then return outcomes and proposed mutations/events instead of directly mutating persistence.
 - A resolution operation is a rules operation, not a separate check registry. The engine recognizes only the generic resolution paths `automatic`, `impossible`, and `uncertain`; checks and their mechanics remain ruleset-owned.
 - Resolution assessment is deterministic and has no RNG capability. Only the second phase of an `uncertain` resolution may receive lazy engine RNG access, and uncertainty does not require using it.

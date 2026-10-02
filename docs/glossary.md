@@ -102,7 +102,25 @@ A region, town, building, NPC, organization, economy, or other simulation subsys
 
 The hierarchical catalog the orchestration layer uses to discover engine capabilities progressively.
 
-The hierarchy is at least **domain → subsystem → operation**. It is MCP-like conceptually but is local application architecture, not a set of literal MCP servers.
+The disclosure hierarchy is **domain → subsystem → concise tool → detailed tool contract**. It is MCP-like conceptually but is local application architecture, not a set of literal MCP servers.
+
+## Tool catalog
+
+A stateless, model-facing projection over registered deterministic capabilities. It provides explicit hierarchy descriptions, concise listings, per-tool schema documentation, contextual availability filtering, and private bindings back to authoritative backends. It is not the rules-operation registry and can also describe deterministic engine queries.
+
+Potential catalog entries are composed with the active game. The currently visible entries may be filtered by a replaceable availability policy. Whether a tool was previously disclosed has no authority significance.
+
+## Tool contract
+
+The detailed model-facing documentation for one catalog tool, including its stable identity, hierarchy/provenance, and JSON-compatible input/output schemas generated from authoritative Zod validators. It never contains executable callbacks or private engine state.
+
+## Tool binding
+
+The engine-private connection from a registered catalog tool to its real backend: an ordinary rules operation, a resolution operation using the bounded #8 request path, or a validated deterministic engine query. A binding is not serialized into model context.
+
+## Tool availability policy
+
+A replaceable predicate that decides whether a registered tool is currently available. The same decision governs listings, detailed inspection, and binding resolution. Issue #10 will define actual player/NPC/GM perspective and knowledge semantics.
 
 ## World event history
 

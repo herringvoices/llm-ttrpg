@@ -9,18 +9,26 @@ import type {
   RegisteredEventType,
 } from "./events.js";
 import type { FictionalInstant } from "./time.js";
+import type {
+  ToolCatalog,
+  ToolCatalogContribution,
+} from "./tool-catalog.js";
 
 export interface EventTypeProvider {
   readonly eventTypes: readonly RegisteredEventType[];
 }
 
-export interface Ruleset extends EventTypeProvider {
+export interface ToolCatalogContributor {
+  readonly toolCatalog?: ToolCatalogContribution;
+}
+
+export interface Ruleset extends EventTypeProvider, ToolCatalogContributor {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly operations: readonly RegisteredRulesOperation[];
 }
 
-export interface Setting extends EventTypeProvider {
+export interface Setting extends EventTypeProvider, ToolCatalogContributor {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly content: ContentBundle;
@@ -34,7 +42,8 @@ export interface SettingRuleMapping {
   readonly mapInput: (source: JsonValue) => unknown;
 }
 
-export interface SettingAdapter extends EventTypeProvider {
+export interface SettingAdapter
+  extends EventTypeProvider, ToolCatalogContributor {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly ruleset: ComponentReference;
@@ -42,7 +51,7 @@ export interface SettingAdapter extends EventTypeProvider {
   readonly mappings: readonly SettingRuleMapping[];
 }
 
-export interface Campaign extends EventTypeProvider {
+export interface Campaign extends EventTypeProvider, ToolCatalogContributor {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly setting: ComponentReference;
@@ -77,6 +86,7 @@ export interface GameComposition {
 export interface LoadedGameDefinition extends GameDefinition {
   readonly operationRegistry: OperationRegistry;
   readonly eventTypeRegistry: EventTypeRegistry;
+  readonly toolCatalog: ToolCatalog;
   readonly composition: GameComposition;
 }
 

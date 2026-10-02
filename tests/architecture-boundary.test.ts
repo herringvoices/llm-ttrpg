@@ -43,4 +43,10 @@ describe("engine package boundary", () => {
 
     expect(violations).toEqual([]);
   });
+
+  it("keeps tool catalog namespaces composed rather than hardcoded", () => {
+    const source = readFileSync("packages/engine/src/tool-catalog.ts", "utf8");
+    expect(source).not.toMatch(/domainId:\s*["']/);
+    expect(source).not.toMatch(/(?:reference-game|awakening-earth)/i);
+  });
 });

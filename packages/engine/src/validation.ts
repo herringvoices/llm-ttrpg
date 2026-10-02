@@ -19,6 +19,10 @@ import {
   type RegisteredRulesOperation,
 } from "./operations.js";
 import { createEventTypeRegistry } from "./events.js";
+import {
+  createToolCatalog,
+  type SourcedToolCatalogContribution,
+} from "./tool-catalog.js";
 
 const rulesetBoundarySchema = z
   .object({
@@ -26,6 +30,7 @@ const rulesetBoundarySchema = z
     description: z.string().min(1),
     operations: z.array(z.unknown()),
     eventTypes: z.array(z.unknown()),
+    toolCatalog: z.unknown().optional(),
   })
   .strict();
 
@@ -35,6 +40,7 @@ const settingBoundarySchema = z
     description: z.string().min(1),
     content: contentBundleSchema,
     eventTypes: z.array(z.unknown()),
+    toolCatalog: z.unknown().optional(),
   })
   .strict();
 
@@ -59,6 +65,7 @@ const adapterBoundarySchema = z
     setting: componentIdentitySchema,
     mappings: z.array(settingRuleMappingBoundarySchema),
     eventTypes: z.array(z.unknown()),
+    toolCatalog: z.unknown().optional(),
   })
   .strict();
 
@@ -70,6 +77,7 @@ const campaignBoundarySchema = z
     startTime: z.string().datetime(),
     content: contentBundleSchema,
     eventTypes: z.array(z.unknown()),
+    toolCatalog: z.unknown().optional(),
   })
   .strict();
 
@@ -95,6 +103,10 @@ const gameDefinitionBoundarySchema = z
 
 export class GameValidationError extends Error {
   override readonly name = "GameValidationError";
+}
+
+export interface LoadGameDefinitionOptions {
+  readonly engineToolCatalogContributions?: readonly SourcedToolCatalogContribution[];
 }
 
 function deepFreeze<T>(value: T): T {
@@ -242,7 +254,10 @@ function validateAuthoredEventCausality(content: ContentBundle): void {
   }
 }
 
-export function loadGameDefinition(input: unknown): LoadedGameDefinition {
+export function loadGameDefinition(
+  input: unknown,
+  options: LoadGameDefinitionOptions = {},
+): LoadedGameDefinition {
   const parsed = gameDefinitionBoundarySchema.parse(input);
   const game = parsed as unknown as GameDefinition;
 
@@ -301,6 +316,27 @@ export function loadGameDefinition(input: unknown): LoadedGameDefinition {
   const operationRegistry = createOperationRegistry(
     game.ruleset.operations as readonly RegisteredRulesOperation[],
   );
+  const packageToolCatalogContributions: SourcedToolCatalogContribution[] = [
+    game.ruleset,
+    game.setting,
+    game.adapter,
+    game.campaign,
+  ].flatMap((component) =>
+    component.toolCatalog
+      ? [{
+          sourceComponent: component.identity,
+          contribution: component.toolCatalog,
+        }]
+      : [],
+  );
+  const toolCatalog = createToolCatalog({
+    operationRegistry,
+    rulesetSource: game.ruleset.identity,
+    contributions: [
+      ...(options.engineToolCatalogContributions ?? []),
+      ...packageToolCatalogContributions,
+    ],
+  });
   const eventTypeRegistry = createEventTypeRegistry([
     game.ruleset,
     game.setting,
@@ -328,6 +364,7 @@ export function loadGameDefinition(input: unknown): LoadedGameDefinition {
     ...game,
     operationRegistry,
     eventTypeRegistry,
+    toolCatalog,
     composition: compositionFromGame(game),
   };
 }

@@ -3,6 +3,7 @@ export * from "./action-pressure.js";
 export * from "./contracts.js";
 export * from "./identity.js";
 export * from "./time.js";
+export * from "./tool-catalog.js";
 export * from "./events.js";
 export * from "./operations.js";
 export * from "./randomness.js";

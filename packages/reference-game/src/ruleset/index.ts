@@ -327,6 +327,28 @@ export const resolveContractFixtureOperation: ResolutionOperation<
 export const referenceRuleset: Ruleset = {
   identity: { id: "reference-rules", version: "0.1.0" },
   description: "Minimal rules fixture; not the real game rules.",
+  toolCatalog: {
+    domains: [
+      {
+        id: "rules",
+        description:
+          "Disposable fixture mechanics used to verify rules-tool discovery.",
+      },
+    ],
+    subsystems: [
+      {
+        id: "actions",
+        domainId: "rules",
+        description: "Tiny deterministic action fixtures.",
+      },
+      {
+        id: "resolution",
+        domainId: "rules",
+        description: "Tiny automatic, impossible, and uncertain fixtures.",
+      },
+    ],
+    queries: [],
+  },
   operations: [resolveEffortOperation, resolveContractFixtureOperation],
   eventTypes: [effortResolvedEventType, contractResolutionEventType],
 };

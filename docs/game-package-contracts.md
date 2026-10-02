@@ -20,7 +20,7 @@ These reference-game layers deliberately remain modules in one workspace package
 - content schemas and referential integrity
 - adapter references to setting concepts and rules operations
 
-The returned `LoadedGameDefinition` includes a progressively discoverable operation registry and the exact versioned composition recorded by saves.
+The returned `LoadedGameDefinition` includes the authoritative operation/event registries, a separately composed model-facing tool catalog, and the exact versioned composition recorded by saves.
 
 ## Content and knowledge
 
@@ -43,6 +43,27 @@ Rulesets register operations under `domain -> subsystem -> operation`. Every ope
 Each operation also returns an exact nonnegative fictional-time duration. The runtime applies mutations, advances the fictional clock, validates package-owned event payloads, assigns sequence/order and source-component metadata, and atomically commits state plus newly meaningful events. Wall-clock metadata is supplied through a separate `wallClock` dependency.
 
 Rulesets, settings, adapters, and campaigns may register versioned event-type definitions containing a stable type, schema version, and Zod payload schema. `loadGameDefinition` combines these into an event registry and rejects duplicate or malformed definitions. The engine persists the generic event envelope and opaque JSON payload; the owning package retains mechanical meaning.
+
+## Hierarchical tool catalog
+
+The tool catalog is not the operation registry. The operation registry is complete executable backend infrastructure containing rules implementations and authoritative runtime schemas. The catalog is a progressively disclosed, availability-filtered projection that orchestration can navigate without placing every capability schema in model context.
+
+Discovery is stateless and deterministic:
+
+1. list domains with explicit authored descriptions
+2. list one domain's subsystems
+3. list concise tool summaries for one subsystem
+4. inspect one tool's detailed invocation contract
+
+Domain and subsystem metadata is contributed explicitly at composition time by the engine or active ruleset, setting, adapter, and campaign. Identical repeated metadata coalesces; conflicting descriptions, missing hierarchy references, and duplicate tool IDs fail composition. Empty contributions are valid. Core engine code contains no permanent list of game/tool namespaces.
+
+Rules operations are projected from the existing `OperationRegistry`; the catalog does not copy their implementations or hand-maintain alternate schemas. Ordinary-operation and resolution-operation bindings retain their real operation IDs and kinds. Resolution inspection includes the bounded `ExecutableIntent`, and binding resolution produces the existing #8 `ResolutionRequest` rather than an execution shortcut.
+
+Deterministic read-only engine queries may contribute Zod input/output schemas plus a private query handler. They share the same model-facing catalog while remaining a distinct backend type and receive the same frozen rules-visible world view without private RNG progression. Query input and output are validated by their authoritative Zod schemas.
+
+Concise domain/subsystem/tool listings contain no schemas or implementation references. Individual inspection generates JSON-compatible input/output documentation from the authoritative Zod schemas. This representation guides the model; runtime Zod validation remains authoritative where JSON Schema cannot perfectly represent a Zod construct.
+
+An availability predicate is applied consistently to listings, inspection, and private binding resolution. Availability is separate from disclosure history: an allowed registered tool can be addressed directly, but knowing an unavailable tool ID cannot bypass policy. Issue #10 owns actual perspective/knowledge-aware policies. Issue #11 will consume bindings for player-action planning/execution, and issue #15 will carry structured model requests without owning catalog authority.
 
 ### Resolution operations
 
@@ -102,4 +123,4 @@ Exact planner schemas and persistence are intentionally deferred to [issue #28](
 
 ## Intentionally deferred
 
-There is no dynamic loader, plugin marketplace, mod SDK, LLM integration, campaign-planner runtime, real combat/progression system, sophisticated desktop UI, or full Awakening Earth content in this slice.
+There is no dynamic loader, plugin marketplace, mod SDK, final perspective/context policy, player-action orchestrator, LLM integration, campaign-planner runtime, real combat/progression system, sophisticated desktop UI, or full Awakening Earth content in this slice.

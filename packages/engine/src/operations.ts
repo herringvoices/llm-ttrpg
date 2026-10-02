@@ -174,6 +174,7 @@ export interface OperationRegistry {
   get(id: string): RegisteredRulesOperation;
   getOrdinary(id: string): RulesOperation;
   getResolution(id: string): ResolutionOperation;
+  listAll(): readonly OperationMetadata[];
   listDomains(): readonly OperationMetadata["category"]["domain"][];
   listSubsystems(
     domainId: string,
@@ -322,6 +323,11 @@ export function createOperationRegistry(
         );
       }
       return operation as ResolutionOperation;
+    },
+    listAll() {
+      return [...byId.values()]
+        .map((operation) => operationMetadataSchema.parse(operation.metadata))
+        .sort((left, right) => left.id.localeCompare(right.id));
     },
     listDomains() {
       const domains = new Map<
