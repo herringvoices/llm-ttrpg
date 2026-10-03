@@ -58,6 +58,18 @@ Firms can provide:
 
 Employment contracts commonly assign some or all on-the-clock loot rights to the firm.
 
+## Gate Response
+
+Gates use the same response economy rather than creating a separate "dungeon guild" system.
+
+A newly discovered Gate is first a public-safety incident. Public authorities can secure the perimeter, keep civilians out, gather initial observations, and decide whether local public responders can safely investigate.
+
+If traversal or clearance exceeds routine public capability, dispatch can hand the work to licensed independents or major firms according to the same risk, capability, and economic pressures that govern monster incidents.
+
+Gate interiors can concentrate monsters, magical materials, environmental hazards, and loot opportunities into bounded spaces. That makes them commercially attractive without making every Gate privately owned or automatically available to whoever arrives first.
+
+Exact access rights for a particular Gate can depend on ordinary property law, emergency authority, public-safety restrictions, contracts, and campaign-local circumstances.
+
 ## Combat Capability and Range
 
 Not all awakened powers are combat-oriented.
@@ -358,7 +370,7 @@ A generated campaign region should derive its local institutional footprint from
 - geography and remoteness;
 - wealth and tax base;
 - nearby population centers;
-- monster pressure and history;
+- monster and Gate pressure and history;
 - local response capacity;
 - transportation access;
 - existing private-firm coverage.
@@ -369,7 +381,7 @@ A medium city and an isolated rural town should instantiate very different local
 
 A medium-strength monster appears at a local business.
 
-1. Someone calls public emergency services.
+1. Someone calls public emergency services for a monster or Gate-related threat.
 2. Public responders evacuate civilians, control the scene, and assess the threat.
 3. The monster exceeds routine local capability.
 4. A major firm may decline because mobilization cost exceeds likely loot value.
