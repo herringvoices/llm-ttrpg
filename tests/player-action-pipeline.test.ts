@@ -197,8 +197,8 @@ describe("player action execution pipeline", () => {
           },
           {
             kind: "invoke-tool",
-            toolId: "test.actions.resolve-effort",
-            arguments: { base: 5, modifier: 1, difficulty: 5, durationMs: 500 },
+            toolId: "test.resolution.resolve-contract-fixture",
+            arguments: { mode: "uncertain-random", modifier: 1, durationMs: 500 },
           },
           { kind: "stop", reason: "goal-achieved" },
           "The effort succeeds.",
@@ -219,7 +219,10 @@ describe("player action execution pipeline", () => {
     );
     expect(replay.kind).toBe("resolved");
     expect((await sqlite.persistence.worlds.load(session.worldId))?.revision).toBe(revision);
-    expect(await session.eventHistory({ types: ["test.effort-resolved"] })).toHaveLength(1);
+    expect(await session.eventHistory({ types: ["test.contract-resolution-recorded"] }))
+      .toHaveLength(1);
+    expect((await sqlite.persistence.worlds.load(session.worldId))?.state.randomness.nextStream)
+      .toBe(1);
   });
 
   it("feeds a read-only query into fresh context before an uncertain resolution", async () => {
