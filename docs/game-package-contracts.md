@@ -5,7 +5,7 @@ Issue #27 establishes the smallest useful seam between the game-agnostic engine 
 ## Package layout
 
 - `packages/engine` defines generic contracts, validation, operation discovery/execution, content retrieval, campaign initialization, and save-composition checks.
-- `packages/reference-game` implements one tiny example through explicit `ruleset`, `setting`, `adapter`, `campaign`, and `presentation` modules.
+- `packages/reference-game` implements the first reference composition through explicit `ruleset`, `setting`, `adapter`, `campaign`, and `presentation` modules.
 
 These reference-game layers deliberately remain modules in one workspace package. They are not independently published plugins.
 
@@ -135,7 +135,7 @@ Exact planner schemas and persistence are intentionally deferred to [issue #28](
 
 ## Intentionally deferred
 
-There is no dynamic loader, plugin marketplace, mod SDK, player-action orchestrator, model-driven gameplay orchestration, campaign-planner runtime, sophisticated desktop UI, or full Awakening Earth content in this slice. Context assembly deliberately uses deterministic size units rather than a provider tokenizer and deterministic structured retrieval rather than embeddings/vector search.
+There is no dynamic loader, plugin marketplace, mod SDK, player-action orchestrator, model-driven gameplay orchestration, campaign-planner runtime, sophisticated desktop UI, or complete Awakening Earth campaign/region content in this slice. Context assembly deliberately uses deterministic size units rather than a provider tokenizer and deterministic structured retrieval rather than embeddings/vector search.
 
 ## Local model transport
 
