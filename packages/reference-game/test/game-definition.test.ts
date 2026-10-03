@@ -24,12 +24,12 @@ describe("game package contracts", () => {
   it("loads one explicit, versioned game composition", () => {
     expect(game.composition).toEqual({
       ruleset: { id: "reference-rules", version: "0.2.0" },
-      setting: { id: "awakening-earth", version: "0.1.0" },
+      setting: { id: "awakening-earth", version: "0.2.0" },
       adapter: {
         id: "awakening-earth-reference-adapter",
-        version: "0.1.0",
+        version: "0.2.0",
       },
-      campaign: { id: "nashville-contract-fixture", version: "0.2.0" },
+      campaign: { id: "reference-contract-fixture", version: "0.3.0" },
       presentation: { id: "grounded-dramatic", version: "0.1.0" },
     });
   });
@@ -44,10 +44,10 @@ describe("game package contracts", () => {
     );
 
     expect(knowledge.facts.map((fact) => fact.id)).toContain(
-      "setting.fact.gates-public",
+      "setting.fact.awakening-recent",
     );
     expect(knowledge.facts.map((fact) => fact.id)).not.toContain(
-      "setting.fact.gate-origin-hidden",
+      "setting.fact.awakening-seed-hidden",
     );
 
     const canonicalKnowledge = retrieveKnowledge(
@@ -57,7 +57,7 @@ describe("game package contracts", () => {
       { subjectId: "setting.entity.awakening-earth" },
     );
     expect(canonicalKnowledge.facts.map((fact) => fact.id)).toContain(
-      "setting.fact.gate-origin-hidden",
+      "setting.fact.awakening-seed-hidden",
     );
   });
 
@@ -74,8 +74,8 @@ describe("game package contracts", () => {
 
     expect(knowledge.beliefs).toEqual([
       expect.objectContaining({
-        id: "campaign.belief.amelia-gate-origin",
-        proposition: "Gates are a naturally occurring atmospheric phenomenon.",
+        id: "campaign.belief.amelia-awakening-cause",
+        proposition: "The Awakening was a naturally occurring cosmic or geomagnetic event rather than something deliberately caused.",
         confidence: 0.8,
       }),
     ]);
@@ -83,7 +83,7 @@ describe("game package contracts", () => {
     expect(game.setting.content.facts).toEqual(canonicalBefore);
     expect(
       world.beliefs.find(
-        (belief) => belief.id === "campaign.belief.amelia-gate-origin",
+        (belief) => belief.id === "campaign.belief.amelia-awakening-cause",
       )?.truthStatus,
     ).toBe("false");
   });
@@ -94,7 +94,7 @@ describe("game package contracts", () => {
       kind: "actor" as const,
       id: "campaign.entity.amelia",
     };
-    const documentId = "setting.document.gate-field-guide";
+    const documentId = "setting.document.public-awakening-primer";
 
     const metadata = retrieveDocument(
       game,
@@ -115,7 +115,7 @@ describe("game package contracts", () => {
     );
     expect(summary.level).toBe("summary");
     if (summary.level === "summary") {
-      expect(summary.sections).toHaveLength(2);
+      expect(summary.sections).toHaveLength(4);
       expect(summary.sections[0]).not.toHaveProperty("content");
     }
 
@@ -124,11 +124,11 @@ describe("game package contracts", () => {
       world,
       perspective,
       documentId,
-      { level: "section", sectionId: "recognition" },
+      { level: "section", sectionId: "setting.document-section.gates" },
     );
     expect(section.level).toBe("section");
     if (section.level === "section") {
-      expect(section.section.content).toContain("distort nearby light");
+      expect(section.section.content).toContain("pocket environment");
     }
 
     const full = retrieveDocument(game, world, perspective, documentId, {
@@ -136,7 +136,7 @@ describe("game package contracts", () => {
     });
     expect(full.level).toBe("full");
     if (full.level === "full") {
-      expect(full.document.sections).toHaveLength(2);
+      expect(full.document.sections).toHaveLength(4);
     }
   });
 
@@ -187,8 +187,16 @@ describe("game package contracts", () => {
         timeToMaterialEffectMs: 1_000,
         scopeIds: ["scope.reference-scene"],
       },
-      reinforced: true,
+      magicalResistanceApplies: true,
     }));
+    expect(mappedInput.resistance.kind).toBe("fixed");
+    if (mappedInput.resistance.kind !== "fixed") {
+      throw new Error("Expected fixed Resistance");
+    }
+    expect(mappedInput.resistance.value).toBe(1);
+    expect(mappedInput.resistance.provenance.sourceId).toBe(
+      "setting.fact.magical-resistance",
+    );
     const intent = {
       actorId: "campaign.entity.amelia",
       goal: "push through the obstacle",
@@ -328,7 +336,7 @@ describe("game package contracts", () => {
       ...metadata,
       game: {
         ...metadata.game,
-        setting: { ...metadata.game.setting, version: "0.2.0" },
+        setting: { ...metadata.game.setting, version: "9.9.9" },
       },
     };
     expect(() => validateSaveMetadataForGame(incompatibleSave, game)).toThrow(

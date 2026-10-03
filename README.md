@@ -53,6 +53,8 @@ See:
 - [Local model runtime](docs/model-runtime.md)
 - [Player action execution pipeline](docs/player-action-pipeline.md)
 - [Lazy world simulation and catch-up](docs/lazy-world-simulation.md)
+- [Awakening Earth setting premise](docs/awakening-earth/setting-premise.md)
+- [Awakening Earth institutions, economy, and society](docs/awakening-earth/institutions-economy-society.md)
 
 ## Development
 

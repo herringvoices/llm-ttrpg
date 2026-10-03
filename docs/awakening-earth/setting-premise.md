@@ -50,9 +50,34 @@ Newly awakened worlds are dangerous environments full of young monsters, unstabl
 
 They therefore expected Earth to produce monsters. The danger created by planetary awakening is not an accident or an unforeseen side effect.
 
+## Gates
+
+Gates are naturally forming magical spatial anomalies.
+
+They are not alien machines, not remnants of the planetary seed, and not a separate supernatural system. They arise when ambient magic self-organizes strongly around its tendency toward movement and change.
+
+A stable Gate usually opens into a **temporary pocket environment** shaped and sustained by concentrated magic. These spaces need not correspond to an ordinary physical location on Earth and may contain substantially more interior space than the Gate's local footprint would suggest.
+
+Gate environments tend to have unusually high magical activity. As a result, they can contain:
+
+- transformed terrestrial life;
+- spontaneously generated monsters or other magical organisms;
+- magical materials and phenomena;
+- environmental conditions that would be unlikely in ordinary Earth geography.
+
+Not every monster comes from a Gate. Monsters can still transform or arise spontaneously in ordinary Earth environments.
+
+Gates are traversable in both directions while stable unless a particular Gate's conditions establish otherwise. Their duration and internal stability vary. Creatures, people, objects, and magical effects can therefore cross between Earth and the Gate environment while it remains open.
+
+Gates are already publicly recognized by campaign start, but humanity does not understand their ultimate cause any better than it understands the Awakening itself. Scientists and responders can study recurring behavior without knowing why magic is capable of producing these spaces.
+
+Because Gate interiors concentrate supernatural hazards and resources into bounded locations, they naturally become important to emergency response, research, monster hunting, and the magical economy.
+
 ## Human Awakening
 
 Humans can awaken supernatural powers as Earth becomes saturated with magic.
+
+Exposure to and participation in monster kills can contribute to this process. Mundane people who repeatedly help defeat monsters may eventually awaken, while already-awakened people can absorb enough power from monster deaths to progress further.
 
 At the campaign start, awakened humans are globally rare but becoming steadily more common. A useful initial estimate is around **0.5% of the population**, though the exact value may be tuned later if needed for world-scale consistency.
 
@@ -88,6 +113,14 @@ Or, less formally: monsters can arise **spawntaneously**.
 
 Monsters can become more dangerous the longer they survive. This phenomenon is observable by humans and contributes to the urgency of dealing with local monster populations before they become substantially harder to manage.
 
+### Death and Loot
+
+Monsters normally disintegrate after death.
+
+That disintegration is also the process by which their remaining magic resolves into loot: magical items, consumables, materials, components, or other supernatural resources.
+
+Some powers or effects can prevent or delay a monster's disintegration. Preserving the body also prevents the normal loot manifestation, creating a real tradeoff between keeping an intact specimen and receiving what the monster would otherwise become.
+
 ## Magical Resistance
 
 Magic interacts much more effectively with magic than the mundane interacts with magic.
@@ -98,7 +131,11 @@ This is a property of the setting, not merely a special defensive ability posses
 
 Conversely, magical attacks and magically empowered actions can interact with magical targets much more normally. An awakened person can therefore harm a monster far more effectively than an otherwise comparable mundane person.
 
-This effect can extend through objects being wielded or directly empowered by an awakened person. The underlying fictional rule is broader than "monsters have damage reduction":
+This effect can extend through objects being wielded or directly empowered by an awakened person.
+
+That ordinary ambient reinforcement is strongest while the awakened person remains in direct contact with the object. It normally dissipates quickly from a mundane projectile after the projectile leaves the awakened person's proximity. Ranged powers, magical ranged weapons or ammunition, and abilities that explicitly sustain magical influence at distance do not share that limitation.
+
+The underlying fictional rule is broader than "monsters have damage reduction":
 
 > **Magic resists the mundane. Magic can meaningfully interact with magic.**
 
@@ -154,11 +191,13 @@ People broadly understand that:
 - monsters and human powers began appearing during the same period;
 - ordinary Earth organisms can transform into monsters;
 - some monsters or magical phenomena appear without an obvious mundane source;
+- Gates can form as traversable spatial anomalies opening into temporary magic-shaped pocket environments;
 - awakened humans develop highly varied powers;
 - magical beings are unusually resistant to mundane harm;
 - awakened people and magical effects can harm monsters much more effectively;
 - magical objects and materials exist;
-- monsters can produce valuable magical materials or items;
+- monsters normally disintegrate after death and can resolve into valuable magical loot;
+- preserving a monster's body prevents that normal loot manifestation;
 - monsters can grow substantially stronger if they survive long enough;
 - and the frequency of both awakenings and monster incidents is increasing.
 
@@ -210,8 +249,11 @@ The setting must maintain a strict distinction between objective truth and what 
 - Some humans awaken powers.
 - Some Earth organisms transform into monsters.
 - Other magical organisms and phenomena can appear without an obvious mundane precursor.
+- Gates can form as traversable spatial anomalies leading into temporary magic-shaped pocket environments.
 - Magical things resist mundane harm.
 - Magic is effective against magic.
+- Mundane projectiles do not normally retain an awakener's ambient reinforcement at range.
+- Monsters normally disintegrate into magical loot when killed.
 - Monsters can become stronger over time.
 - Awakenings and supernatural incidents are becoming more common.
 
@@ -235,10 +277,11 @@ New supernatural content must remain compatible with the following foundational 
 4. Sentient minds and souls can impose structure on magic.
 5. Humans manifest unusually individualized power sets.
 6. Monsters may be transformed Earth life or arise spontaneously from magical activity.
-7. Magical things resist nonmagical force.
-8. Humanity does not know the extraterrestrial cause of the Awakening.
-9. Ordinary modern life continues alongside supernatural disruption.
-10. The setting should support social, economic, occupational, investigative, relational, environmental, and supernatural play without making combat the default structure.
+7. Gates are naturally forming spatial structures produced by the same fundamental magic, commonly opening into temporary pocket environments.
+8. Magical things resist nonmagical force.
+9. Humanity does not know the extraterrestrial cause of the Awakening.
+10. Ordinary modern life continues alongside supernatural disruption.
+11. The setting should support social, economic, occupational, investigative, relational, environmental, and supernatural play without making combat the default structure.
 
 ## Downstream Design Boundaries
 
