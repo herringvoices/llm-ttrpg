@@ -28,7 +28,7 @@ These are project-level constraints. Implementation should work within them unle
 - Potential tools and explicit domain/subsystem descriptions are assembled at game-composition time. The engine defines no universal domain taxonomy.
 - Tool availability is an authoritative policy decision applied to listing, inspection, and binding resolution. Prior disclosure is not authorization: an available registered tool may be addressed directly, while a guessed unavailable tool remains unusable.
 - Catalog discovery results never expose callbacks, persistence handles, RNG internals, or private registry/state objects. Detailed inspection derives JSON-compatible schema documentation from authoritative Zod schemas.
-- The catalog does not define player, NPC, or GM perspective semantics; issue #10 supplies those policies. Issue #11 later selects and executes catalog bindings through their real validated backend paths.
+- The catalog does not define player, NPC, or GM perspective semantics; issue #10 supplies those policies. The player-action pipeline selects and executes catalog bindings through their real validated backend paths.
 - Rules operations use the same hierarchy. They expose schemas and deterministic implementations, then return outcomes and proposed mutations/events instead of directly mutating persistence.
 - A resolution operation is a rules operation, not a separate check registry. The engine recognizes only the generic resolution paths `automatic`, `impossible`, and `uncertain`; checks and their mechanics remain ruleset-owned.
 - Resolution assessment is deterministic and has no RNG capability. Only the second phase of an `uncertain` resolution may receive lazy engine RNG access, and uncertainty does not require using it.
@@ -111,7 +111,14 @@ These are project-level constraints. Implementation should work within them unle
 - Pressure limits fictional resolution scope, never the number of internal operations. The authorized horizon is a ceiling, not an instruction to advance time; actual operation durations consume it downstream.
 - Bounding intent is side-effect free. Pressure reassessment is atomically persisted without advancing fictional time or creating an event merely for the control-state change.
 - A material circumstance change returns control when it invalidates authorization assumptions or creates a meaningful new player choice. Later orchestration may then request a new assessment; it must not blindly continue or retroactively expand an existing authorization.
-- A resolution request consumes an already bounded executable intent. One resolution may not advance fictional time beyond that intent's authorized horizon; issue #11 retains ownership of cumulative multi-operation budgeting and stopping.
+- A resolution request consumes an already bounded executable intent. One resolution may not advance fictional time beyond that intent's authorized horizon; the player-action pipeline owns cumulative multi-operation budgeting and stopping.
+- Declaration interpretation and execution decisions are separate structured model calls. Interpretation fixes one original goal and pressure-bounded executable intent for the run; later turns may choose only one next catalog action or stop.
+- There is no queued model-authored execution plan. Fresh context and a fresh decision are required after every authoritative commit, so a material circumstance change returns control instead of leaving stale future steps to run.
+- Actual committed operation durations cumulatively consume the unchanged executable intent's authorization. Discovery, inspection, retrieval, rejected proposals, and model calls consume no fictional time.
+- Each accepted operation, its exact time/state/event/RNG effects, and its receipt are one atomic commit. Earlier commits are never rolled back because a later proposal, model call, or narration fails.
+- `ActionRun` is versioned, persistent, non-canonical orchestration and idempotency state. It is not World State, event history, campaign content, or checkpoint truth; retries reuse it and never replay committed operation effects.
+- Final narration occurs only after a valid stop, from fresh actor-role context and committed actor-visible results. Narration cannot change or undo the simulation.
+- A stopped action may emit a lightweight non-authoritative campaign-development signal. Campaign planning and replanning remain outside the authoritative mutation path.
 
 ## Randomness
 

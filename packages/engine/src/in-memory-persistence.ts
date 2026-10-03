@@ -20,6 +20,12 @@ import {
   PersistenceConflictError,
   PersistenceNotFoundError,
 } from "./persistence.js";
+import {
+  actionRunSchema,
+  validateActionRunMetadataUpdate,
+  validateActionRunWorldCommit,
+  type ActionRun,
+} from "./player-action-contracts.js";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -34,6 +40,8 @@ export function createInMemoryPersistence(): PersistencePorts {
   const checkpoints = new Map<string, PersistedCheckpoint>();
   const slots = new Map<string, SaveSlot>();
   const histories = new Map<string, CanonicalEvent[]>();
+  const actionRuns = new Map<string, ActionRun>();
+  const actionRunKey = (worldId: string, actionId: string) => `${worldId}\u0000${actionId}`;
 
   function loadRequiredWorld(worldId: WorldId): PersistedWorld {
     const world = worlds.get(worldId);
@@ -196,6 +204,28 @@ export function createInMemoryPersistence(): PersistencePorts {
           input.eventSequence,
           input.state.fictionalTime,
         );
+        const parsedRun = input.actionRun
+          ? actionRunSchema.parse(input.actionRun)
+          : undefined;
+        if (parsedRun) {
+          if (parsedRun.worldId !== input.worldId) {
+            throw new PersistenceConflictError("Action run belongs to a different world");
+          }
+          const existingRun = actionRuns.get(actionRunKey(parsedRun.worldId, parsedRun.id));
+          if (existingRun && (
+            existingRun.actorId !== parsedRun.actorId ||
+            existingRun.declaration !== parsedRun.declaration
+          )) {
+            throw new PersistenceConflictError("Action run identity conflict");
+          }
+          try {
+            validateActionRunWorldCommit(existingRun, parsedRun, current.revision);
+          } catch (error) {
+            throw new PersistenceConflictError(
+              error instanceof Error ? error.message : "Invalid action run commit",
+            );
+          }
+        }
         const committed: PersistedWorld = {
           metadata: {
             ...current.metadata,
@@ -211,6 +241,9 @@ export function createInMemoryPersistence(): PersistencePorts {
           ...clone(input.events),
         ]);
         worlds.set(input.worldId, committed);
+        if (parsedRun) {
+          actionRuns.set(actionRunKey(parsedRun.worldId, parsedRun.id), clone(parsedRun));
+        }
         return clone(committed);
       },
     },
@@ -320,6 +353,51 @@ export function createInMemoryPersistence(): PersistencePorts {
       async query(worldId, query) {
         loadRequiredWorld(worldId);
         return queryHistory(worldId, query);
+      },
+    },
+    actionRuns: {
+      async load(worldId, actionId) {
+        loadRequiredWorld(worldId);
+        const run = actionRuns.get(actionRunKey(worldId, actionId));
+        return run ? clone(run) : undefined;
+      },
+      async create(run) {
+        const parsed = actionRunSchema.parse(run);
+        const world = loadRequiredWorld(parsed.worldId);
+        if (
+          parsed.status !== "active" ||
+          parsed.receipts.length !== 0 ||
+          parsed.elapsedMs !== 0 ||
+          parsed.lastWorldRevision !== world.revision
+        ) {
+          throw new PersistenceConflictError(
+            "A created action run must be empty, active, and current with its world",
+          );
+        }
+        const key = actionRunKey(parsed.worldId, parsed.id);
+        if (actionRuns.has(key)) {
+          throw new PersistenceConflictError(`Action run already exists: ${parsed.id}`);
+        }
+        actionRuns.set(key, clone(parsed));
+        return clone(parsed);
+      },
+      async update(run) {
+        const parsed = actionRunSchema.parse(run);
+        const key = actionRunKey(parsed.worldId, parsed.id);
+        const existing = actionRuns.get(key);
+        if (!existing) throw new PersistenceNotFoundError(`Action run not found: ${parsed.id}`);
+        if (existing.actorId !== parsed.actorId || existing.declaration !== parsed.declaration) {
+          throw new PersistenceConflictError("Action run identity conflict");
+        }
+        try {
+          validateActionRunMetadataUpdate(existing, parsed);
+        } catch (error) {
+          throw new PersistenceConflictError(
+            error instanceof Error ? error.message : "Invalid action run metadata update",
+          );
+        }
+        actionRuns.set(key, clone(parsed));
+        return clone(parsed);
       },
     },
   };

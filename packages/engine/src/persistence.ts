@@ -8,6 +8,7 @@ import type {
 import type { CanonicalEvent, EventQuery } from "./events.js";
 import type { GameComposition } from "./contracts.js";
 import type { WorldState } from "./world.js";
+import type { ActionRun } from "./player-action-contracts.js";
 
 export type WorldId = string;
 export type CheckpointId = string;
@@ -66,6 +67,13 @@ export interface CommitWorldInput {
   readonly state: WorldState;
   readonly events: readonly CanonicalEvent[];
   readonly eventSequence: number;
+  readonly actionRun?: ActionRun;
+}
+
+export interface ActionRunStore {
+  load(worldId: WorldId, actionId: string): Promise<ActionRun | undefined>;
+  create(run: ActionRun): Promise<ActionRun>;
+  update(run: ActionRun): Promise<ActionRun>;
 }
 
 export interface SaveCheckpointInput {
@@ -123,6 +131,7 @@ export interface PersistencePorts {
   readonly saves: SaveStore;
   readonly content: WorldContentQueries;
   readonly history: EventHistoryStore;
+  readonly actionRuns: ActionRunStore;
 }
 
 export class PersistenceConflictError extends Error {

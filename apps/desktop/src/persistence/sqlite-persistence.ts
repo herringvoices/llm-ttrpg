@@ -17,6 +17,7 @@ import type {
   WorldMetadata,
   WorldState,
   ActionPressureState,
+  ActionRun,
   RandomnessState,
   ScheduledTrigger,
   SimulationCursor,
@@ -24,10 +25,13 @@ import type {
 import {
   PersistenceConflictError,
   actionPressureStateSchema,
+  actionRunSchema,
   canonicalEventSchema,
   eventQuerySchema,
   fictionalInstant,
   randomnessStateSchema,
+  validateActionRunMetadataUpdate,
+  validateActionRunWorldCommit,
 } from "@llm-ttrpg/engine";
 import type { SqlBindValue, SqlClient } from "./sql-client.js";
 
@@ -80,6 +84,10 @@ interface RandomnessRow {
   algorithm: string;
   root_seed: number;
   next_stream: number;
+}
+
+interface ActionRunRow {
+  run_json: string;
 }
 
 function parse<T>(value: string): T {
@@ -314,6 +322,13 @@ async function issueCommand(database: SqlClient, command: unknown): Promise<void
 }
 
 export function createSqlitePersistence(database: SqlClient): PersistencePorts {
+  const loadActionRun = async (worldId: string, actionId: string): Promise<ActionRun | undefined> => {
+    const rows = await database.select<ActionRunRow[]>(
+      "SELECT run_json FROM action_runs WHERE world_id = $1 AND action_id = $2",
+      [worldId, actionId],
+    );
+    return rows[0] ? actionRunSchema.parse(parse(rows[0].run_json)) : undefined;
+  };
   const loadWorld = async (worldId: string): Promise<PersistedWorld | undefined> => {
     const rows = await database.select<WorldRow[]>(
       "SELECT * FROM worlds WHERE id = $1",
@@ -343,6 +358,19 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
       },
       load: loadWorld,
       async commit(input: CommitWorldInput) {
+        if (input.actionRun) {
+          try {
+            validateActionRunWorldCommit(
+              await loadActionRun(input.worldId, input.actionRun.id),
+              input.actionRun,
+              input.expectedRevision,
+            );
+          } catch (error) {
+            throw new PersistenceConflictError(
+              error instanceof Error ? error.message : "Invalid action run commit",
+            );
+          }
+        }
         await issueCommand(database, { operation: "commit-world", ...input });
         return (await loadWorld(input.worldId))!;
       },
@@ -432,6 +460,64 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
       },
       query(worldId, query) {
         return readEvents(database, worldId, null, query);
+      },
+    },
+    actionRuns: {
+      async load(worldId, actionId) {
+        return loadActionRun(worldId, actionId);
+      },
+      async create(run: ActionRun) {
+        const parsedRun = actionRunSchema.parse(run);
+        const worlds = await database.select<Array<{ revision: number }>>(
+          "SELECT revision FROM worlds WHERE id = $1",
+          [parsedRun.worldId],
+        );
+        if (
+          worlds[0]?.revision !== parsedRun.lastWorldRevision ||
+          parsedRun.status !== "active" ||
+          parsedRun.receipts.length !== 0 ||
+          parsedRun.elapsedMs !== 0
+        ) {
+          throw new PersistenceConflictError(
+            "A created action run must be empty, active, and current with its world",
+          );
+        }
+        try {
+          await database.execute(
+            "INSERT INTO action_runs(world_id, action_id, actor_id, declaration, run_json) VALUES ($1, $2, $3, $4, $5)",
+            [
+              parsedRun.worldId,
+              parsedRun.id,
+              parsedRun.actorId,
+              parsedRun.declaration,
+              JSON.stringify(parsedRun),
+            ],
+          );
+        } catch (error) {
+          throw new PersistenceConflictError(
+            error instanceof Error ? error.message : "Action run creation failed",
+          );
+        }
+        return parsedRun;
+      },
+      async update(run: ActionRun) {
+        const parsedRun = actionRunSchema.parse(run);
+        const existing = await loadActionRun(parsedRun.worldId, parsedRun.id);
+        if (!existing) {
+          throw new PersistenceConflictError(`Action run not found: ${parsedRun.id}`);
+        }
+        try {
+          validateActionRunMetadataUpdate(existing, parsedRun);
+        } catch (error) {
+          throw new PersistenceConflictError(
+            error instanceof Error ? error.message : "Invalid action run metadata update",
+          );
+        }
+        await database.execute(
+          "UPDATE action_runs SET run_json = ? WHERE world_id = ? AND action_id = ?",
+          [JSON.stringify(parsedRun), parsedRun.worldId, parsedRun.id],
+        );
+        return parsedRun;
       },
     },
   };

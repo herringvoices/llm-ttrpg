@@ -51,6 +51,7 @@ See:
 - [Game package contracts](docs/game-package-contracts.md)
 - [Context assembly and knowledge retrieval](docs/context-assembly.md)
 - [Local model runtime](docs/model-runtime.md)
+- [Player action execution pipeline](docs/player-action-pipeline.md)
 
 ## Development
 

@@ -13,7 +13,6 @@ This file records the current GitHub Project placement for the seeded issues.
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
-| #11 | Player Action Execution Pipeline | Core Engine, Actions & Rules, Context & Tools |
 | #12 | Lazy World Simulation & Catch-Up | Time & World Simulation, Persistence |
 | #13 | NPC State, Knowledge, Goals & Relationships | NPCs & Social, Time & World Simulation |
 | #14 | NPC Interaction & Conversation | NPCs & Social, Context & Tools |
@@ -42,6 +41,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Context & Tools, Core Engine
 - #10 — Context Assembly & Knowledge Retrieval
   - Labels: Context & Tools
+- #11 — Player Action Execution Pipeline
+  - Labels: Core Engine, Actions & Rules, Context & Tools
 - #15 — Local LLM Runtime Adapter
   - Labels: LLM Runtime, Core Engine
 - #21 — Core Game Rules & Resolution Model

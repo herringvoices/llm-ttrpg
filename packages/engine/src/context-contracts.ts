@@ -179,6 +179,7 @@ export const contextProvenanceSchema = z
       "working-context",
       "plan",
       "tool-catalog",
+      "tool-result",
     ]),
     sourceIds: z.array(stableIdSchema),
     component: z

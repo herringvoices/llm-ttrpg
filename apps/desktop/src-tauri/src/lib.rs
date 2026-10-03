@@ -24,6 +24,11 @@ pub fn run() {
         description: "resolution_randomness",
         sql: include_str!("../migrations/0004_resolution_randomness.sql"),
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 5,
+        description: "player_action_runs",
+        sql: include_str!("../migrations/0005_player_action_runs.sql"),
+        kind: MigrationKind::Up,
     }];
 
     tauri::Builder::default()

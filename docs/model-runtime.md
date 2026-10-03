@@ -20,7 +20,7 @@ There are exactly two semantic output modes:
 
 For structured calls, the adapter derives JSON Schema for provider-side constrained generation, parses the complete returned JSON, validates it again with Zod, and returns the validated value only on success. Provider constraint support improves reliability but is not the authority boundary. Invalid or malformed output returns `invalid-output`; the adapter sends no hidden repair request.
 
-Operation selection is ordinary structured data such as `{ toolId, arguments }`. Native provider tool-calling is not the engine abstraction. #9 remains the authoritative catalog/binding layer and #11 will decide when to resolve or execute a selection.
+Operation selection is ordinary structured data such as `{ toolId, arguments }`. Native provider tool-calling is not the engine abstraction. #9 remains the authoritative catalog/binding layer; the #11 pipeline decides when to resolve or execute one selection and permits one explicit corrective call after `invalid-output` without adding provider-side JSON repair.
 
 ## Results, failures, and capabilities
 
