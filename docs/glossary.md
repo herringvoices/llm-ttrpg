@@ -90,6 +90,18 @@ Persisted future engine work that may later resolve into state changes or meanin
 
 The last fictional instant at which a generic simulation scope was brought current. A cursor may not be later than the world's fictional time.
 
+## Simulation scope
+
+A stable game-authored boundary for independently sleeping and catching up part of the world. A scope has a generic kind, may have a parent and explicit prerequisite scopes, and owns an authoritative simulation cursor. It is not automatically an entity or every container in the setting.
+
+## World process
+
+A versioned game-package definition that advances selected authoritative state across one complete elapsed fictional interval. It declares scope kinds, process dependencies, event interests, and scheduled-work ownership, then returns validated proposals rather than writing persistence directly.
+
+## Wake closure
+
+The smallest deterministic set of a requested simulation scope plus its parent and explicit prerequisite scopes. Catch-up wakes this closure in dependency order without automatically waking descendants, siblings, or unrelated systems.
+
 ## Operation
 
 A deterministic engine capability exposed to the LLM-facing orchestration layer, such as observing a location, attempting movement, modifying an object through validated rules, or querying relevant knowledge.

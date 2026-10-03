@@ -52,6 +52,7 @@ See:
 - [Context assembly and knowledge retrieval](docs/context-assembly.md)
 - [Local model runtime](docs/model-runtime.md)
 - [Player action execution pipeline](docs/player-action-pipeline.md)
+- [Lazy world simulation and catch-up](docs/lazy-world-simulation.md)
 
 ## Development
 

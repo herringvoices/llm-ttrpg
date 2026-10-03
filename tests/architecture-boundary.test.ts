@@ -44,6 +44,16 @@ describe("engine package boundary", () => {
     expect(violations).toEqual([]);
   });
 
+  it("keeps setting-specific simulation concepts out of the engine", () => {
+    const engineFiles = findTypeScriptFiles("packages/engine/src");
+    const forbiddenSimulationContent =
+      /\b(?:Gate|monster|Awakened|guild|shop|town economy|Quest)\b/;
+    const violations = engineFiles.filter((path) =>
+      forbiddenSimulationContent.test(readFileSync(path, "utf8")),
+    );
+    expect(violations).toEqual([]);
+  });
+
   it("keeps tool catalog namespaces composed rather than hardcoded", () => {
     const source = readFileSync("packages/engine/src/tool-catalog.ts", "utf8");
     expect(source).not.toMatch(/domainId:\s*["']/);

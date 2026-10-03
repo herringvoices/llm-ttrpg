@@ -13,6 +13,10 @@ import type {
   ToolCatalog,
   ToolCatalogContribution,
 } from "./tool-catalog.js";
+import type {
+  WorldSimulationContribution,
+  WorldSimulationRegistry,
+} from "./simulation.js";
 
 export interface EventTypeProvider {
   readonly eventTypes: readonly RegisteredEventType[];
@@ -22,13 +26,19 @@ export interface ToolCatalogContributor {
   readonly toolCatalog?: ToolCatalogContribution;
 }
 
-export interface Ruleset extends EventTypeProvider, ToolCatalogContributor {
+export interface WorldSimulationContributor {
+  readonly worldSimulation?: WorldSimulationContribution;
+}
+
+export interface Ruleset
+  extends EventTypeProvider, ToolCatalogContributor, WorldSimulationContributor {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly operations: readonly RegisteredRulesOperation[];
 }
 
-export interface Setting extends EventTypeProvider, ToolCatalogContributor {
+export interface Setting
+  extends EventTypeProvider, ToolCatalogContributor, WorldSimulationContributor {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly content: ContentBundle;
@@ -43,7 +53,7 @@ export interface SettingRuleMapping {
 }
 
 export interface SettingAdapter
-  extends EventTypeProvider, ToolCatalogContributor {
+  extends EventTypeProvider, ToolCatalogContributor, WorldSimulationContributor {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly ruleset: ComponentReference;
@@ -51,7 +61,8 @@ export interface SettingAdapter
   readonly mappings: readonly SettingRuleMapping[];
 }
 
-export interface Campaign extends EventTypeProvider, ToolCatalogContributor {
+export interface Campaign
+  extends EventTypeProvider, ToolCatalogContributor, WorldSimulationContributor {
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly setting: ComponentReference;
@@ -87,6 +98,7 @@ export interface LoadedGameDefinition extends GameDefinition {
   readonly operationRegistry: OperationRegistry;
   readonly eventTypeRegistry: EventTypeRegistry;
   readonly toolCatalog: ToolCatalog;
+  readonly worldSimulationRegistry: WorldSimulationRegistry;
   readonly composition: GameComposition;
 }
 

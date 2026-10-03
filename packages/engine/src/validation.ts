@@ -24,6 +24,12 @@ import {
   type SourcedToolCatalogContribution,
 } from "./tool-catalog.js";
 import { createContextToolCatalogContribution } from "./context-tools.js";
+import { createWorldSimulationRegistry } from "./simulation.js";
+
+const worldSimulationBoundarySchema = z.object({
+  scopes: z.array(z.unknown()).optional(),
+  processes: z.array(z.unknown()).optional(),
+}).strict();
 
 const rulesetBoundarySchema = z
   .object({
@@ -32,6 +38,7 @@ const rulesetBoundarySchema = z
     operations: z.array(z.unknown()),
     eventTypes: z.array(z.unknown()),
     toolCatalog: z.unknown().optional(),
+    worldSimulation: worldSimulationBoundarySchema.optional(),
   })
   .strict();
 
@@ -42,6 +49,7 @@ const settingBoundarySchema = z
     content: contentBundleSchema,
     eventTypes: z.array(z.unknown()),
     toolCatalog: z.unknown().optional(),
+    worldSimulation: worldSimulationBoundarySchema.optional(),
   })
   .strict();
 
@@ -67,6 +75,7 @@ const adapterBoundarySchema = z
     mappings: z.array(settingRuleMappingBoundarySchema),
     eventTypes: z.array(z.unknown()),
     toolCatalog: z.unknown().optional(),
+    worldSimulation: worldSimulationBoundarySchema.optional(),
   })
   .strict();
 
@@ -79,6 +88,7 @@ const campaignBoundarySchema = z
     content: contentBundleSchema,
     eventTypes: z.array(z.unknown()),
     toolCatalog: z.unknown().optional(),
+    worldSimulation: worldSimulationBoundarySchema.optional(),
   })
   .strict();
 
@@ -345,6 +355,16 @@ export function loadGameDefinition(
     game.adapter,
     game.campaign,
   ]);
+  const worldSimulationRegistry = createWorldSimulationRegistry(
+    [game.ruleset, game.setting, game.adapter, game.campaign].flatMap(
+      (component) => component.worldSimulation
+        ? [{
+            sourceComponent: component.identity,
+            contribution: component.worldSimulation,
+          }]
+        : [],
+    ),
+  );
   for (const event of combinedContent.events) {
     eventTypeRegistry.validatePayload(
       event.type,
@@ -361,12 +381,16 @@ export function loadGameDefinition(
   // campaign reality is created only by initializeCampaignWorld.
   deepFreeze(game.setting.content);
   deepFreeze(game.campaign.content);
+  for (const component of [game.ruleset, game.setting, game.adapter, game.campaign]) {
+    if (component.worldSimulation) deepFreeze(component.worldSimulation);
+  }
 
   return {
     ...game,
     operationRegistry,
     eventTypeRegistry,
     toolCatalog,
+    worldSimulationRegistry,
     composition: compositionFromGame(game),
   };
 }

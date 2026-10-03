@@ -99,6 +99,12 @@ These are project-level constraints. Implementation should work within them unle
 - The world does not continuously tick every simulated object.
 - Off-screen systems sleep and catch up when they become relevant.
 - Meaningful events form a causal history that can drive later catch-up and retrieval.
+- Simulation scopes are game-authored generic boundaries, not automatically one scope per entity. Parent and explicit dependency closure determine what wakes; descendants, siblings, and unrelated scopes remain asleep.
+- Game packages own versioned world-process definitions and selected relevant state. The engine owns scope/process validation, deterministic DAG ordering, bounded history/schedule delivery, computation safeguards, RNG, and atomic persistence.
+- Catch-up resolves a complete elapsed interval to an already-existing world time; it never advances the fictional clock or imposes minute/hour/day/week ticks.
+- Later processes run against earlier proposed changes in one working snapshot. The engine does not parallelize stale outcomes or provide a universal conflict-merging layer.
+- One requested dependency closure commits state, meaningful events, schedule changes, RNG progression, and cursor advancement atomically. Any failure leaves the entire closure unchanged.
+- A cursor already at the target timestamp is a true no-op. Catch-up performs no model call, and an LLM cannot fabricate elapsed canonical history.
 
 ## Action scope
 

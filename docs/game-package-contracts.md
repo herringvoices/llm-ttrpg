@@ -20,7 +20,9 @@ These reference-game layers deliberately remain modules in one workspace package
 - content schemas and referential integrity
 - adapter references to setting concepts and rules operations
 
-The returned `LoadedGameDefinition` includes the authoritative operation/event registries, a separately composed model-facing tool catalog, and the exact versioned composition recorded by saves.
+The returned `LoadedGameDefinition` includes the authoritative operation/event registries, validated world-simulation registry, a separately composed model-facing tool catalog, and the exact versioned composition recorded by saves.
+
+Rulesets, settings, adapters, and campaigns may contribute generic simulation scopes and world processes through their existing component identity/version. Concrete scope topology commonly belongs to a campaign, while reusable elapsed behavior may live with the package that owns its meaning. The engine combines active contributions, validates scope/process dependency DAGs and scope-kind compatibility, and rejects ambiguous scheduled-work handlers. This does not add another game-definition component or a public plugin SDK. See [Lazy World Simulation and Catch-Up](lazy-world-simulation.md).
 
 ## Content and knowledge
 

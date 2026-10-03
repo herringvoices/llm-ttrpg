@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  beliefSchema,
   canonicalFactSchema,
   jsonValueSchema,
   type JsonValue,
@@ -59,6 +60,18 @@ export const mutationProposalSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("remove-fact"),
       factId: stableIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("upsert-belief"),
+      belief: beliefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("remove-belief"),
+      beliefId: stableIdSchema,
     })
     .strict(),
 ]);
@@ -187,6 +200,40 @@ export interface OperationRegistry {
 
 export class OperationValidationError extends Error {
   override readonly name = "OperationValidationError";
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export function applyMutationProposals(
+  state: WorldState,
+  mutations: readonly MutationProposal[],
+): void {
+  const parsed = z.array(mutationProposalSchema).parse(mutations);
+  for (const mutation of parsed) {
+    if (mutation.kind === "set-entity-data") {
+      const entity = state.entities.find((item) => item.id === mutation.entityId);
+      if (!entity) {
+        throw new OperationValidationError(
+          `Mutation references missing entity: ${mutation.entityId}`,
+        );
+      }
+      entity.data[mutation.key] = clone(mutation.value);
+    } else if (mutation.kind === "upsert-fact") {
+      const index = state.facts.findIndex((item) => item.id === mutation.fact.id);
+      if (index === -1) state.facts.push(clone(mutation.fact));
+      else state.facts[index] = clone(mutation.fact);
+    } else if (mutation.kind === "remove-fact") {
+      state.facts = state.facts.filter((item) => item.id !== mutation.factId);
+    } else if (mutation.kind === "upsert-belief") {
+      const index = state.beliefs.findIndex((item) => item.id === mutation.belief.id);
+      if (index === -1) state.beliefs.push(clone(mutation.belief));
+      else state.beliefs[index] = clone(mutation.belief);
+    } else {
+      state.beliefs = state.beliefs.filter((item) => item.id !== mutation.beliefId);
+    }
+  }
 }
 
 function isZodSchema(value: unknown): value is z.ZodType<unknown> {

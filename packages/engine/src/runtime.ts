@@ -12,10 +12,10 @@ import {
 } from "./events.js";
 import type { LoadedGameDefinition } from "./contracts.js";
 import {
+  applyMutationProposals,
   assessResolutionOperation,
   executeRulesOperation,
   resolveUncertainOperation,
-  type MutationProposal,
   type OperationResult,
 } from "./operations.js";
 import type {
@@ -43,6 +43,7 @@ import type { JsonValue } from "./json.js";
 import { jsonValueSchema } from "./json.js";
 import {
   advanceFictionalInstant,
+  compareFictionalInstants,
   fictionalDurationMs,
   fictionalInstant,
   type FictionalInstant,
@@ -55,6 +56,18 @@ import {
   type ScheduledTrigger,
   type WorldState,
 } from "./world.js";
+import {
+  SimulationBudgetExceededError,
+  SimulationValidationError,
+  executeWorldProcess,
+  selectWorldProcessState,
+  type CatchUpScopeRequest,
+  type CatchUpScopeResult,
+  type EventInterestDefinition,
+  type RegisteredWorldProcess,
+  type SimulationScopeDefinition,
+  type WorldProcessExecutionDiagnostic,
+} from "./simulation.js";
 import {
   assembleContext,
   createContextQueryExecutionOptions,
@@ -141,6 +154,7 @@ export interface GameSession {
   scheduleTrigger(
     trigger: Omit<ScheduledTrigger, "id">,
   ): Promise<ScheduledTrigger>;
+  catchUpScope(request: CatchUpScopeRequest): Promise<CatchUpScopeResult>;
   eventHistory(query?: EventQuery): Promise<readonly CanonicalEvent[]>;
   assembleContext(
     request: ContextAssemblyRequest,
@@ -165,29 +179,6 @@ export interface GameSession {
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function applyMutations(
-  state: WorldState,
-  mutations: readonly MutationProposal[],
-): void {
-  for (const mutation of mutations) {
-    if (mutation.kind === "set-entity-data") {
-      const entity = state.entities.find((item) => item.id === mutation.entityId);
-      if (!entity) {
-        throw new PersistenceNotFoundError(
-          `Mutation references missing entity: ${mutation.entityId}`,
-        );
-      }
-      entity.data[mutation.key] = clone(mutation.value);
-    } else if (mutation.kind === "upsert-fact") {
-      const index = state.facts.findIndex((item) => item.id === mutation.fact.id);
-      if (index === -1) state.facts.push(clone(mutation.fact));
-      else state.facts[index] = clone(mutation.fact);
-    } else {
-      state.facts = state.facts.filter((item) => item.id !== mutation.factId);
-    }
-  }
 }
 
 function replaceLocalReferences(
@@ -310,8 +301,9 @@ function openSession(
     candidate: WorldState,
     outcome: OperationResult<unknown>,
     options?: ExecuteOperationOptions,
+    priorBatch: readonly CanonicalEvent[] = [],
   ): Promise<CanonicalEvent[]> {
-    applyMutations(candidate, outcome.proposedMutations);
+    applyMutationProposals(candidate, outcome.proposedMutations);
     candidate.fictionalTime = advanceFictionalInstant(
       candidate.fictionalTime,
       outcome.advanceTimeByMs,
@@ -329,7 +321,7 @@ function openSession(
         ]),
       ];
       for (const causeId of causedByEventIds) {
-        const earlierInBatch = canonicalEvents.some(
+        const earlierInBatch = [...priorBatch, ...canonicalEvents].some(
           (candidateEvent) => candidateEvent.id === causeId,
         );
         if (
@@ -350,7 +342,7 @@ function openSession(
         schemaVersion: event.schemaVersion,
         sourceComponent: definition.sourceComponent,
         occurredAt: candidate.fictionalTime,
-        sequence: eventSequence + canonicalEvents.length + 1,
+        sequence: eventSequence + priorBatch.length + canonicalEvents.length + 1,
         summary: event.summary,
         relatedEntityIds: [...event.relatedEntityIds],
         scopeIds: [...event.scopeIds],
@@ -368,6 +360,88 @@ function openSession(
       canonicalEvents.push(canonicalEvent);
     }
     return canonicalEvents;
+  }
+
+  function eventMatchesInterest(
+    event: CanonicalEvent,
+    interest: EventInterestDefinition,
+    scopeId: string,
+  ): boolean {
+    if (interest.types && !interest.types.includes(event.type)) return false;
+    if (interest.currentScope && !event.scopeIds.includes(scopeId)) return false;
+    if (interest.scopeId && !event.scopeIds.includes(interest.scopeId)) return false;
+    if (
+      interest.relatedEntityId &&
+      !event.relatedEntityIds.includes(interest.relatedEntityId)
+    ) return false;
+    if (interest.originKind && event.origin?.kind !== interest.originKind) return false;
+    if (interest.originId && event.origin?.id !== interest.originId) return false;
+    if (interest.access && !interest.access.includes(event.access)) return false;
+    return true;
+  }
+
+  async function queryRelevantEvents(
+    process: RegisteredWorldProcess,
+    scope: SimulationScopeDefinition,
+    from: FictionalInstant,
+    to: FictionalInstant,
+    priorBatch: readonly CanonicalEvent[],
+  ): Promise<CanonicalEvent[]> {
+    const byId = new Map<string, CanonicalEvent>();
+    for (const interest of process.metadata.eventInterests) {
+      let cursor: EventQuery["cursor"];
+      while (true) {
+        const page = await dependencies.persistence.history.query(
+          persisted.metadata.id,
+          {
+            from,
+            to,
+            ...(interest.types ? { types: interest.types } : {}),
+            ...(interest.currentScope
+              ? { scopeId: scope.id }
+              : interest.scopeId
+                ? { scopeId: interest.scopeId }
+                : {}),
+            ...(interest.relatedEntityId
+              ? { relatedEntityId: interest.relatedEntityId }
+              : {}),
+            ...(interest.originKind ? { originKind: interest.originKind } : {}),
+            ...(interest.originId ? { originId: interest.originId } : {}),
+            ...(interest.access ? { access: interest.access } : {}),
+            direction: "ascending",
+            limit: 1000,
+            ...(cursor ? { cursor } : {}),
+          },
+        );
+        for (const event of page) {
+          if (
+            compareFictionalInstants(event.occurredAt, from) > 0 &&
+            compareFictionalInstants(event.occurredAt, to) <= 0 &&
+            eventMatchesInterest(event, interest, scope.id)
+          ) {
+            byId.set(event.id, clone(event));
+          }
+        }
+        if (page.length < 1000) break;
+        const last = page.at(-1)!;
+        cursor = { occurredAt: last.occurredAt, sequence: last.sequence };
+      }
+      for (const event of priorBatch) {
+        if (eventMatchesInterest(event, interest, scope.id)) {
+          byId.set(event.id, clone(event));
+        }
+      }
+    }
+    return [...byId.values()].sort((left, right) =>
+      compareFictionalInstants(left.occurredAt, right.occurredAt) ||
+      left.sequence - right.sequence
+    );
+  }
+
+  function requireUniqueIds(label: string, ids: readonly string[]): void {
+    if (new Set(ids).size !== ids.length) {
+      throw new SimulationValidationError(`${label} contains duplicate IDs`);
+    }
   }
 
   return {
@@ -397,6 +471,12 @@ function openSession(
       return clone(state);
     },
     async setSimulationCursor(scopeId, lastSimulatedAt) {
+      if (dependencies.game.worldSimulationRegistry.listScopes().length > 0) {
+        dependencies.game.worldSimulationRegistry.getScope(scopeId);
+        throw new SimulationValidationError(
+          "Registered simulation cursors advance only through catch-up",
+        );
+      }
       const candidate = clone(state);
       const normalized = fictionalInstant(lastSimulatedAt);
       const index = candidate.simulationCursors.findIndex(
@@ -409,6 +489,24 @@ function openSession(
       return clone(state);
     },
     async scheduleTrigger(trigger) {
+      if (dependencies.game.worldSimulationRegistry.listScopes().length > 0) {
+        if (trigger.scopeIds.length === 0) {
+          throw new SimulationValidationError(
+            "Scheduled simulation work requires at least one registered scope",
+          );
+        }
+        for (const scopeId of trigger.scopeIds) {
+          const scope = dependencies.game.worldSimulationRegistry.getScope(scopeId);
+          if (!dependencies.game.worldSimulationRegistry.scheduledHandler(
+            scope.kind,
+            trigger.type,
+          )) {
+            throw new SimulationValidationError(
+              `No world process handles scheduled trigger ${trigger.type} in ${scope.kind}`,
+            );
+          }
+        }
+      }
       const simulationSources = [
         state.game.ruleset,
         state.game.setting,
@@ -433,6 +531,288 @@ function openSession(
       candidate.scheduledTriggers.push(scheduled);
       await commitCandidate(candidate);
       return clone(scheduled);
+    },
+    async catchUpScope(rawRequest) {
+      const request: CatchUpScopeRequest = {
+        scopeId: rawRequest.scopeId,
+        ...(rawRequest.targetTime ? { targetTime: fictionalInstant(rawRequest.targetTime) } : {}),
+        ...(rawRequest.maxWorkUnits !== undefined
+          ? { maxWorkUnits: rawRequest.maxWorkUnits }
+          : {}),
+      };
+      const registry = dependencies.game.worldSimulationRegistry;
+      registry.getScope(request.scopeId);
+      const targetTime = request.targetTime ?? state.fictionalTime;
+      if (compareFictionalInstants(targetTime, state.fictionalTime) > 0) {
+        throw new SimulationValidationError(
+          "Catch-up target cannot be later than current fictional world time",
+        );
+      }
+      const targetCursor = state.simulationCursors.find(
+        (cursor) => cursor.scopeId === request.scopeId,
+      );
+      if (!targetCursor) {
+        throw new SimulationValidationError(
+          `Missing simulation cursor for scope ${request.scopeId}`,
+        );
+      }
+      if (compareFictionalInstants(targetCursor.lastSimulatedAt, targetTime) > 0) {
+        throw new SimulationValidationError(
+          `Simulation cursor for ${request.scopeId} is later than the catch-up target`,
+        );
+      }
+      if (targetCursor.lastSimulatedAt === targetTime) {
+        return {
+          kind: "no-op" as const,
+          requestedScopeId: request.scopeId,
+          targetTime,
+          originalCursor: targetCursor.lastSimulatedAt,
+          finalCursor: targetCursor.lastSimulatedAt,
+          reason: "already-current" as const,
+          awakenedScopeIds: [] as const,
+          scopeOrder: [] as const,
+          processOrder: [] as const,
+          relevantEventIds: [] as const,
+          processedScheduledTriggerIds: [] as const,
+          canonicalEventIds: [] as const,
+          randomness: [] as const,
+          processOutcomes: [] as const,
+        };
+      }
+
+      const maximumWorkUnits = request.maxWorkUnits ?? 1000;
+      if (!Number.isSafeInteger(maximumWorkUnits) || maximumWorkUnits <= 0) {
+        throw new SimulationValidationError(
+          "Catch-up work budget must be a positive safe integer",
+        );
+      }
+      const closure = registry.dependencyClosure(request.scopeId);
+      const cursorByScope = new Map(
+        state.simulationCursors.map((cursor) => [cursor.scopeId, cursor]),
+      );
+      for (const scope of closure) {
+        const cursor = cursorByScope.get(scope.id);
+        if (!cursor) {
+          throw new SimulationValidationError(
+            `Missing simulation cursor for scope ${scope.id}`,
+          );
+        }
+        if (compareFictionalInstants(cursor.lastSimulatedAt, targetTime) > 0) {
+          throw new SimulationValidationError(
+            `Simulation cursor for ${scope.id} is later than the catch-up target`,
+          );
+        }
+      }
+      const awakened = closure.filter((scope) =>
+        cursorByScope.get(scope.id)!.lastSimulatedAt !== targetTime
+      );
+      const candidate = clone(state);
+      const canonicalEvents: CanonicalEvent[] = [];
+      const processOutcomes: WorldProcessExecutionDiagnostic[] = [];
+      const relevantEventIds = new Set<string>();
+      const processedScheduledTriggerIds = new Set<string>();
+      const randomness: NonNullable<WorldProcessExecutionDiagnostic["randomness"]>[] = [];
+      const processOrder: string[] = [];
+      let workUnitsUsed = 0;
+
+      for (const scope of awakened) {
+        const cursor = candidate.simulationCursors.find(
+          (item) => item.scopeId === scope.id,
+        )!;
+        const from = cursor.lastSimulatedAt;
+        const elapsedDurationMs = fictionalDurationMs(
+          Date.parse(targetTime) - Date.parse(from),
+        );
+        const processes = registry.listProcesses(scope.kind);
+        const dueForScope = candidate.scheduledTriggers
+          .filter((trigger) =>
+            trigger.scopeIds.includes(scope.id) &&
+            compareFictionalInstants(trigger.dueAt, from) > 0 &&
+            compareFictionalInstants(trigger.dueAt, targetTime) <= 0
+          )
+          .sort((left, right) =>
+            compareFictionalInstants(left.dueAt, right.dueAt) ||
+            left.id.localeCompare(right.id)
+          );
+        const dueByProcess = new Map<string, ScheduledTrigger[]>();
+        for (const trigger of dueForScope) {
+          const handler = registry.scheduledHandler(scope.kind, trigger.type);
+          if (!handler) {
+            throw new SimulationValidationError(
+              `No world process handles due trigger ${trigger.type} in ${scope.kind}`,
+            );
+          }
+          const existing = dueByProcess.get(handler.metadata.id) ?? [];
+          existing.push(trigger);
+          dueByProcess.set(handler.metadata.id, existing);
+        }
+
+        for (const process of processes) {
+          if (workUnitsUsed >= maximumWorkUnits) {
+            throw new SimulationBudgetExceededError(
+              `Catch-up exceeded its ${maximumWorkUnits}-unit work budget`,
+            );
+          }
+          const relevantEvents = await queryRelevantEvents(
+            process,
+            scope,
+            from,
+            targetTime,
+            canonicalEvents,
+          );
+          for (const event of relevantEvents) relevantEventIds.add(event.id);
+          const dueScheduledWork = (dueByProcess.get(process.metadata.id) ?? [])
+            .filter((trigger) => candidate.scheduledTriggers.some(
+              (current) => current.id === trigger.id,
+            ));
+          const selectedState = selectWorldProcessState(process, candidate, scope.id);
+          const lazyRandomness = process.metadata.kind === "stochastic"
+            ? createLazyRandomnessStream(candidate.randomness)
+            : undefined;
+          const outcome = executeWorldProcess(
+            process,
+            {
+              scopeId: scope.id,
+              from,
+              to: targetTime,
+              elapsedDurationMs,
+              relevantState: selectedState,
+              relevantEvents,
+              dueScheduledWork,
+              remainingWorkUnits: maximumWorkUnits - workUnitsUsed,
+            },
+            lazyRandomness?.random,
+          );
+          const cost = outcome.workUnits + 1;
+          if (cost > maximumWorkUnits - workUnitsUsed) {
+            throw new SimulationBudgetExceededError(
+              `World process ${process.metadata.id} exceeded the remaining catch-up work budget`,
+            );
+          }
+          workUnitsUsed += cost;
+          requireUniqueIds(
+            `Processed scheduled work from ${process.metadata.id}`,
+            outcome.processedScheduledTriggerIds,
+          );
+          requireUniqueIds(
+            `Scheduled cancellations from ${process.metadata.id}`,
+            outcome.cancelScheduledTriggerIds,
+          );
+          const expectedProcessed = dueScheduledWork.map((trigger) => trigger.id).sort();
+          const actualProcessed = [...outcome.processedScheduledTriggerIds].sort();
+          if (JSON.stringify(expectedProcessed) !== JSON.stringify(actualProcessed)) {
+            throw new SimulationValidationError(
+              `World process ${process.metadata.id} must process every due trigger assigned to it exactly once`,
+            );
+          }
+          const cancellationSet = new Set(outcome.cancelScheduledTriggerIds);
+          for (const triggerId of cancellationSet) {
+            if (!candidate.scheduledTriggers.some((trigger) => trigger.id === triggerId)) {
+              throw new SimulationValidationError(
+                `World process ${process.metadata.id} cancels unknown scheduled trigger ${triggerId}`,
+              );
+            }
+          }
+
+          const newCanonicalEvents = await applyOutcome(
+            candidate,
+            {
+              result: null,
+              advanceTimeByMs: fictionalDurationMs(0),
+              proposedMutations: outcome.mutations,
+              proposedEvents: outcome.events,
+            },
+            { origin: { kind: "world-process", id: process.metadata.id } },
+            canonicalEvents,
+          );
+          canonicalEvents.push(...newCanonicalEvents);
+
+          const removedIds = new Set([
+            ...outcome.processedScheduledTriggerIds,
+            ...outcome.cancelScheduledTriggerIds,
+          ]);
+          candidate.scheduledTriggers = candidate.scheduledTriggers.filter(
+            (trigger) => !removedIds.has(trigger.id),
+          );
+          for (const triggerId of outcome.processedScheduledTriggerIds) {
+            processedScheduledTriggerIds.add(triggerId);
+          }
+          const scheduledTriggerIdsAdded: string[] = [];
+          for (const proposal of outcome.schedule) {
+            if (compareFictionalInstants(proposal.dueAt, targetTime) <= 0) {
+              throw new SimulationValidationError(
+                `World process ${process.metadata.id} scheduled work that is already due`,
+              );
+            }
+            for (const scheduledScopeId of proposal.scopeIds) {
+              const scheduledScope = registry.getScope(scheduledScopeId);
+              if (!registry.scheduledHandler(scheduledScope.kind, proposal.type)) {
+                throw new SimulationValidationError(
+                  `No world process handles scheduled trigger ${proposal.type} in ${scheduledScope.kind}`,
+                );
+              }
+            }
+            const scheduled = scheduledTriggerSchema.parse({
+              ...proposal,
+              id: dependencies.idGenerator.next("scheduled-trigger"),
+              sourceComponent: process.sourceComponent,
+            });
+            candidate.scheduledTriggers.push(scheduled);
+            scheduledTriggerIdsAdded.push(scheduled.id);
+          }
+          const randomnessTrace = lazyRandomness?.trace() ?? null;
+          if (randomnessTrace) {
+            candidate.randomness = randomnessStateSchema.parse({
+              ...candidate.randomness,
+              nextStream: candidate.randomness.nextStream + 1,
+            });
+            randomness.push(clone(randomnessTrace));
+          }
+          processOrder.push(`${scope.id}:${process.metadata.id}`);
+          processOutcomes.push({
+            scopeId: scope.id,
+            processId: process.metadata.id,
+            sourceComponent: clone(process.sourceComponent),
+            from,
+            to: targetTime,
+            elapsedDurationMs,
+            workUnits: cost,
+            relevantEventIds: relevantEvents.map((event) => event.id),
+            scheduledTriggerIds: dueScheduledWork.map((trigger) => trigger.id),
+            mutations: clone(outcome.mutations),
+            proposedEvents: clone(outcome.events),
+            canonicalEventIds: newCanonicalEvents.map((event) => event.id),
+            processedScheduledTriggerIds: clone(outcome.processedScheduledTriggerIds),
+            cancelledScheduledTriggerIds: clone(outcome.cancelScheduledTriggerIds),
+            scheduledTriggerIdsAdded,
+            randomness: randomnessTrace ? clone(randomnessTrace) : null,
+            diagnostics: clone(outcome.diagnostics),
+          });
+        }
+        cursor.lastSimulatedAt = targetTime;
+      }
+
+      validateWorldState(candidate);
+      const revisionBefore = revision;
+      await commitCandidate(candidate, canonicalEvents);
+      return {
+        kind: "caught-up" as const,
+        requestedScopeId: request.scopeId,
+        targetTime,
+        originalCursor: targetCursor.lastSimulatedAt,
+        finalCursor: targetTime,
+        awakenedScopeIds: awakened.map((scope) => scope.id),
+        scopeOrder: awakened.map((scope) => scope.id),
+        processOrder,
+        relevantEventIds: [...relevantEventIds].sort(),
+        processedScheduledTriggerIds: [...processedScheduledTriggerIds].sort(),
+        canonicalEventIds: canonicalEvents.map((event) => event.id),
+        randomness,
+        processOutcomes,
+        workUnitsUsed,
+        worldRevisionBefore: revisionBefore,
+        worldRevisionAfter: revision,
+      };
     },
     eventHistory(query) {
       return dependencies.persistence.history.query(persisted.metadata.id, query);

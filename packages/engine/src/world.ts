@@ -142,7 +142,10 @@ export function initializeCampaignWorld(
     documents: content.documents,
     beliefs: content.beliefs,
     scheduledTriggers: [],
-    simulationCursors: [],
+    simulationCursors: game.worldSimulationRegistry.listScopes().map((scope) => ({
+      scopeId: scope.id,
+      lastSimulatedAt: game.campaign.startTime,
+    })),
   });
 }
 
