@@ -16,20 +16,17 @@ This file records the current GitHub Project placement for the seeded issues.
 | #13 | NPC State, Knowledge, Goals & Relationships | NPCs & Social, Time & World Simulation |
 | #14 | NPC Interaction & Conversation | NPCs & Social, Context & Tools |
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
-| #17 | First Region / Town Design | World / Content, Player UX |
+| #17 | Starting Region Generation & Local World Seeding | World / Content, Player UX |
 | #18 | Reference Game Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
 | #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
 | #22 | Character Progression & Abilities | Actions & Rules, World / Content |
-| #24 | Institutions, Economy & Society | Time & World Simulation, World / Content |
 | #25 | Player Fantasy & Starting Situation | World / Content, Player UX |
 | #26 | Content & Encounter Principles | NPCs & Social, World / Content |
 | #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
 
 ## Ready for Dev
 
-| Issue | Capability | Suggested subsystem labels |
-| --- | --- | --- |
-| #23 | Setting & World Premise | World / Content |
+_No seeded issues currently recorded here._
 
 ## Done
 
@@ -53,6 +50,10 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: LLM Runtime, Core Engine
 - #21 — Core Game Rules & Resolution Model
   - Labels: Actions & Rules, World / Content
+- #23 — Setting & World Premise
+  - Labels: World / Content
+- #24 — Institutions, Economy & Society
+  - Labels: Time & World Simulation, World / Content
 - #27 — Game Package Contracts & Content Model
   - Labels: Core Engine
 
