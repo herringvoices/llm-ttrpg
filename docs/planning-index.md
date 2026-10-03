@@ -18,7 +18,6 @@ This file records the current GitHub Project placement for the seeded issues.
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
 | #18 | Reference Game Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
 | #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
-| #22 | Character Progression & Abilities | Actions & Rules, World / Content |
 | #25 | Player Fantasy & Starting Situation | World / Content, Player UX |
 | #26 | Content & Encounter Principles | NPCs & Social, World / Content |
 | #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
@@ -57,6 +56,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Time & World Simulation, World / Content
 - #27 — Game Package Contracts & Content Model
   - Labels: Core Engine
+- #22 — Character Progression & Abilities
+  - Labels: Actions & Rules, World / Content
 
 ## Icebox
 

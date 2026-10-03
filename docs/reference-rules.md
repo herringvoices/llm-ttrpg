@@ -99,4 +99,4 @@ These operations expose duration and timing semantics compatible with Action Pre
 
 The LLM/orchestration layer may propose approach, relevant attributes/skills, circumstances, helper limits, Resistance provenance, Potential Effect/mode, stress target, status, timing, and emergent-skill semantic review. The ruleset validates and computes mechanics. The engine validates generic operation envelopes, commits proposed state/events/time atomically, and supplies deterministic RNG only after the ruleset classifies uncertainty. Narration consumes the recorded result and cannot change it.
 
-Awakening Earth lore, supernatural sources, character-level allocation, powers, and broader progression remain outside this reusable rules slice.
+Character-level progression, automatic allocation, powers, and Mana are specified separately in [Character Progression and Abilities](character-progression-and-abilities.md). Those mechanics belong to the selected ruleset; Awakening Earth-specific supernatural sources, lore, availability, and social meaning remain setting/adapter concerns.
