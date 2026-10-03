@@ -624,10 +624,10 @@ describe("progressive retrieval and contextual catalog policy", () => {
         focalActorId: bobId,
       },
     };
-    const documentId = "setting.document.gate-field-guide";
+    const documentId = "setting.document.public-awakening-primer";
     const metadata = await executeEngineQueryTool(binding, world, { documentId, request: { level: "metadata" } }, options);
     const summary = await executeEngineQueryTool(binding, world, { documentId, request: { level: "summary" } }, options);
-    const section = await executeEngineQueryTool(binding, world, { documentId, request: { level: "section", sectionId: "recognition" } }, options);
+    const section = await executeEngineQueryTool(binding, world, { documentId, request: { level: "section", sectionId: "setting.document-section.gates" } }, options);
     const full = await executeEngineQueryTool(binding, world, { documentId, request: { level: "full" } }, options);
     expect(metadata).not.toHaveProperty("summary");
     expect(summary).toHaveProperty("sections");
