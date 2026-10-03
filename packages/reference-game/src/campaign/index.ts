@@ -18,10 +18,10 @@ export const noticePostedEventType: EventTypeDefinition<
 };
 
 export const contractFixtureCampaign: Campaign = {
-  identity: { id: "nashville-contract-fixture", version: "0.2.0" },
+  identity: { id: "reference-contract-fixture", version: "0.3.0" },
   description:
     "Tiny campaign fixture used only to prove package and content boundaries.",
-  setting: { id: "awakening-earth", version: "0.1.0" },
+  setting: { id: "awakening-earth", version: "0.2.0" },
   startTime: fictionalInstant("2026-04-12T14:00:00.000Z"),
   eventTypes: [noticePostedEventType],
   content: {
@@ -30,7 +30,7 @@ export const contractFixtureCampaign: Campaign = {
         id: "campaign.entity.amelia",
         kind: "actor",
         name: "Amelia",
-        summary: "An experienced kickboxer with an incorrect theory about gates.",
+        summary: "An experienced kickboxer with an incorrect theory about what caused the Awakening.",
         data: {
           descriptors: ["experienced-kickboxer", "fire-themed-powers"],
           currentLocation: "campaign.location.brownbag-groceries",
@@ -145,7 +145,7 @@ export const contractFixtureCampaign: Campaign = {
         causedByEventIds: [],
         origin: {
           kind: "campaign-initialization",
-          id: "nashville-contract-fixture",
+          id: "reference-contract-fixture",
         },
         summary: "Brownbag Groceries posted an early-closing notice.",
         payload: {
@@ -178,10 +178,11 @@ export const contractFixtureCampaign: Campaign = {
     ],
     beliefs: [
       {
-        id: "campaign.belief.amelia-gate-origin",
+        id: "campaign.belief.amelia-awakening-cause",
         holder: { kind: "actor", id: "campaign.entity.amelia" },
         subjectId: "setting.entity.awakening-earth",
-        proposition: "Gates are a naturally occurring atmospheric phenomenon.",
+        proposition:
+          "The Awakening was a naturally occurring cosmic or geomagnetic event rather than something deliberately caused.",
         truthStatus: "false",
         confidence: 0.8,
       },
