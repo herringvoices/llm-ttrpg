@@ -57,7 +57,7 @@ describe("game package contracts", () => {
       { subjectId: "setting.entity.awakening-earth" },
     );
     expect(canonicalKnowledge.facts.map((fact) => fact.id)).toContain(
-      "setting.fact.gate-origin-hidden",
+      "setting.fact.awakening-seed-hidden",
     );
   });
 
@@ -336,7 +336,7 @@ describe("game package contracts", () => {
       ...metadata,
       game: {
         ...metadata.game,
-        setting: { ...metadata.game.setting, version: "0.2.0" },
+        setting: { ...metadata.game.setting, version: "9.9.9" },
       },
     };
     expect(() => validateSaveMetadataForGame(incompatibleSave, game)).toThrow(
