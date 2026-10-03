@@ -55,6 +55,7 @@ See:
 - [Lazy world simulation and catch-up](docs/lazy-world-simulation.md)
 - [Awakening Earth setting premise](docs/awakening-earth/setting-premise.md)
 - [Awakening Earth institutions, economy, and society](docs/awakening-earth/institutions-economy-society.md)
+- [Awakening Earth starting region generation](docs/awakening-earth/starting-region-generation.md)
 
 ## Development
 
