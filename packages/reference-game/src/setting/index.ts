@@ -36,6 +36,22 @@ export const awakeningEarthSetting: Setting = {
         },
       },
       {
+        id: "setting.entity.gates",
+        kind: "setting-concept",
+        name: "Gates",
+        summary:
+          "Naturally forming magical spatial anomalies that commonly open into temporary pocket environments sustained by concentrated ambient magic.",
+        data: {
+          origin: "ambient-magic-self-organization",
+          separateMetaphysics: false,
+          alienConstructs: false,
+          typicalDestination: "temporary-pocket-environment",
+          traversableBothDirectionsWhileStable: true,
+          interiorMayExceedLocalFootprint: true,
+          notAllMonstersComeFromGates: true,
+        },
+      },
+      {
         id: "setting.entity.monsters",
         kind: "setting-concept",
         name: "Monsters",
@@ -241,6 +257,38 @@ export const awakeningEarthSetting: Setting = {
         tags: ["magic", "secret"],
       },
       {
+        id: "setting.fact.gates-public",
+        subjectId: "setting.entity.gates",
+        predicate: "gates.observable-reality",
+        value: true,
+        visibility: "public",
+        tags: ["gates", "public-knowledge"],
+      },
+      {
+        id: "setting.fact.gates-origin",
+        subjectId: "setting.entity.gates",
+        predicate: "gates.origin",
+        value: "ambient-magic-self-organizes-around-movement-and-change",
+        visibility: "hidden",
+        tags: ["gates", "magic", "canonical-truth"],
+      },
+      {
+        id: "setting.fact.gates-pocket-environments",
+        subjectId: "setting.entity.gates",
+        predicate: "gates.typical-structure",
+        value: "temporary-magic-shaped-pocket-environment",
+        visibility: "public",
+        tags: ["gates", "public-knowledge"],
+      },
+      {
+        id: "setting.fact.gates-not-exclusive-monster-origin",
+        subjectId: "setting.entity.gates",
+        predicate: "gates.monster-origin-exclusivity",
+        value: false,
+        visibility: "public",
+        tags: ["gates", "monsters", "public-knowledge"],
+      },
+      {
         id: "setting.fact.human-powers-individualized",
         subjectId: "setting.entity.awakened-humans",
         predicate: "human-powers.pattern",
@@ -385,6 +433,7 @@ export const awakeningEarthSetting: Setting = {
           relatedEntityIds: [
             "setting.entity.awakening-earth",
             "setting.entity.monsters",
+            "setting.entity.gates",
             "setting.entity.monster-response",
           ],
           visibility: "public",
@@ -396,9 +445,9 @@ export const awakeningEarthSetting: Setting = {
             id: "setting.document-section.what-is-known",
             title: "What is known",
             summary:
-              "Magic is real, human powers vary widely, and monsters have multiple observed origins.",
+              "Magic is real, human powers vary widely, monsters have multiple observed origins, and Gates can form as spatial anomalies.",
             content:
-              "The Awakening affected the whole planet. Some ordinary organisms transform into magical creatures, other monsters appear without an obvious mundane precursor, and awakened humans develop highly varied powers. No accepted explanation exists for why the Awakening happened.",
+              "The Awakening affected the whole planet. Some ordinary organisms transform into magical creatures, other monsters appear without an obvious mundane precursor, awakened humans develop highly varied powers, and Gates can open into temporary magic-shaped pocket environments. No accepted explanation exists for why the Awakening happened.",
           },
           {
             id: "setting.document-section.monster-danger",
@@ -407,6 +456,14 @@ export const awakeningEarthSetting: Setting = {
               "Monsters resist ordinary harm, can grow more dangerous over time, and normally disintegrate into magical loot when killed.",
             content:
               "Magical creatures resist nonmagical force far better than ordinary organisms do. Awakened people and magical effects can interact with them much more effectively. Surviving monsters may become more dangerous over time, so reporting them promptly matters.",
+          },
+          {
+            id: "setting.document-section.gates",
+            title: "Gates",
+            summary:
+              "Stable Gates are traversable magical spatial anomalies that may contain concentrated hazards and resources.",
+            content:
+              "A stable Gate can open into a temporary pocket environment with unusually concentrated magical activity. Monsters, materials, and strange environmental conditions may exist inside, but not every monster originates from a Gate. Civilians should report a newly discovered Gate and avoid entering an unsecured one.",
           },
           {
             id: "setting.document-section.civilian-response",
