@@ -65,7 +65,10 @@ export function createLlamaCppTransport(baseUrl: string, apiKey: string): Ollama
             reasoning_effort: "none",
             chat_template_kwargs: { enable_thinking: false },
             ...(request.format
-              ? { response_format: { type: "json_schema", schema: request.format } }
+              ? {
+                  response_format: { type: "json_object" },
+                  json_schema: request.format,
+                }
               : {}),
             ...(request.options?.temperature !== undefined
               ? { temperature: request.options.temperature }

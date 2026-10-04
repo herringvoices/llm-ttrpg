@@ -13,9 +13,9 @@ describe("bundled llama.cpp model runtime", () => {
         stream: false,
         reasoning_effort: "none",
         response_format: {
-          type: "json_schema",
-          schema: { type: "object" },
+          type: "json_object",
         },
+        json_schema: { type: "object" },
       });
       expect(init?.headers).toEqual(expect.objectContaining({
         authorization: "Bearer secret",
