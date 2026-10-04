@@ -34,10 +34,10 @@ function mapMagicalResistanceProvenance(source: JsonValue): unknown {
 }
 
 export const awakeningEarthReferenceAdapter: SettingAdapter = {
-  identity: { id: "awakening-earth-reference-adapter", version: "0.2.0" },
+  identity: { id: "awakening-earth-reference-adapter", version: "0.3.0" },
   description:
     "Pair-specific bindings from Awakening Earth truths into reusable reference-rules inputs without inventing unset numeric setting mechanics.",
-  ruleset: { id: "reference-rules", version: "0.2.0" },
+  ruleset: { id: "reference-rules", version: "0.3.0" },
   setting: { id: "awakening-earth", version: "0.2.0" },
   eventTypes: [],
   mappings: [
