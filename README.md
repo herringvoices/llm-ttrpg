@@ -54,6 +54,7 @@ See:
 - [Player action execution pipeline](docs/player-action-pipeline.md)
 - [Lazy world simulation and catch-up](docs/lazy-world-simulation.md)
 - [Simulation and test harness](docs/simulation-test-harness.md)
+- [First end-to-end playable loop](docs/first-end-to-end-playable-loop.md)
 - [NPC state, knowledge, goals, and relationships](docs/npc-state-knowledge-goals-relationships.md)
 - [NPC interaction and conversation](docs/npc-interaction-conversation.md)
 - [Content and encounter principles](docs/content-encounter-principles.md)
@@ -84,6 +85,8 @@ npm run check
 ```
 
 Run the developer harness with `npm run harness`. The CLI ships with a tiny package-neutral fantasy fixture; additional plain-TypeScript scenarios can be registered by developer tooling. Set `HARNESS_MODEL_MODULE` to an ESM module exporting a provider-neutral `ModelRuntime` as `default` or `modelRuntime` to use a configured real local model interactively.
+
+Run the playable desktop web shell with `npm run dev --workspace @llm-ttrpg/desktop`. It connects to Ollama at `VITE_OLLAMA_BASE_URL` (default `http://localhost:11434`) and uses `VITE_OLLAMA_MODEL` (default `qwen3:8b`). The Tauri host supplies the persistent SQLite database and the same UI/application boundary.
 
 The concrete selected mechanics are documented in [Reference Rules](docs/reference-rules.md). They remain ruleset-owned and are exposed through the engine's generic operation, resolution, and tool-catalog contracts.
 

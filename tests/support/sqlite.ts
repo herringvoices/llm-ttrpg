@@ -40,6 +40,7 @@ export async function createMigratedSqlitePersistence() {
     "0005_player_action_runs.sql",
     "0006_social_realization_generation.sql",
     "0007_campaign_planning.sql",
+    "0008_playable_loop.sql",
   ]) {
     database.exec(
       migrationSql(file),

@@ -22,6 +22,7 @@ import {
   type JsonValue,
   type MechanicalRealization,
   type MutationProposal,
+  type ModelRuntime,
   type WorldProcessDefinition,
   type WorldSimulationContribution,
 } from "@llm-ttrpg/engine";
@@ -482,7 +483,7 @@ export const knowledgeSeedSchema = z.object({
 }).strict();
 export type KnowledgeSeed = z.infer<typeof knowledgeSeedSchema>;
 
-const pressureKnowledgeProcessSchema = z.object({
+export const pressureKnowledgeProcessSchema = z.object({
   pressures: z.array(pressureSeedSchema).min(3),
   creatures: z.array(creatureSeedSchema),
   knowledge: knowledgeSeedSchema,
@@ -519,6 +520,76 @@ export interface StartingRegionProposalModel {
   ): Promise<unknown> | unknown;
 }
 
+const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> = {
+  normalize: normalizedRegionConstraintsSchema,
+  region: regionalFrameSchema,
+  settlement: settlementSeedSchema,
+  institutions: z.array(institutionSeedSchema),
+  locality: startingLocalitySchema,
+  "player-context": playerContextSeedSchema,
+  npcs: z.array(persistentNpcSeedSchema),
+  pressures: pressureKnowledgeProcessSchema,
+  "opening-situation": openingSituationSchema,
+};
+
+/** Adapts the provider-neutral model runtime to the staged region generator. */
+export function createStartingRegionProposalModel(
+  modelRuntime: ModelRuntime,
+): StartingRegionProposalModel {
+  const invoke = async (
+    stageId: string,
+    context: Readonly<StartingRegionWorkingState>,
+    repair?: { readonly candidate: unknown; readonly issues: readonly GenerationIssue[] },
+  ): Promise<unknown> => {
+    const schema = startingRegionStageSchemas[stageId];
+    if (!schema) throw new Error(`Unknown starting-region stage ${stageId}`);
+    const result = await modelRuntime.generate({
+      prompt: {
+        instructions: [
+          "Generate only grounded Awakening Earth campaign material for the requested stage.",
+          "Preserve player-established facts verbatim and do not make unspecified details player-authored.",
+          "Use stable lowercase dot- or dash-separated IDs and cite provenance for generated choices.",
+          ...(repair ? ["Repair only the reported local validation problems; preserve unrelated accepted material."] : []),
+        ],
+        context: JSON.stringify({ workingState: context, ...(repair ?? {}) }),
+        input: `${repair ? "Repair" : "Generate"} starting-region stage '${stageId}'.`,
+      },
+      output: {
+        kind: "structured",
+        schemaId: `starting-region.${stageId}.v1`,
+        schema,
+      },
+      trace: { operation: "starting-region-generation", invocationId: `starting-region.${stageId}.${repair ? "repair" : "generate"}` },
+    });
+    if (!result.ok) throw new Error(`Starting-region ${stageId} model failure: ${result.error.message}`);
+    return result.output.value;
+  };
+  return {
+    propose(stageId, context) {
+      return invoke(stageId, context);
+    },
+    repair(stageId, candidate, issues, context) {
+      return invoke(stageId, context, { candidate, issues });
+    },
+    async audit(seed, context) {
+      const result = await modelRuntime.generate({
+        prompt: {
+          instructions: [
+            "Audit the generated starting region for contradictions, missing required foundations, and accidental retcons.",
+            "Return issues only; do not rewrite the region in this step.",
+          ],
+          context: JSON.stringify({ seed, workingState: context }),
+          input: "Audit the complete generated starting region.",
+        },
+        output: { kind: "structured", schemaId: "starting-region.coherence-audit.v1", schema: coherenceAuditSchema },
+        trace: { operation: "starting-region-generation", invocationId: "starting-region.coherence-audit" },
+      });
+      if (!result.ok) throw new Error(`Starting-region audit model failure: ${result.error.message}`);
+      return result.output.value;
+    },
+  };
+}
+
 export interface StartingRegionWorkingState {
   readonly request: StartingRegionRequest;
   readonly normalized?: NormalizedRegionConstraints;
@@ -549,6 +620,21 @@ export interface StartingRegionSeed {
   readonly processes: readonly ActiveProcessSeed[];
   readonly openingSituation: OpeningSituation;
 }
+
+export const startingRegionSeedSchema = z.object({
+  normalized: normalizedRegionConstraintsSchema,
+  region: regionalFrameSchema,
+  settlement: settlementSeedSchema,
+  institutions: z.array(institutionSeedSchema),
+  locality: startingLocalitySchema,
+  playerContext: playerContextSeedSchema,
+  npcs: z.array(persistentNpcSeedSchema),
+  pressures: z.array(pressureSeedSchema),
+  creatures: z.array(creatureSeedSchema),
+  knowledge: knowledgeSeedSchema,
+  processes: z.array(activeProcessSeedSchema),
+  openingSituation: openingSituationSchema,
+}).strict();
 
 function graphConnected(locality: StartingLocality): boolean {
   const ids = locality.locations.map((location) => location.id);

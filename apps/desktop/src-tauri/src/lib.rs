@@ -39,6 +39,11 @@ pub fn run() {
         description: "campaign_planning",
         sql: include_str!("../migrations/0007_campaign_planning.sql"),
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 8,
+        description: "playable_loop",
+        sql: include_str!("../migrations/0008_playable_loop.sql"),
+        kind: MigrationKind::Up,
     }];
 
     tauri::Builder::default()

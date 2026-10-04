@@ -432,6 +432,7 @@ It may not invent mechanics, bypass validation, or mutate truth through prose.
 - Gates compose ordinary entities, locations, route facts, and lazy-simulation scopes. Generic route traversal follows canonical route facts and stores current position as mutable world truth.
 - A campaign-owned public-response process advances reported incidents through dispatch, response, on-scene, and final disposition during ordinary lazy catch-up.
 - `packages/reference-game/test/reference-game-integration.test.ts` exercises the complete deterministic thread, including context, event history, narration immutability, and SQLite save/reload.
+- Issue #19 now consumes this seam through the desktop play-session controller and generated-package reconstruction path.
 
 ## Verification
 
@@ -441,9 +442,9 @@ It may not invent mechanics, bypass validation, or mutate truth through prose.
 
 ## Non-Goals
 
-- full campaign planning/replanning (#28)
-- complete NPC conversation orchestration (#14)
-- final player-facing UI (#19)
+- a sophisticated campaign director beyond the implemented #28 seam
+- broader NPC conversation behavior beyond the implemented #14 seam
+- production visual polish beyond the implemented #19 text-first UI
 - exhaustive magical-interaction edge cases at catastrophic mundane force
 - a universal ranged-enchantment decay simulation
 - every Gate type/interior rule

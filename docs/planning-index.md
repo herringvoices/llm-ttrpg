@@ -9,12 +9,6 @@ This file records the current GitHub Project placement for the seeded issues.
 - #3 — MVP Boundary
 - #4 — Glossary & Core Terms
 
-## Ready for Dev
-
-| Issue | Capability | Suggested subsystem labels |
-| --- | --- | --- |
-| #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
-
 ## Done
 
 - #5 — Project Shell & Persistence Foundation
@@ -66,6 +60,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Dev Tools / Testing, Core Engine
 - #28 — Campaign Planning & Narrative Direction
   - Labels: Core Engine, Context & Tools, World / Content
+- #19 — First End-to-End Playable Loop
+  - Labels: Core Engine, Player UX, Dev Tools / Testing
 
 ## Icebox
 

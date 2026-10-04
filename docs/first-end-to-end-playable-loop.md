@@ -1,7 +1,16 @@
 # First End-to-End Playable Loop
 
-**Status:** Settled and implementation-ready for Issue #19  
+**Status:** Settled and implemented by Issue #19
 **Scope:** The smallest desktop vertical slice that proves the existing engine, reference game, model runtime, persistence, NPC interaction, lazy simulation, diagnostics, and campaign-planning seams combine into an actual playable local game.
+
+## Implemented integration
+
+- `DesktopPlaySession` is the reusable application boundary above engine sessions and below React. It routes freeform declarations into the existing #11 action or #14 conversation orchestration, prevents concurrent submissions, preserves post-commit retry identity, and never mutates `WorldState` itself.
+- The desktop application generates a starting region through the provider-neutral structured model runtime, realizes the opening incident through #18, stores a bounded generated-package descriptor, and reconstructs the same runtime package when a persisted world is reopened.
+- The React shell provides campaign create/open, transcript, freeform input, location/time, narration preference, processing/error states, explicit save/return, a three-day catch-up affordance, and development-only diagnostics.
+- The application initializes #28's grounded three-horizon plan and runs a targeted lowest-horizon planner pass when deterministic assumption validation finds a contradiction. Plan context remains protected.
+- Migration `0008_playable_loop.sql` stores only non-authoritative application continuity: generated-package reconstruction data, narration preference, and the bounded transcript. Authoritative outcomes remain in ordinary engine persistence.
+- `tests/desktop-playable-loop.test.ts` covers generated create/open, opening realization, action execution, planner invalidation, save/reopen, three-day catch-up, model-unavailable recovery, and narration retry without duplicate execution.
 
 ## Goal
 
@@ -71,14 +80,14 @@ The design is ready before every implementation dependency is complete.
 - #34 Character & Creature Mechanical Generation
 - #35 Monster Design, Threat Calibration & Encounter Composition
 
-### Active dependencies
+### Integrated dependencies
 
-- **#14 NPC Interaction & Conversation:** #19 consumes its headless conversation/orchestration and narration-preference seam. Do not implement alternate conversation logic in the desktop app.
-- **#16 Simulation & Test Harness:** #19 consumes its trace/inspection surfaces and uses its deterministic scenario support for acceptance testing.
+- **#14 NPC Interaction & Conversation:** #19 consumes its headless conversation/orchestration and narration-preference seam; the desktop app adds no alternate conversation logic.
+- **#16 Simulation & Test Harness:** #19 consumes its scripted-model and trace/inspection surfaces for acceptance testing.
 
-### Final integration dependency
+### Integrated planning dependency
 
-- **#28 Campaign Planning & Narrative Direction:** #19 may be developed before #28 lands. Until then, planner-facing integration should remain behind a narrow consumer seam or test adapter. Final #19 acceptance requires #28's persisted plan, targeted replanning, and perspective isolation.
+- **#28 Campaign Planning & Narrative Direction:** #19 consumes the implemented persisted plan, deterministic assumption validation, targeted replanning, and perspective isolation seams.
 
 ## Reference-Game Boundary
 
@@ -501,63 +510,63 @@ This is a milestone test for flexibility, not a requirement to support every ima
 
 ### Player loop
 
-- [ ] a player can create a generated Awakening Earth campaign from the desktop app
-- [ ] a player can open an existing campaign
-- [ ] the play screen accepts freeform text rather than dialogue/action menus
-- [ ] current location and fictional time are visible
-- [ ] Concise/Standard/Expansive narration preference is usable
-- [ ] one opening incident is realized through #18 rather than hard-coded as canonical app state
-- [ ] a freeform physical response resolves through Action Pressure, context/tool discovery, rules, persistence, and narration
-- [ ] first Awakening/Invincible manifestation executes through ordinary reference-game rules
-- [ ] NPC conversation executes through #14 with perspective-safe cognition and no player-control theft
-- [ ] the player can leave the initial locality
-- [ ] three fictional days can pass
-- [ ] returning triggers #12 catch-up and exposes at least one grounded persisted consequence
-- [ ] save, close, reopen, and continued play preserve the world correctly
+- [x] a player can create a generated Awakening Earth campaign from the desktop app
+- [x] a player can open an existing campaign
+- [x] the play screen accepts freeform text rather than dialogue/action menus
+- [x] current location and fictional time are visible
+- [x] Concise/Standard/Expansive narration preference is usable
+- [x] one opening incident is realized through #18 rather than hard-coded as canonical app state
+- [x] a freeform physical response resolves through Action Pressure, context/tool discovery, rules, persistence, and narration
+- [x] first Awakening/Invincible manifestation executes through ordinary reference-game rules
+- [x] NPC conversation executes through #14 with perspective-safe cognition and no player-control theft
+- [x] the player can leave the initial locality
+- [x] three fictional days can pass
+- [x] returning triggers #12 catch-up and exposes at least one grounded persisted consequence
+- [x] save, close, reopen, and continued play preserve the world correctly
 
 ### Authority and framework boundaries
 
-- [ ] no canonical change depends solely on narration text
-- [ ] UI components do not mutate World State directly
-- [ ] no parallel conversation, action, simulation, or planner truth store is introduced
-- [ ] knowledge restrictions hold through NPC interaction
-- [ ] mechanically relevant people/creatures densify through #34 without retconning prior truth
-- [ ] the player-facing creature demonstrates coherent #35 signature/tell/counterplay requirements without world-wide level scaling
-- [ ] reference-game-specific behavior enters through explicit package boundaries
-- [ ] the engine/application orchestration contains no special branch for the deterministic fixture's incident, creature, location, or exact player wording
+- [x] no canonical change depends solely on narration text
+- [x] UI components do not mutate World State directly
+- [x] no parallel conversation, action, simulation, or planner truth store is introduced
+- [x] knowledge restrictions hold through NPC interaction
+- [x] mechanically relevant people/creatures densify through #34 without retconning prior truth
+- [x] the player-facing creature demonstrates coherent #35 signature/tell/counterplay requirements without world-wide level scaling
+- [x] reference-game-specific behavior enters through explicit package boundaries
+- [x] the engine/application orchestration contains no special branch for the deterministic fixture's incident, creature, location, or exact player wording
 
 ### Planning integration
 
-- [ ] #28's minimal high/medium/low plan persists with the save
-- [ ] one meaningful unexpected choice invalidates a near-term assumption
-- [ ] replanning revises the low and only affected higher horizons
-- [ ] later GM-facing context reflects the revision
-- [ ] player/NPC context cannot retrieve hidden plan state
-- [ ] plan revision alone changes neither authoritative World State nor event history
-- [ ] planned NPC/world developments still resolve through ordinary simulation/operation boundaries
+- [x] #28's minimal high/medium/low plan persists with the save
+- [x] one meaningful unexpected choice invalidates a near-term assumption
+- [x] replanning revises the low and only affected higher horizons
+- [x] later GM-facing context reflects the revision
+- [x] player/NPC context cannot retrieve hidden plan state
+- [x] plan revision alone changes neither authoritative World State nor event history
+- [x] planned NPC/world developments still resolve through ordinary simulation/operation boundaries
 
 ### Reliability
 
-- [ ] pre-commit model/validation failures leave no partial canonical mutation
-- [ ] post-commit narration failure does not duplicate or erase the committed action
-- [ ] duplicate UI submission is prevented while a turn is active
-- [ ] unavailable local model produces a recoverable visible error
-- [ ] failed save load does not overwrite/reinitialize the save
+- [x] pre-commit model/validation failures leave no partial canonical mutation
+- [x] post-commit narration failure does not duplicate or erase the committed action
+- [x] duplicate UI submission is prevented while a turn is active
+- [x] unavailable local model produces a recoverable visible error
+- [x] failed save load does not overwrite/reinitialize the save
 
 ### Diagnostics and growth
 
-- [ ] the development trace can inspect context selection, tools, checks, mutations, events, time advancement, catch-up, and resulting revision
-- [ ] phase timings distinguish model work from deterministic engine/persistence work
-- [ ] basic save/world growth counters are inspectable
-- [ ] full prompt/context payloads are not recorded as canonical event history
-- [ ] the milestone does not introduce high-frequency autosave checkpoints
+- [x] the development trace can inspect context selection, tools, checks, mutations, events, time advancement, catch-up, and resulting revision
+- [x] phase timings distinguish model work from deterministic engine/persistence work
+- [x] basic save/world growth counters are inspectable
+- [x] full prompt/context payloads are not recorded as canonical event history
+- [x] the milestone does not introduce high-frequency autosave checkpoints
 
 ### Verification
 
-- [ ] #16 can run the deterministic end-to-end scenario without the normal player UI
-- [ ] the desktop app passes a create/play/save/reload smoke path
-- [ ] an off-script exploratory playtest demonstrates at least one alternate incident response and one unplanned NPC question
-- [ ] `npm run check` passes
+- [x] #16 can run the deterministic end-to-end scenario without the normal player UI
+- [x] the desktop app passes a create/play/save/reload smoke path
+- [x] an off-script exploratory playtest demonstrates at least one alternate incident response and one unplanned NPC question
+- [x] `npm run check` passes
 
 ## Non-Goals
 

@@ -451,6 +451,7 @@ export async function runPlannerPass(input: {
   readonly worldRevision: number;
   readonly eventSequence: number;
   readonly guidance?: readonly string[];
+  readonly authoritativeContext?: JsonValue;
   readonly options?: ModelInvocationOptions;
 }): Promise<PlannerPassResult> {
   const validation = validatePlanningAssumptions(input);
@@ -460,6 +461,9 @@ export async function runPlannerPass(input: {
     signals: input.signals,
     assumptionValidation: { evaluatedIds: validation.evaluatedIds, invalidatedIds: validation.invalidatedIds },
     authoritativeBasis: { worldRevision: input.worldRevision, eventSequence: input.eventSequence },
+    ...(input.authoritativeContext === undefined
+      ? {}
+      : { authoritativeContext: input.authoritativeContext }),
   });
   let lastError = "Planner model failed";
   for (let attempt = 0; attempt < 2; attempt += 1) {
