@@ -53,6 +53,7 @@ See:
 - [Local model runtime](docs/model-runtime.md)
 - [Player action execution pipeline](docs/player-action-pipeline.md)
 - [Lazy world simulation and catch-up](docs/lazy-world-simulation.md)
+- [Simulation and test harness](docs/simulation-test-harness.md)
 - [NPC state, knowledge, goals, and relationships](docs/npc-state-knowledge-goals-relationships.md)
 - [NPC interaction and conversation](docs/npc-interaction-conversation.md)
 - [Content and encounter principles](docs/content-encounter-principles.md)
