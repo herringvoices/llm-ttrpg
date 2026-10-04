@@ -1,7 +1,11 @@
 # Character & Creature Mechanical Generation
 
-**Status:** Canonical design source for Issue #34  
+**Status:** Settled and implemented by Issue #34
 **Scope:** Mechanical realization levels, human/NPC character-sheet generation, monster/creature realization, demand-driven densification, no-retcon validation, provenance, and mechanics-inspection triggers.
+
+## Implemented seam
+
+The engine now persists the realization ladder, hard constraints, and immutable densification history, while the reference rules own human and creature schemas plus validated realization and creature-growth operations. Realization rejects retcons, preserves constraint provenance, consumes established monster threat envelopes, supports partial-to-complete expansion for authorized inspection, and survives SQLite save/reopen. Human and creature integration scenarios verify the two realization paths independently from social persistence.
 
 ## Purpose
 

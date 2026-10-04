@@ -118,6 +118,7 @@ export type StartingHumanProposal = z.infer<typeof startingHumanProposalSchema>;
 
 function startingHumanIssues(
   proposal: StartingHumanProposal,
+  allowedSourceFactIds?: ReadonlySet<string>,
 ): GenerationIssue[] {
   const issues: GenerationIssue[] = [];
   const totalAttributes = Object.values(proposal.mechanics.attributes)
@@ -157,6 +158,29 @@ function startingHumanIssues(
       path: ["attributeEvidence"],
     }));
   }
+  for (const evidence of proposal.attributeEvidence) {
+    if (
+      evidence.direction !== "near-baseline" &&
+      evidence.sourceFactIds.length === 0
+    ) {
+      issues.push(generationIssueSchema.parse({
+        code: "player.attributes.direction-without-evidence",
+        severity: "error",
+        message: `${evidence.attributeId} departs from baseline without an established supporting fact.`,
+        path: ["attributeEvidence"],
+      }));
+    }
+    for (const sourceFactId of evidence.sourceFactIds) {
+      if (allowedSourceFactIds && !allowedSourceFactIds.has(sourceFactId)) {
+        issues.push(generationIssueSchema.parse({
+          code: "player.attributes.unknown-evidence-source",
+          severity: "error",
+          message: `Attribute evidence references unknown player fact ${sourceFactId}.`,
+          path: ["attributeEvidence"],
+        }));
+      }
+    }
+  }
 
   const totalSkillPoints = proposal.mechanics.skills.reduce(
     (sum, skill) => sum + skill.sp,
@@ -177,12 +201,50 @@ function startingHumanIssues(
     }));
   }
   const skillIds = new Set(proposal.mechanics.skills.map((skill) => skill.id));
+  const skillEvidenceIds = new Set<string>();
   for (const evidence of proposal.skillEvidence) {
     if (!skillIds.has(evidence.skillId)) {
       issues.push(generationIssueSchema.parse({
         code: "player.skills.evidence-without-skill",
         severity: "error",
         message: `Skill evidence references missing skill ${evidence.skillId}.`,
+        path: ["skillEvidence"],
+      }));
+    }
+    if (skillEvidenceIds.has(evidence.skillId)) {
+      issues.push(generationIssueSchema.parse({
+        code: "player.skills.duplicate-evidence",
+        severity: "error",
+        message: `Skill ${evidence.skillId} has duplicate evidence records.`,
+        path: ["skillEvidence"],
+      }));
+    }
+    skillEvidenceIds.add(evidence.skillId);
+    if (evidence.sourceFactIds.length === 0) {
+      issues.push(generationIssueSchema.parse({
+        code: "player.skills.missing-evidence-source",
+        severity: "error",
+        message: `Skill ${evidence.skillId} requires an established supporting fact.`,
+        path: ["skillEvidence"],
+      }));
+    }
+    for (const sourceFactId of evidence.sourceFactIds) {
+      if (allowedSourceFactIds && !allowedSourceFactIds.has(sourceFactId)) {
+        issues.push(generationIssueSchema.parse({
+          code: "player.skills.unknown-evidence-source",
+          severity: "error",
+          message: `Skill evidence references unknown player fact ${sourceFactId}.`,
+          path: ["skillEvidence"],
+        }));
+      }
+    }
+  }
+  for (const skillId of skillIds) {
+    if (!skillEvidenceIds.has(skillId)) {
+      issues.push(generationIssueSchema.parse({
+        code: "player.skills.missing-evidence",
+        severity: "error",
+        message: `Starting skill ${skillId} has no evidence record.`,
         path: ["skillEvidence"],
       }));
     }
@@ -220,9 +282,10 @@ function startingHumanIssues(
 
 export function validateStartingHumanProposal(
   proposal: unknown,
+  allowedSourceFactIds?: ReadonlySet<string>,
 ): StartingHumanProposal {
   const parsed = startingHumanProposalSchema.parse(proposal);
-  const errors = startingHumanIssues(parsed).filter(
+  const errors = startingHumanIssues(parsed, allowedSourceFactIds).filter(
     (issue) => issue.severity === "error",
   );
   if (errors.length > 0) {
@@ -233,6 +296,7 @@ export function validateStartingHumanProposal(
 
 export function startingHumanGenerationIssues(
   proposal: unknown,
+  allowedSourceFactIds?: ReadonlySet<string>,
 ): readonly GenerationIssue[] {
   const parsed = startingHumanProposalSchema.safeParse(proposal);
   if (!parsed.success) {
@@ -243,7 +307,7 @@ export function startingHumanGenerationIssues(
       path: issue.path,
     }));
   }
-  return startingHumanIssues(parsed.data);
+  return startingHumanIssues(parsed.data, allowedSourceFactIds);
 }
 
 export function createDefaultMundaneProgression(): RulesActorState["progression"] {

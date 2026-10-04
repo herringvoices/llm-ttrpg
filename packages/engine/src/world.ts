@@ -38,6 +38,7 @@ import {
 } from "./actor-social-state.js";
 import {
   mechanicalRealizationSchema,
+  validateMechanicalRealizationUpdate,
   type MechanicalRealization,
 } from "./mechanical-realization.js";
 import {
@@ -144,6 +145,15 @@ export const worldStateSchema = z
         });
       }
       mechanicalEntities.add(realization.entityId);
+      try {
+        validateMechanicalRealizationUpdate(undefined, realization);
+      } catch (error) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error instanceof Error ? error.message : String(error),
+          path: ["mechanicalRealizations", index],
+        });
+      }
     }
     const triggerIds = new Set<string>();
     for (const [index, trigger] of state.scheduledTriggers.entries()) {

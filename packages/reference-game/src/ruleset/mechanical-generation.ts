@@ -185,6 +185,14 @@ export const realizeMechanicsOperation: RulesOperation<
   outputSchema: realizeMechanicsResultSchema,
   execute(context, input) {
     const target = entity(context.world, input.entityId);
+    const expectedKinds = input.subjectKind === "human"
+      ? ["actor", "human"]
+      : ["creature", "monster"];
+    if (!expectedKinds.includes(target.kind)) {
+      throw new OperationValidationError(
+        `Entity ${input.entityId} kind ${target.kind} is not a ${input.subjectKind}`,
+      );
+    }
     const previousMechanics = target.data.mechanics;
     const nextMechanics = validateMechanics(
       input.subjectKind,
@@ -208,6 +216,20 @@ export const realizeMechanicsOperation: RulesOperation<
       previous?.constraints ?? [],
       input.constraints,
     );
+    const threatEnvelope = target.data.threatEnvelope;
+    if (input.subjectKind === "creature" && threatEnvelope) {
+      const serializedEnvelope = JSON.stringify(threatEnvelope);
+      const matchingConstraint = constraints.some((constraint) =>
+        constraint.sourceKind === "threat-envelope" &&
+        constraint.sourceId === input.entityId &&
+        constraint.summary === serializedEnvelope
+      );
+      if (!matchingConstraint) {
+        throw new OperationValidationError(
+          `Creature ${input.entityId} mechanics must consume its established threat envelope`,
+        );
+      }
+    }
     const addedPaths = nextMechanics === undefined
       ? []
       : collectAddedPaths(previousMechanics, nextMechanics);

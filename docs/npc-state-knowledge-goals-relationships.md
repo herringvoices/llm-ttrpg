@@ -1,7 +1,11 @@
 # NPC State, Knowledge, Goals & Relationships
 
-**Status:** Canonical design source for Issue #13  
+**Status:** Settled and implemented by Issue #13
 **Scope:** Durable actor social/intentional state, knowledge boundaries, memories, relationships, goals, commitments, perspective retrieval, and lazy-simulation integration.
+
+## Implemented seam
+
+The engine now validates durable per-actor goals, directed relationships, episodic memories, and commitments as authoritative social state separate from rules mechanics. Beliefs support multi-source provenance, catalog retrieval enforces actor perspective, targeted mutations participate in the ordinary atomic runtime path, and checkpoints preserve the state through SQLite save/reopen. Generated-region integration coverage exercises two distinct NPC perspectives without introducing actor-specific simulation scopes or continuously running models.
 
 ## Purpose
 

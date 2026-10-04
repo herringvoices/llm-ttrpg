@@ -24,10 +24,6 @@ This file records the current GitHub Project placement for the seeded issues.
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
-| #17 | Starting Region Generation & Local World Seeding | World / Content, Player UX |
-| #25 | Player Fantasy & Starting Situation | World / Content, Player UX |
-| #13 | NPC State, Knowledge, Goals & Relationships | NPCs & Social, Time & World Simulation |
-| #34 | Character & Creature Mechanical Generation | Actions & Rules, NPCs & Social, World / Content |
 
 ## Done
 
@@ -62,6 +58,14 @@ This file records the current GitHub Project placement for the seeded issues.
 - #35 — Monster Design, Threat Calibration & Encounter Composition
   - Labels: Actions & Rules, World / Content, Dev Tools / Testing
   - Design complete; runtime obligations are carried by #16, #17, #18, #19, #26, and #34
+- #13 — NPC State, Knowledge, Goals & Relationships
+  - Labels: NPCs & Social, Time & World Simulation
+- #17 — Starting Region Generation & Local World Seeding
+  - Labels: World / Content, Player UX
+- #25 — Player Fantasy & Starting Situation
+  - Labels: World / Content, Player UX
+- #34 — Character & Creature Mechanical Generation
+  - Labels: Actions & Rules, NPCs & Social, World / Content
 
 ## Icebox
 

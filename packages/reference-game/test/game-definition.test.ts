@@ -226,6 +226,7 @@ describe("game package contracts", () => {
     ]);
     expect(game.operationRegistry.listSubsystems("rules")).toEqual([
       { id: "actions", label: "Actions" },
+      { id: "progression", label: "Progression" },
       { id: "realization", label: "Mechanical Realization" },
       { id: "recovery", label: "Recovery" },
       { id: "skills", label: "Skills" },

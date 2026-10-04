@@ -28,6 +28,11 @@ export const generationStageDiagnosticSchema = z.object({
   attempts: z.number().int().positive(),
   issues: z.array(generationIssueSchema),
   accepted: z.boolean(),
+  attemptHistory: z.array(z.object({
+    attempt: z.number().int().positive(),
+    issues: z.array(generationIssueSchema),
+    accepted: z.boolean(),
+  }).strict()).optional(),
 }).strict();
 export type GenerationStageDiagnostic = z.infer<
   typeof generationStageDiagnosticSchema
@@ -89,24 +94,43 @@ export async function runGenerationPipeline<TState>(
     let issues: GenerationIssue[] = [];
     let accepted = false;
     let attempts = 0;
+    const attemptHistory: Array<{
+      attempt: number;
+      issues: GenerationIssue[];
+      accepted: boolean;
+    }> = [];
 
     for (let attempt = 1; attempt <= 1 + maxRepairPasses; attempt += 1) {
       attempts = attempt;
       const parsed = stage.candidateSchema.safeParse(raw);
-      issues = parsed.success
-        ? [...(stage.validate?.(parsed.data, state) ?? [])]
-        : parsed.error.issues.map((issue) => generationIssueSchema.parse({
-            code: "generation.schema-invalid",
+      if (parsed.success) {
+        try {
+          issues = [...(stage.validate?.(parsed.data, state) ?? [])];
+        } catch (error) {
+          issues = [generationIssueSchema.parse({
+            code: "generation.validation-failed",
             severity: "error",
-            message: issue.message,
-            path: issue.path,
+            message: error instanceof Error ? error.message : String(error),
+            path: [],
             repairHint: "Repair only the invalid stage output.",
-          }));
+          })];
+        }
+      } else {
+        issues = parsed.error.issues.map((issue) => generationIssueSchema.parse({
+          code: "generation.schema-invalid",
+          severity: "error",
+          message: issue.message,
+          path: issue.path,
+          repairHint: "Repair only the invalid stage output.",
+        }));
+      }
       if (parsed.success && !issues.some((issue) => issue.severity === "error")) {
         candidate = parsed.data;
         accepted = true;
+        attemptHistory.push({ attempt, issues: [...issues], accepted: true });
         break;
       }
+      attemptHistory.push({ attempt, issues: [...issues], accepted: false });
       if (attempt > maxRepairPasses || !stage.repair) break;
       raw = await stage.repair(
         parsed.success ? parsed.data : raw,
@@ -121,6 +145,7 @@ export async function runGenerationPipeline<TState>(
       attempts,
       issues,
       accepted,
+      attemptHistory,
     }));
     if (!accepted) {
       throw new GenerationStageError(
@@ -140,6 +165,8 @@ export const generationRecordSchema = z.object({
   rawInput: z.string().trim().min(1),
   normalizedConstraints: jsonValueSchema,
   stageDiagnostics: z.array(generationStageDiagnosticSchema),
+  acceptedStageOutputs: z.record(stableIdSchema, jsonValueSchema).optional(),
+  coherenceAuditIssues: z.array(generationIssueSchema).optional(),
   controlSeed: z.number().int().nonnegative().optional(),
 }).strict();
 export type GenerationRecord = z.infer<typeof generationRecordSchema>;

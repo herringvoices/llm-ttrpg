@@ -18,12 +18,17 @@ import {
   realizeMechanicsOperation,
 } from "./mechanical-generation.js";
 import {
+  firstPowerManifestedEventType,
+  manifestFirstPowerOperation,
+} from "./awakening-operation.js";
+import {
   orderMaterialEffectsOperation,
   validateExtendedTaskOperation,
   validateRepeatAttemptOperation,
 } from "./task-operations.js";
 
 export * from "./action-operation.js";
+export * from "./awakening-operation.js";
 export * from "./mechanics.js";
 export * from "./mechanical-generation.js";
 export * from "./model.js";
@@ -62,6 +67,12 @@ export const referenceRuleset: Ruleset = {
           "Authorized learning and discovery of open-ended competencies after semantic review.",
       },
       {
+        id: "progression",
+        domainId: "rules",
+        description:
+          "Validated human awakening and character-progression thresholds.",
+      },
+      {
         id: "realization",
         domainId: "rules",
         description:
@@ -87,6 +98,7 @@ export const referenceRuleset: Ruleset = {
     concedeOperation,
     recoverStressOperation,
     createEmergentSkillOperation,
+    manifestFirstPowerOperation,
     realizeMechanicsOperation,
     applyCreatureGrowthOperation,
     validateExtendedTaskOperation,
@@ -98,6 +110,7 @@ export const referenceRuleset: Ruleset = {
     concessionRecordedEventType,
     skillCreatedEventType,
     stressRecoveredEventType,
+    firstPowerManifestedEventType,
     mechanicsRealizedEventType,
     creatureGrewEventType,
   ],

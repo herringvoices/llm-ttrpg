@@ -28,11 +28,13 @@ import {
 import { z } from "zod";
 import {
   normalizedPlayerSetupSchema,
+  openingSituationSchema,
   playerCreationInputSchema,
   startingHumanGenerationIssues,
   startingHumanProposalSchema,
   validateNormalizedPlayerSetup,
   type NormalizedPlayerSetup,
+  type OpeningSituation,
   type PlayerCreationInput,
   type StartingHumanProposal,
 } from "./player-creation.js";
@@ -495,6 +497,7 @@ export const coherenceAuditSchema = z.object({
       "player-context",
       "npcs",
       "pressures",
+      "opening-situation",
     ]).optional(),
   }).strict()),
 }).strict();
@@ -529,6 +532,7 @@ export interface StartingRegionWorkingState {
   readonly creatures?: readonly CreatureSeed[];
   readonly knowledge?: KnowledgeSeed;
   readonly processes?: readonly ActiveProcessSeed[];
+  readonly openingSituation?: OpeningSituation;
 }
 
 export interface StartingRegionSeed {
@@ -543,6 +547,7 @@ export interface StartingRegionSeed {
   readonly creatures: readonly CreatureSeed[];
   readonly knowledge: KnowledgeSeed;
   readonly processes: readonly ActiveProcessSeed[];
+  readonly openingSituation: OpeningSituation;
 }
 
 function graphConnected(locality: StartingLocality): boolean {
@@ -621,7 +626,10 @@ function stageIssues(
         ["socialState", "actorId"],
       );
     }
-    issues.push(...startingHumanGenerationIssues(player.mechanics));
+    const allowedFactIds = new Set(
+      state.normalized?.player.establishedFacts.map((fact) => fact.id) ?? [],
+    );
+    issues.push(...startingHumanGenerationIssues(player.mechanics, allowedFactIds));
   } else if (stageId === "npcs") {
     const npcs = z.array(persistentNpcSeedSchema).parse(candidate);
     for (const npc of npcs) {
@@ -642,6 +650,28 @@ function stageIssues(
           "generation.pressure.missing-category",
           `Starting pressures need at least one ${category} concern.`,
           ["pressures"],
+        );
+      }
+    }
+  } else if (stageId === "opening-situation") {
+    const opening = openingSituationSchema.parse(candidate);
+    const availableIds = new Set([
+      state.region?.id,
+      state.settlement?.id,
+      state.locality?.id,
+      ...(state.locality?.locations.map((item) => item.id) ?? []),
+      ...(state.institutions?.map((item) => item.entity.id) ?? []),
+      state.playerContext?.entity.id,
+      ...(state.npcs?.map((item) => item.entity.id) ?? []),
+      ...(state.creatures?.map((item) => item.entity.id) ?? []),
+      ...(state.pressures?.map((item) => item.id) ?? []),
+    ].filter((id): id is string => Boolean(id)));
+    for (const anchorId of opening.ordinaryAnchorEntityIds) {
+      if (!availableIds.has(anchorId)) {
+        add(
+          "generation.opening.missing-anchor",
+          `Opening situation references missing ordinary anchor ${anchorId}.`,
+          ["ordinaryAnchorEntityIds"],
         );
       }
     }
@@ -681,7 +711,8 @@ function requireSeed(state: StartingRegionWorkingState): StartingRegionSeed {
     !state.pressures ||
     !state.creatures ||
     !state.knowledge ||
-    !state.processes
+    !state.processes ||
+    !state.openingSituation
   ) {
     throw new Error("Starting region generation is incomplete");
   }
@@ -697,6 +728,7 @@ function requireSeed(state: StartingRegionWorkingState): StartingRegionSeed {
     creatures: state.creatures,
     knowledge: state.knowledge,
     processes: state.processes,
+    openingSituation: state.openingSituation,
   };
 }
 
@@ -747,7 +779,34 @@ export function validateStartingRegionSeed(
       }));
     }
   }
+  for (const [label, referenceId] of [
+    ["home location", seed.playerContext.homeLocationId],
+    ...seed.playerContext.routineLocationIds.map((id) => ["routine location", id]),
+    ...seed.playerContext.accessEntityIds.map((id) => ["access entity", id]),
+  ] as const) {
+    if (!ids.has(referenceId)) {
+      issues.push(generationIssueSchema.parse({
+        code: "generation.player-context.reference",
+        severity: "error",
+        message: `Player ${label} references missing entity ${referenceId}.`,
+        path: ["playerContext"],
+      }));
+    }
+  }
+  const scopeIds = new Set([
+    `scope.${seed.region.id}`,
+    `scope.${seed.settlement.id}`,
+    `scope.${seed.locality.id}`,
+  ]);
   for (const pressure of seed.pressures) {
+    if (!scopeIds.has(pressure.scopeId)) {
+      issues.push(generationIssueSchema.parse({
+        code: "generation.pressure.scope-reference",
+        severity: "error",
+        message: `Pressure ${pressure.id} references missing scope ${pressure.scopeId}.`,
+        path: ["pressures"],
+      }));
+    }
     for (const actorId of pressure.actorEntityIds) {
       if (!ids.has(actorId)) {
         issues.push(generationIssueSchema.parse({
@@ -760,12 +819,17 @@ export function validateStartingRegionSeed(
     }
   }
   const pressureIds = new Set(seed.pressures.map((pressure) => pressure.id));
-  const scopeIds = new Set([
-    `scope.${seed.region.id}`,
-    `scope.${seed.settlement.id}`,
-    `scope.${seed.locality.id}`,
-  ]);
+  const processIds = new Set<string>();
   for (const process of seed.processes) {
+    if (processIds.has(process.id)) {
+      issues.push(generationIssueSchema.parse({
+        code: "generation.process.duplicate-id",
+        severity: "error",
+        message: `Generated process ID is duplicated: ${process.id}.`,
+        path: ["processes"],
+      }));
+    }
+    processIds.add(process.id);
     if (!pressureIds.has(process.pressureId)) {
       issues.push(generationIssueSchema.parse({
         code: "generation.process.pressure-reference",
@@ -780,6 +844,16 @@ export function validateStartingRegionSeed(
         severity: "error",
         message: `Process ${process.id} references missing scope ${process.scopeId}.`,
         path: ["processes"],
+      }));
+    }
+  }
+  for (const anchorId of seed.openingSituation.ordinaryAnchorEntityIds) {
+    if (!ids.has(anchorId)) {
+      issues.push(generationIssueSchema.parse({
+        code: "generation.opening.missing-anchor",
+        severity: "error",
+        message: `Opening situation references missing ordinary anchor ${anchorId}.`,
+        path: ["openingSituation", "ordinaryAnchorEntityIds"],
       }));
     }
   }
@@ -798,7 +872,7 @@ function pressureEntity(pressure: PressureSeed): Entity {
       likelyTrajectory: pressure.likelyTrajectory,
       scopeId: pressure.scopeId,
       changeConditions: pressure.changeConditions,
-      processValue: 0,
+      "process-value": 0,
       generationProvenance: pressure.provenance,
     },
   });
@@ -869,8 +943,8 @@ function generatedWorldSimulation(
       return jsonValueSchema.parse({
         active: true,
         processValue:
-          typeof pressure?.data.processValue === "number"
-            ? pressure.data.processValue
+          typeof pressure?.data["process-value"] === "number"
+            ? pressure.data["process-value"]
             : 0,
       });
     },
@@ -898,7 +972,7 @@ function generatedWorldSimulation(
         mutations: [{
           kind: "set-entity-data",
           entityId: descriptor.pressureId,
-          key: "processValue",
+          key: "process-value",
           value: nextValue,
         }],
         events: delta === 0 ? [] : [{
@@ -988,7 +1062,17 @@ function initialMechanicalRealizations(
       entityId,
       level: "constrained",
       constraints,
-      history: [],
+      history: [{
+        id: `realization.${entityId}.initial-constraints`,
+        occurredAt: startTime,
+        fromLevel: "unrealized",
+        toLevel: "constrained",
+        sourceComponent: { id: "reference-rules", version: "0.3.0" },
+        generatorVersion: "starting-region-v1",
+        addedPaths: [],
+        constraintIds: constraints.map((constraint) => constraint.id),
+        reason: "Recorded generated constraints before demand-driven mechanical realization.",
+      }],
     })
   );
   return [player, ...constrained];
@@ -1010,6 +1094,7 @@ export function compileStartingRegionCampaign(
     mechanics: jsonValueSchema.parse(seed.playerContext.mechanics.mechanics),
     currentLocation: seed.playerContext.homeLocationId,
     generationProvenance: seed.playerContext.provenance,
+    openingSituation: jsonValueSchema.parse(seed.openingSituation),
   };
   const entities: Entity[] = [
     seedEntity(
@@ -1119,6 +1204,25 @@ export function compileStartingRegionCampaign(
       rawInput: `${request.locationDescription}\n${request.player.description}`,
       normalizedConstraints: jsonValueSchema.parse(seed.normalized),
       stageDiagnostics: generationDiagnostics,
+      acceptedStageOutputs: {
+        normalize: jsonValueSchema.parse(seed.normalized),
+        region: jsonValueSchema.parse(seed.region),
+        settlement: jsonValueSchema.parse(seed.settlement),
+        institutions: jsonValueSchema.parse(seed.institutions),
+        locality: jsonValueSchema.parse(seed.locality),
+        "player-context": jsonValueSchema.parse(seed.playerContext),
+        npcs: jsonValueSchema.parse(seed.npcs),
+        pressures: jsonValueSchema.parse({
+          pressures: seed.pressures,
+          creatures: seed.creatures,
+          knowledge: seed.knowledge,
+          processes: seed.processes,
+        }),
+        "opening-situation": jsonValueSchema.parse(seed.openingSituation),
+      },
+      coherenceAuditIssues: generationDiagnostics
+        .filter((diagnostic) => diagnostic.stageId === "coherence-audit")
+        .flatMap((diagnostic) => diagnostic.issues),
       ...(request.controlSeed === undefined
         ? {}
         : { controlSeed: request.controlSeed }),
@@ -1242,6 +1346,15 @@ export async function generateStartingRegion(
       },
       model,
     ),
+    makeStage(
+      "opening-situation",
+      openingSituationSchema,
+      (current, candidate) =>
+        mergeState(current, {
+          openingSituation: openingSituationSchema.parse(candidate),
+        }),
+      model,
+    ),
   ];
 
   const generated = await runGenerationPipeline(state, stages);
@@ -1268,9 +1381,11 @@ export async function generateStartingRegion(
         ? state.institutions
         : stageId === "player-context"
           ? state.playerContext
-          : stageId === "npcs"
-            ? state.npcs
-            : {
+        : stageId === "npcs"
+          ? state.npcs
+          : stageId === "opening-situation"
+            ? state.openingSituation
+          : {
                 pressures: state.pressures,
                 creatures: state.creatures,
                 knowledge: state.knowledge,

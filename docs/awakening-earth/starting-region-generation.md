@@ -1,7 +1,11 @@
 # Awakening Earth: Starting Region Generation & Local World Seeding
 
-**Status:** Canonical design source for Issue #17 - Starting Region Generation & Local World Seeding  
+**Status:** Settled and implemented by Issue #17 - Starting Region Generation & Local World Seeding
 **Scope:** New-game setup, generated campaign seeding, local-world detail levels, validation, lazy densification, geographic grounding, NPC instantiation, and generation diagnostics for the Awakening Earth reference game.
+
+## Implemented seam
+
+The reference game now supplies a staged, bounded-repair starting-region generator that compiles validated linked region, settlement, institution, locality, player, NPC, pressure, creature, knowledge, process, and opening-situation records into an ordinary campaign package. Generation retains normalized constraints, accepted stage outputs, attempt diagnostics, audit findings, and provenance. A deterministic fixture verifies authoritative initialization, three-scope lazy catch-up, material follow-up questions, retry ceilings, no-retcon densification, and ephemeral-person promotion.
 
 ## Goal
 

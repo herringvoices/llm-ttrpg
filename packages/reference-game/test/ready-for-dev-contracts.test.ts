@@ -2,6 +2,8 @@ import {
   actorSocialStateSchema,
   assertNoRetconJsonExtension,
   fictionalInstant,
+  mechanicalRealizationSchema,
+  validateMechanicalRealizationUpdate,
 } from "@llm-ttrpg/engine";
 import {
   ATTRIBUTE_IDS,
@@ -129,5 +131,52 @@ describe("ready-for-dev world and realization contracts", () => {
       { attributes: { strength: 50 } },
       { attributes: { strength: 55 } },
     )).toThrow(/retcon/i);
+  });
+
+  it("preserves realization history as an immutable ordered prefix", () => {
+    const first = {
+      id: "realization.actor.partial",
+      occurredAt: fictionalInstant("2040-01-01T12:00:00.000Z"),
+      fromLevel: "constrained" as const,
+      toLevel: "partial" as const,
+      sourceComponent: { id: "reference-rules", version: "0.3.0" },
+      generatorVersion: "test-v1",
+      addedPaths: ["attributes.empathy"],
+      constraintIds: ["constraint.actor.occupation"],
+      reason: "A relevant task required partial mechanics.",
+    };
+    const second = {
+      id: "realization.actor.complete",
+      occurredAt: fictionalInstant("2040-01-02T12:00:00.000Z"),
+      fromLevel: "partial" as const,
+      toLevel: "complete" as const,
+      sourceComponent: { id: "reference-rules", version: "0.3.0" },
+      generatorVersion: "test-v1",
+      addedPaths: ["attributes.strength"],
+      constraintIds: ["constraint.actor.occupation"],
+      reason: "Authorized inspection required a complete profile.",
+    };
+    const previous = mechanicalRealizationSchema.parse({
+      entityId: "campaign.actor.nurse",
+      level: "partial",
+      constraints: [{
+        id: "constraint.actor.occupation",
+        sourceKind: "campaign",
+        sourceId: "campaign.actor.nurse",
+        summary: "The actor is an experienced nurse.",
+      }],
+      history: [first],
+    });
+
+    expect(() => validateMechanicalRealizationUpdate(previous, {
+      ...previous,
+      level: "complete",
+      history: [first, second],
+    })).not.toThrow();
+    expect(() => validateMechanicalRealizationUpdate(previous, {
+      ...previous,
+      level: "complete",
+      history: [second, first],
+    })).toThrow(/immutable prefix/i);
   });
 });

@@ -105,12 +105,59 @@ function requireAppendOnlyById<T extends { readonly id: string }>(
   }
 }
 
+function requireAppendOnlySequence<T>(
+  previous: readonly T[],
+  next: readonly T[],
+  label: string,
+): void {
+  if (next.length < previous.length) {
+    throw new Error(`${label} cannot remove prior entries`);
+  }
+  for (let index = 0; index < previous.length; index += 1) {
+    if (!sameJson(previous[index], next[index])) {
+      throw new Error(`${label} must preserve its prior immutable prefix`);
+    }
+  }
+}
+
 export function validateMechanicalRealizationUpdate(
   previous: MechanicalRealization | undefined,
   candidate: MechanicalRealization,
 ): MechanicalRealization {
   const next = mechanicalRealizationSchema.parse(candidate);
-  if (!previous) return next;
+  const validateHistory = (
+    startingLevel: MechanicalRealizationLevel,
+    steps: readonly MechanicalRealizationStep[],
+  ): void => {
+    let expectedFrom = startingLevel;
+    const constraintIds = new Set(next.constraints.map((item) => item.id));
+    for (const step of steps) {
+      if (step.fromLevel !== expectedFrom) {
+        throw new Error(
+          `Realization step ${step.id} must start at ${expectedFrom}, not ${step.fromLevel}`,
+        );
+      }
+      for (const constraintId of step.constraintIds) {
+        if (!constraintIds.has(constraintId)) {
+          throw new Error(
+            `Realization step ${step.id} references missing constraint ${constraintId}`,
+          );
+        }
+      }
+      expectedFrom = step.toLevel;
+    }
+    if (steps.length > 0 && expectedFrom !== next.level) {
+      throw new Error(
+        `Realization history ends at ${expectedFrom}, not declared level ${next.level}`,
+      );
+    }
+  };
+  if (!previous) {
+    if (next.history.length > 0) {
+      validateHistory(next.history[0]!.fromLevel, next.history);
+    }
+    return next;
+  }
   const current = mechanicalRealizationSchema.parse(previous);
   if (current.entityId !== next.entityId) {
     throw new Error("Mechanical realization cannot change entity identity");
@@ -121,7 +168,8 @@ export function validateMechanicalRealizationUpdate(
     );
   }
   requireAppendOnlyById(current.constraints, next.constraints, "Constraint");
-  requireAppendOnlyById(current.history, next.history, "Realization step");
+  requireAppendOnlySequence(current.history, next.history, "Realization history");
+  validateHistory(current.level, next.history.slice(current.history.length));
   return next;
 }
 

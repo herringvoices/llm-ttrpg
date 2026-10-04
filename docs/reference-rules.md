@@ -95,6 +95,14 @@ There are no combat rounds, initiative, action points, or universal reactions. A
 
 These operations expose duration and timing semantics compatible with Action Pressure. They do not implement the multi-intent scheduler, cumulative horizon loop, or player-control stop conditions owned by issue #11.
 
+## Starting humans, awakening, and mechanical realization
+
+Starting human mechanics are generated from normalized player-established facts. Attribute departures from the mundane baseline and every starting Skill require explicit evidence links; the complete Level-0 profile is validated before campaign initialization.
+
+The first awakening is an ordinary authoritative rules operation. It accepts only an unawakened Level-0 human, allocates exactly five Skill Points to established Skills with event evidence, crosses the character to 2 XP / Level 1, derives maximum Mana from Endurance + Cool, and manifests one legal Strength-1, Power-Level-1 ability with the initial five-PP budget. The operation commits mechanics and a canonical event; opening prose alone cannot awaken a character.
+
+Human and creature mechanical realization use the shared `unrealized → constrained → partial → complete` ladder. Densification may add missing state but cannot rewrite prior values or history. Creatures use the species-neutral mechanical core without human progression fields, and an established threat envelope must be present among the constraints consumed by their realization. Creature growth updates the same authoritative creature through an ordinary validated operation rather than regenerating it.
+
 ## Semantic boundary
 
 The LLM/orchestration layer may propose approach, relevant attributes/skills, circumstances, helper limits, Resistance provenance, Potential Effect/mode, stress target, status, timing, and emergent-skill semantic review. The ruleset validates and computes mechanics. The engine validates generic operation envelopes, commits proposed state/events/time atomically, and supplies deterministic RNG only after the ruleset classifies uncertainty. Narration consumes the recorded result and cannot change it.
