@@ -674,7 +674,7 @@ function generatedWorldSimulation(
           processedScheduledTriggerIds: [],
           cancelScheduledTriggerIds: [],
           schedule: [],
-          diagnostics: { skipped: true },
+          diagnostics: jsonValueSchema.parse({ skipped: true }),
         };
       }
       const days = input.elapsedDurationMs / fictionalDurationMs(24 * 60 * 60 * 1000);
@@ -709,10 +709,10 @@ function generatedWorldSimulation(
         processedScheduledTriggerIds: [],
         cancelScheduledTriggerIds: [],
         schedule: [],
-        diagnostics: {
+        diagnostics: jsonValueSchema.parse({
           delta,
           elapsedDurationMs: input.elapsedDurationMs,
-        },
+        }),
       };
     },
   }));
