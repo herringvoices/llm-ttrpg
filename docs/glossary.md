@@ -305,6 +305,22 @@ An immutable snapshot of a world's canonical current state, exact game compositi
 
 A friendly named pointer to a checkpoint. Saving to an existing slot creates a new immutable checkpoint and moves the pointer; it never mutates the old checkpoint.
 
+## Harness scenario
+
+A plain-TypeScript developer/test definition selecting a complete game composition, deterministic seed, setup state, optional scripted model behavior, and scenario-specific helpers/invariants. The same scenario may be used interactively by the harness CLI or programmatically by Vitest.
+
+## Harness session
+
+An isolated developer/test execution environment created from a harness scenario. It exposes direct inspection, deterministic time/simulation control, validated test injection, production-path operation/action execution, snapshots/diffs, disposable forks, and diagnostic traces without mutating a real player campaign.
+
+## Semantic diff
+
+A deterministic developer-facing comparison between two harness snapshots grouped by game-relevant categories such as fictional time, entities/facts/beliefs, actor social state, mechanics, scheduled work, simulation cursors, event history, and RNG rather than only raw serialized JSON differences.
+
+## Reproduction bundle
+
+A versioned machine-readable developer artifact containing the minimal scenario/game identity, starting state, fictional time, RNG state, command/action sequence, model-script data where applicable, and failure/trace metadata needed to replay a bug or surprising simulation result.
+
 ## Communication act
 
 A structured, non-prose representation of what an actor is authorized/intending to communicate: speaker, recipients, described/quoted/mixed input mode, literal player-authored quote fragments where present, semantic content, and any materially consequential request, disclosure, promise, threat, offer, agreement, or intended social effect. Generated wording does not gain authority merely by appearing in dialogue prose.
