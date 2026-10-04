@@ -18,6 +18,18 @@ import {
   type FictionalDurationMs,
 } from "./time.js";
 import type { WorldState } from "./world.js";
+import {
+  actorCommitmentSchema,
+  actorGoalSchema,
+  actorSocialStateSchema,
+  directedRelationshipSchema,
+  emptyActorSocialState,
+  episodicMemorySchema,
+} from "./actor-social-state.js";
+import {
+  mechanicalRealizationSchema,
+  validateMechanicalRealizationUpdate,
+} from "./mechanical-realization.js";
 
 export const operationCategorySchema = z
   .object({
@@ -74,6 +86,50 @@ export const mutationProposalSchema = z.discriminatedUnion("kind", [
       beliefId: stableIdSchema,
     })
     .strict(),
+  z.object({
+    kind: z.literal("upsert-actor-goal"),
+    actorId: stableIdSchema,
+    goal: actorGoalSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("remove-actor-goal"),
+    actorId: stableIdSchema,
+    goalId: stableIdSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("upsert-actor-relationship"),
+    actorId: stableIdSchema,
+    relationship: directedRelationshipSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("remove-actor-relationship"),
+    actorId: stableIdSchema,
+    relationshipId: stableIdSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("upsert-actor-memory"),
+    actorId: stableIdSchema,
+    memory: episodicMemorySchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("remove-actor-memory"),
+    actorId: stableIdSchema,
+    memoryId: stableIdSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("upsert-actor-commitment"),
+    actorId: stableIdSchema,
+    commitment: actorCommitmentSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("remove-actor-commitment"),
+    actorId: stableIdSchema,
+    commitmentId: stableIdSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("upsert-mechanical-realization"),
+    realization: mechanicalRealizationSchema,
+  }).strict(),
 ]);
 export type MutationProposal = z.infer<typeof mutationProposalSchema>;
 
@@ -110,6 +166,8 @@ export type OperationWorldView = Pick<
   | "facts"
   | "documents"
   | "beliefs"
+  | "actorSocialStates"
+  | "mechanicalRealizations"
   | "scheduledTriggers"
   | "simulationCursors"
 >;
@@ -211,27 +269,129 @@ export function applyMutationProposals(
   mutations: readonly MutationProposal[],
 ): void {
   const parsed = z.array(mutationProposalSchema).parse(mutations);
+
+  const requireEntity = (entityId: string): void => {
+    if (!state.entities.some((item) => item.id === entityId)) {
+      throw new OperationValidationError(
+        `Mutation references missing entity: ${entityId}`,
+      );
+    }
+  };
+  const socialState = (actorId: string) => {
+    requireEntity(actorId);
+    let social = state.actorSocialStates.find((item) => item.actorId === actorId);
+    if (!social) {
+      social = emptyActorSocialState(actorId);
+      state.actorSocialStates.push(social);
+    }
+    return social;
+  };
+  const upsert = <T extends { readonly id: string }>(
+    values: T[],
+    value: T,
+  ): T[] => {
+    const index = values.findIndex((item) => item.id === value.id);
+    if (index === -1) return [...values, clone(value)];
+    const next = [...values];
+    next[index] = clone(value);
+    return next;
+  };
+
   for (const mutation of parsed) {
-    if (mutation.kind === "set-entity-data") {
-      const entity = state.entities.find((item) => item.id === mutation.entityId);
-      if (!entity) {
-        throw new OperationValidationError(
-          `Mutation references missing entity: ${mutation.entityId}`,
-        );
+    switch (mutation.kind) {
+      case "set-entity-data": {
+        const entity = state.entities.find((item) => item.id === mutation.entityId);
+        if (!entity) {
+          throw new OperationValidationError(
+            `Mutation references missing entity: ${mutation.entityId}`,
+          );
+        }
+        entity.data[mutation.key] = clone(mutation.value);
+        break;
       }
-      entity.data[mutation.key] = clone(mutation.value);
-    } else if (mutation.kind === "upsert-fact") {
-      const index = state.facts.findIndex((item) => item.id === mutation.fact.id);
-      if (index === -1) state.facts.push(clone(mutation.fact));
-      else state.facts[index] = clone(mutation.fact);
-    } else if (mutation.kind === "remove-fact") {
-      state.facts = state.facts.filter((item) => item.id !== mutation.factId);
-    } else if (mutation.kind === "upsert-belief") {
-      const index = state.beliefs.findIndex((item) => item.id === mutation.belief.id);
-      if (index === -1) state.beliefs.push(clone(mutation.belief));
-      else state.beliefs[index] = clone(mutation.belief);
-    } else {
-      state.beliefs = state.beliefs.filter((item) => item.id !== mutation.beliefId);
+      case "upsert-fact": {
+        const index = state.facts.findIndex((item) => item.id === mutation.fact.id);
+        if (index === -1) state.facts.push(clone(mutation.fact));
+        else state.facts[index] = clone(mutation.fact);
+        break;
+      }
+      case "remove-fact":
+        state.facts = state.facts.filter((item) => item.id !== mutation.factId);
+        break;
+      case "upsert-belief": {
+        const index = state.beliefs.findIndex((item) => item.id === mutation.belief.id);
+        if (index === -1) state.beliefs.push(clone(mutation.belief));
+        else state.beliefs[index] = clone(mutation.belief);
+        break;
+      }
+      case "remove-belief":
+        state.beliefs = state.beliefs.filter((item) => item.id !== mutation.beliefId);
+        break;
+      case "upsert-actor-goal": {
+        const social = socialState(mutation.actorId);
+        social.goals = upsert(social.goals, mutation.goal);
+        actorSocialStateSchema.parse(social);
+        break;
+      }
+      case "remove-actor-goal": {
+        const social = socialState(mutation.actorId);
+        social.goals = social.goals.filter((item) => item.id !== mutation.goalId);
+        actorSocialStateSchema.parse(social);
+        break;
+      }
+      case "upsert-actor-relationship": {
+        const social = socialState(mutation.actorId);
+        social.relationships = upsert(social.relationships, mutation.relationship);
+        actorSocialStateSchema.parse(social);
+        break;
+      }
+      case "remove-actor-relationship": {
+        const social = socialState(mutation.actorId);
+        social.relationships = social.relationships.filter(
+          (item) => item.id !== mutation.relationshipId,
+        );
+        actorSocialStateSchema.parse(social);
+        break;
+      }
+      case "upsert-actor-memory": {
+        const social = socialState(mutation.actorId);
+        social.memories = upsert(social.memories, mutation.memory);
+        actorSocialStateSchema.parse(social);
+        break;
+      }
+      case "remove-actor-memory": {
+        const social = socialState(mutation.actorId);
+        social.memories = social.memories.filter((item) => item.id !== mutation.memoryId);
+        actorSocialStateSchema.parse(social);
+        break;
+      }
+      case "upsert-actor-commitment": {
+        const social = socialState(mutation.actorId);
+        social.commitments = upsert(social.commitments, mutation.commitment);
+        actorSocialStateSchema.parse(social);
+        break;
+      }
+      case "remove-actor-commitment": {
+        const social = socialState(mutation.actorId);
+        social.commitments = social.commitments.filter(
+          (item) => item.id !== mutation.commitmentId,
+        );
+        actorSocialStateSchema.parse(social);
+        break;
+      }
+      case "upsert-mechanical-realization": {
+        requireEntity(mutation.realization.entityId);
+        const index = state.mechanicalRealizations.findIndex(
+          (item) => item.entityId === mutation.realization.entityId,
+        );
+        const next = validateMechanicalRealizationUpdate(
+          index === -1 ? undefined : state.mechanicalRealizations[index],
+          mutation.realization,
+        );
+        if (index === -1) state.mechanicalRealizations.push(clone(next));
+        else state.mechanicalRealizations[index] = clone(next);
+        break;
+      }
     }
   }
 }
@@ -268,6 +428,8 @@ export function immutableOperationWorldView(
       facts: world.facts,
       documents: world.documents,
       beliefs: world.beliefs,
+      actorSocialStates: world.actorSocialStates,
+      mechanicalRealizations: world.mechanicalRealizations,
       scheduledTriggers: world.scheduledTriggers,
       simulationCursors: world.simulationCursors,
     })) as OperationWorldView,
