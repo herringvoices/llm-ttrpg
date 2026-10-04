@@ -321,6 +321,18 @@ A non-authoritative GM-facing framing of grounded circumstances that may deserve
 
 A grounded, perspective-safe way a situation may come into view, such as direct observation, conversation, a public notice, an environmental change, institutional contact, or a rumor held by an appropriate actor/group. Persistent detail required by the affordance must cross the commitment boundary before the affordance is surfaced.
 
+## Situation realization
+
+The reference-game integration step that converts a grounded non-authoritative situation/opening brief into schema-validated proposed entities, facts, creatures, processes, and events, then commits only the required authoritative detail before it can be perceived or used causally. Model output is proposal material; validation and commit establish truth.
+
+## Magical interaction barrier
+
+Awakening Earth's setting-adapter rule that ordinary mundane force cannot directly alter or injure intrinsically magical structure in the first playable slice. The barrier is effect-specific rather than blanket immunity to physics: displacement, restraint, environmental consequences, and other non-injury effects remain independently resolvable.
+
+## Ambient contact empowerment
+
+Awakening Earth's ordinary property by which an awakened actor's body and a mundane object they are directly and intentionally wielding can interact magically while direct contact is part of the action. It is not a permanent enchantment and ordinary released projectiles do not retain it for normal ranged impact.
+
 ## Campaign plan
 
 Hidden, persisted, non-authoritative GM state that tracks revisable campaign direction. It can guide attention, pacing, and context selection, but it cannot establish events, mutate World State, or force player/NPC actions.
