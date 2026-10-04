@@ -136,58 +136,212 @@ export const skillUseEvidenceSchema = z
   })
   .strict();
 
-export const rulesActorStateSchema = z
-  .object({
-    attributes: attributesSchema,
-    skills: z.array(skillSchema),
-    stress: stressStateSchema,
-    statuses: z.array(statusSchema),
-    progression: z
-      .object({
-        characterLevel: z.number().int().positive(),
-        skillPointsPerCharacterLevel: z.literal(5),
-        skillLearningRateMultiplier: z.number().finite().positive(),
-        skillUseEvidence: z.array(skillUseEvidenceSchema),
-      })
-      .strict(),
-    isPlayerCharacter: z.boolean(),
-  })
+export function characterLevelFromXp(xp: number): number {
+  const parsedXp = z.number().int().nonnegative().parse(xp);
+  return Math.floor(Math.cbrt((4 * parsedXp) / 5));
+}
+
+export function pointDerivedLevel(points: number): number {
+  const parsed = z.number().int().nonnegative().parse(points);
+  return Math.floor(Math.cbrt((4 * parsed) / 5));
+}
+
+export const powerGrowthProfileSchema = z.enum([
+  "milestone",
+  "scaling",
+  "hybrid",
+]);
+
+export const powerFunctionSchema = z.object({
+  id: stableIdSchema,
+  name: z.string().trim().min(1),
+  description: z.string().trim().min(1),
+  manaCost: z.number().finite().nonnegative(),
+  activationTimeMs: z.number().int().nonnegative(),
+  conditions: z.array(z.string().trim().min(1)),
+  targets: z.array(z.string().trim().min(1)),
+  limits: z.array(z.string().trim().min(1)),
+  scalingFormula: z.string().trim().min(1).optional(),
+}).strict();
+
+export const powerStateSchema = z.object({
+  id: stableIdSchema,
+  name: z.string().trim().min(1),
+  corePrinciple: z.string().trim().min(1),
+  characterLevelAtManifestation: z.number().int().positive(),
+  manifestationStrength: z.number().int().positive(),
+  growthProfile: powerGrowthProfileSchema,
+  pp: z.number().int().nonnegative(),
+  powerLevel: z.number().int().nonnegative(),
+  functions: z.array(powerFunctionSchema).min(1),
+  developmentAxes: z.array(z.string().trim().min(1)).min(1),
+  balanceRationale: z.string().trim().min(1),
+}).strict().superRefine((power, context) => {
+  if (power.powerLevel !== pointDerivedLevel(power.pp)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Power Level must be derived from PP",
+      path: ["powerLevel"],
+    });
+  }
+  const expectedStrength = 1 + Math.floor(power.characterLevelAtManifestation / 2);
+  if (power.manifestationStrength !== expectedStrength) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Manifestation Strength must be derived from manifestation level",
+      path: ["manifestationStrength"],
+    });
+  }
+});
+export type PowerState = z.infer<typeof powerStateSchema>;
+
+export const manaStateSchema = z.object({
+  current: z.number().finite().nonnegative(),
+  max: z.number().finite().positive(),
+}).strict().superRefine((mana, context) => {
+  if (mana.current > mana.max) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Current Mana cannot exceed Max Mana",
+      path: ["current"],
+    });
+  }
+});
+
+export const humanProgressionSchema = z.object({
+  characterLevel: z.number().int().nonnegative(),
+  characterXp: z.number().int().nonnegative().optional(),
+  skillPointsPerCharacterLevel: z.literal(5),
+  skillLearningRateMultiplier: z.number().finite().positive(),
+  skillUseEvidence: z.array(skillUseEvidenceSchema),
+  mana: manaStateSchema.optional(),
+  powers: z.array(powerStateSchema).optional(),
+}).strict().superRefine((progression, context) => {
+  if (
+    progression.characterXp !== undefined &&
+    characterLevelFromXp(progression.characterXp) !== progression.characterLevel
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Character Level must be derived from Character XP",
+      path: ["characterLevel"],
+    });
+  }
+});
+export type HumanProgression = z.infer<typeof humanProgressionSchema>;
+
+function validateMechanicalCollections(
+  state: {
+    readonly skills: readonly Skill[];
+    readonly statuses: readonly Status[];
+  },
+  context: z.RefinementCtx,
+): void {
+  const skillIds = new Set<string>();
+  const normalizedNames = new Set<string>();
+  for (const [index, skill] of state.skills.entries()) {
+    const normalizedName = skill.name.trim().toLocaleLowerCase();
+    if (skillIds.has(skill.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate skill ID: ${skill.id}`,
+        path: ["skills", index, "id"],
+      });
+    }
+    if (normalizedNames.has(normalizedName)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate normalized skill name: ${skill.name}`,
+        path: ["skills", index, "name"],
+      });
+    }
+    skillIds.add(skill.id);
+    normalizedNames.add(normalizedName);
+  }
+  const statusIds = new Set<string>();
+  for (const [index, status] of state.statuses.entries()) {
+    if (statusIds.has(status.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate status ID: ${status.id}`,
+        path: ["statuses", index, "id"],
+      });
+    }
+    statusIds.add(status.id);
+  }
+}
+
+const rulesMechanicalCoreBaseSchema = z.object({
+  attributes: attributesSchema,
+  skills: z.array(skillSchema),
+  stress: stressStateSchema,
+  statuses: z.array(statusSchema),
+});
+
+export const rulesMechanicalCoreSchema = rulesMechanicalCoreBaseSchema
   .strict()
-  .superRefine((state, context) => {
-    const skillIds = new Set<string>();
-    const normalizedNames = new Set<string>();
-    for (const [index, skill] of state.skills.entries()) {
-      const normalizedName = skill.name.trim().toLocaleLowerCase();
-      if (skillIds.has(skill.id)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Duplicate skill ID: ${skill.id}`,
-          path: ["skills", index, "id"],
-        });
-      }
-      if (normalizedNames.has(normalizedName)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Duplicate normalized skill name: ${skill.name}`,
-          path: ["skills", index, "name"],
-        });
-      }
-      skillIds.add(skill.id);
-      normalizedNames.add(normalizedName);
-    }
-    const statusIds = new Set<string>();
-    for (const [index, status] of state.statuses.entries()) {
-      if (statusIds.has(status.id)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Duplicate status ID: ${status.id}`,
-          path: ["statuses", index, "id"],
-        });
-      }
-      statusIds.add(status.id);
-    }
-  });
+  .superRefine(validateMechanicalCollections);
+export type RulesMechanicalCore = z.infer<typeof rulesMechanicalCoreSchema>;
+
+export const rulesActorStateSchema = rulesMechanicalCoreBaseSchema.extend({
+  progression: humanProgressionSchema,
+  isPlayerCharacter: z.boolean(),
+}).strict().superRefine(validateMechanicalCollections);
 export type RulesActorState = z.infer<typeof rulesActorStateSchema>;
+
+export const rulesCreatureStateSchema = rulesMechanicalCoreBaseSchema.extend({
+  isPlayerCharacter: z.literal(false),
+}).strict().superRefine(validateMechanicalCollections);
+export type RulesCreatureState = z.infer<typeof rulesCreatureStateSchema>;
+
+export const rulesEntityStateSchema = z.union([
+  rulesActorStateSchema,
+  rulesCreatureStateSchema,
+]);
+export type RulesEntityState = z.infer<typeof rulesEntityStateSchema>;
+
+export const partialRulesMechanicsSchema = z.object({
+  attributes: z.record(attributeIdSchema, z.number().finite().nonnegative()).optional(),
+  skills: z.array(skillSchema).optional(),
+  stress: stressStateSchema.optional(),
+  statuses: z.array(statusSchema).optional(),
+  progression: humanProgressionSchema.optional(),
+  isPlayerCharacter: z.boolean().optional(),
+}).strict().superRefine((state, context) => {
+  if (Object.keys(state).length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Partial mechanics must establish at least one field",
+    });
+  }
+  if (state.skills || state.statuses) {
+    validateMechanicalCollections({
+      skills: state.skills ?? [],
+      statuses: state.statuses ?? [],
+    }, context);
+  }
+});
+export type PartialRulesMechanics = z.infer<typeof partialRulesMechanicsSchema>;
+
+export function validateCompleteHumanMechanics(
+  value: unknown,
+): RulesActorState {
+  const state = rulesActorStateSchema.parse(value);
+  const powers = state.progression.powers ?? [];
+  if (state.progression.characterLevel === 0) {
+    if (powers.length > 0) {
+      throw new Error("A Level 0 mundane human cannot have manifested powers");
+    }
+    return state;
+  }
+  if (powers.length === 0 || !state.progression.mana) {
+    throw new Error(
+      "A complete awakened human requires manifested power and Mana state",
+    );
+  }
+  return state;
+}
+
 
 export const effectMagnitudeSchema = z.union([
   z.literal(1),
