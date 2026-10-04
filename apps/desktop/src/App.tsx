@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { WorldMetadata } from "@llm-ttrpg/engine";
-import type { DesktopApplication } from "./application.js";
+import type {
+  CampaignCreationProgress,
+  CampaignFollowUpAnswer,
+  CampaignFollowUpQuestion,
+  DesktopApplication,
+} from "./application.js";
 import type { DesktopPlaySession, PlaySessionView } from "./play-session.js";
 
 export function App({ application }: { readonly application: DesktopApplication }) {
@@ -10,6 +15,12 @@ export function App({ application }: { readonly application: DesktopApplication 
   const [player, setPlayer] = useState("I am an ordinary local adult with close community ties and a practical job.");
   const [message, setMessage] = useState("Loading campaigns…");
   const [creating, setCreating] = useState(false);
+  const [allowGeneratedDetails, setAllowGeneratedDetails] = useState(true);
+  const [followUps, setFollowUps] = useState<readonly CampaignFollowUpQuestion[]>([]);
+  const [followUpAnswers, setFollowUpAnswers] = useState<Record<string, string>>({});
+  const [generateUnanswered, setGenerateUnanswered] = useState(true);
+  const [generationProgress, setGenerationProgress] = useState<CampaignCreationProgress>();
+  const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const [playSession, setPlaySession] = useState<DesktopPlaySession>();
   const [playView, setPlayView] = useState<PlaySessionView>();
   const [declaration, setDeclaration] = useState("");
@@ -31,17 +42,52 @@ export function App({ application }: { readonly application: DesktopApplication 
     transcriptEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [playView?.transcript.length]);
 
-  async function createWorld() {
+  useEffect(() => {
+    if (!creating) return;
+    const startedAt = Date.now();
+    setGenerationElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      setGenerationElapsedSeconds(Math.floor((Date.now() - startedAt) / 1_000));
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [creating]);
+
+  function followUpKey(question: CampaignFollowUpQuestion): string {
+    return `${question.scope}:${question.id}`;
+  }
+
+  function formatElapsed(seconds: number): string {
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+  }
+
+  async function createWorld(answers: readonly CampaignFollowUpAnswer[] = []) {
     setCreating(true);
-    setMessage("Generating the region and realizing its opening situation…");
+    setGenerationProgress(undefined);
+    setMessage("Preparing campaign generation…");
     try {
-      const session = await application.createWorld({
+      const result = await application.createCampaign({
         name,
         locationDescription: location,
         playerDescription: player,
+        allowGeneratedDetails: followUps.length > 0 ? generateUnanswered : allowGeneratedDetails,
+        followUpAnswers: answers,
+      }, {
+        onProgress(progress) {
+          setGenerationProgress(progress);
+          setMessage(progress.label);
+        },
       });
-      setPlaySession(session);
-      setPlayView(session.view());
+      if (result.kind === "needs-input") {
+        setFollowUps(result.questions);
+        setFollowUpAnswers({});
+        setMessage("A few choices need your input before generation continues.");
+        return;
+      }
+      setFollowUps([]);
+      setPlaySession(result.session);
+      setPlayView(result.session.view());
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to create campaign");
@@ -73,6 +119,14 @@ export function App({ application }: { readonly application: DesktopApplication 
     if (!text || !playSession) return;
     setDeclaration("");
     await run(() => playSession.performTurn(text));
+  }
+
+  async function submitFollowUps() {
+    const answers = followUps.map((question) => ({
+      ...question,
+      answer: followUpAnswers[followUpKey(question)]?.trim() ?? "",
+    })).filter((answer) => answer.answer.length > 0);
+    await createWorld(answers);
   }
 
   if (playSession && playView) {
@@ -161,13 +215,97 @@ export function App({ application }: { readonly application: DesktopApplication 
         <h1>LLM TTRPG</h1>
         <p>{message}</p>
       </header>
-      <section aria-labelledby="new-world-heading">
-        <h2 id="new-world-heading">Begin a campaign</h2>
-        <label>Campaign name<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label>Where does it begin?<textarea value={location} onChange={(event) => setLocation(event.target.value)} /></label>
-        <label>Who are you?<textarea value={player} onChange={(event) => setPlayer(event.target.value)} /></label>
-        <button type="button" disabled={creating} onClick={() => void createWorld()}>{creating ? "Generating…" : "Create campaign"}</button>
-      </section>
+      {followUps.length === 0 ? (
+        <section aria-labelledby="new-world-heading">
+          <h2 id="new-world-heading">Begin a campaign</h2>
+          <label>Campaign name<input disabled={creating} value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label>Where does it begin?<textarea disabled={creating} value={location} onChange={(event) => setLocation(event.target.value)} /></label>
+          <label>Who are you?<textarea disabled={creating} value={player} onChange={(event) => setPlayer(event.target.value)} /></label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              disabled={creating}
+              checked={allowGeneratedDetails}
+              onChange={(event) => setAllowGeneratedDetails(event.target.checked)}
+            />
+            <span>
+              Let the GM invent unspecified details
+              <small>Grounded choices will be generator-created, not treated as facts you supplied.</small>
+            </span>
+          </label>
+          <button type="button" disabled={creating} onClick={() => void createWorld()}>{creating ? "Generating…" : "Create campaign"}</button>
+          {creating && generationProgress && (
+            <div className="generation-progress" role="status" aria-live="polite">
+              <div>
+                <strong>{generationProgress.label}</strong>
+                <span>Step {generationProgress.current} of {generationProgress.total}</span>
+              </div>
+              <progress value={generationProgress.current} max={generationProgress.total} />
+              <small>
+                Elapsed {formatElapsed(generationElapsedSeconds)} · Local generation can take several minutes per step.
+              </small>
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="follow-up-panel" aria-labelledby="follow-up-heading">
+          <p className="eyebrow">Campaign setup</p>
+          <h2 id="follow-up-heading">A few details would materially shape the game</h2>
+          <p>Answer what matters to you. The GM can make grounded choices for anything you leave blank.</p>
+          {followUps.map((question) => (
+            <label key={followUpKey(question)}>
+              {question.question}
+              <small>{question.materialImpact}</small>
+              <textarea
+                disabled={creating}
+                value={followUpAnswers[followUpKey(question)] ?? ""}
+                onChange={(event) => setFollowUpAnswers((current) => ({
+                  ...current,
+                  [followUpKey(question)]: event.target.value,
+                }))}
+              />
+            </label>
+          ))}
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              disabled={creating}
+              checked={generateUnanswered}
+              onChange={(event) => setGenerateUnanswered(event.target.checked)}
+            />
+            <span>Let the GM decide any answers I leave blank</span>
+          </label>
+          <div className="follow-up-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={creating}
+              onClick={() => { setFollowUps([]); setFollowUpAnswers({}); }}
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              disabled={creating || (!generateUnanswered && followUps.some((question) =>
+                !(followUpAnswers[followUpKey(question)]?.trim())
+              ))}
+              onClick={() => void submitFollowUps()}
+            >
+              {creating ? "Continuing generation…" : "Continue generation"}
+            </button>
+          </div>
+          {creating && generationProgress && (
+            <div className="generation-progress" role="status" aria-live="polite">
+              <div>
+                <strong>{generationProgress.label}</strong>
+                <span>Step {generationProgress.current} of {generationProgress.total}</span>
+              </div>
+              <progress value={generationProgress.current} max={generationProgress.total} />
+              <small>Elapsed {formatElapsed(generationElapsedSeconds)}</small>
+            </div>
+          )}
+        </section>
+      )}
       <section aria-labelledby="worlds-heading">
         <h2 id="worlds-heading">Continue</h2>
         {worlds.length === 0 ? <p>No saved campaigns.</p> : (

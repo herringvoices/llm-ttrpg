@@ -365,6 +365,60 @@ describe("desktop playable session integration", () => {
     )).toBe(true);
   });
 
+  it("returns setup follow-ups as a continuation step and reports generation progress", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    const outputs = startingRegionStageOutputs();
+    const model = new ScriptedModelRuntime([{
+      id: "normalize-with-follow-ups",
+      match: { schemaId: "starting-region.normalize.v1" },
+      result: {
+        kind: "structured",
+        value: {
+          ...outputs.normalize,
+          followUpQuestions: [{
+            id: "question.town-name",
+            question: "What is the town called?",
+            materialImpact: "The name establishes the community's identity.",
+          }],
+          player: {
+            ...outputs.normalize.player,
+            followUpQuestions: [{
+              id: "question.player-goal",
+              question: "What does your character want right now?",
+              materialImpact: "The answer shapes immediately relevant opportunities.",
+            }],
+          },
+        },
+      },
+    }]);
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: model,
+      now: () => generatedStart,
+      randomId: () => "follow-up",
+      nextSeed: () => 42,
+    });
+    const progress: string[] = [];
+    const result = await app.createCampaign({
+      name: "Follow-up campaign",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      playerDescription: "Rowan works at a grocery store, rents an apartment, and wants to protect their sibling.",
+      allowGeneratedDetails: false,
+    }, {
+      onProgress(update) {
+        progress.push(`${update.current}/${update.total}:${update.stageId}`);
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "needs-input",
+      questions: [
+        expect.objectContaining({ id: "question.town-name", scope: "region" }),
+        expect.objectContaining({ id: "question.player-goal", scope: "player" }),
+      ],
+    });
+    expect(progress).toEqual(["1/12:normalize"]);
+  });
+
   it("creates, saves, closes, and reopens through the actual desktop application boundary", async () => {
     const { database } = await createMigratedSqlitePersistence();
     let id = 0;

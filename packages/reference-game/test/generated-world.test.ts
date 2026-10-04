@@ -209,8 +209,21 @@ describe("generated starting region", () => {
     );
     expect(needsInput).toEqual(expect.objectContaining({
       kind: "needs-input",
-      questions: [expect.objectContaining({ id: "question.location-scale" })],
+      questions: [expect.objectContaining({
+        id: "question.location-scale",
+        scope: "region",
+      })],
     }));
+
+    const generatedWithoutQuestions = await generateStartingRegion(
+      { ...startingRegionRequestFixture, allowGeneratedDetails: true },
+      new DeterministicStartingRegionModel({ needsInput: true }),
+    );
+    expect(generatedWithoutQuestions.kind).toBe("generated");
+    if (generatedWithoutQuestions.kind === "generated") {
+      expect(generatedWithoutQuestions.seed.normalized.followUpQuestions).toEqual([]);
+      expect(generatedWithoutQuestions.seed.normalized.player.followUpQuestions).toEqual([]);
+    }
 
     await expect(generateStartingRegion(
       startingRegionRequestFixture,

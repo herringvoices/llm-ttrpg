@@ -41,11 +41,44 @@ export interface CreateCampaignInput {
   readonly locationDescription: string;
   readonly playerDescription: string;
   readonly powerGuidance?: string;
+  readonly allowGeneratedDetails?: boolean;
+  readonly followUpAnswers?: readonly CampaignFollowUpAnswer[];
+}
+
+export interface CampaignFollowUpQuestion {
+  readonly id: string;
+  readonly question: string;
+  readonly materialImpact: string;
+  readonly scope: "region" | "player";
+}
+
+export interface CampaignFollowUpAnswer extends CampaignFollowUpQuestion {
+  readonly answer: string;
+}
+
+export interface CampaignCreationProgress {
+  readonly current: number;
+  readonly total: number;
+  readonly stageId: string;
+  readonly label: string;
+  readonly refining: boolean;
+}
+
+export type CampaignCreationResult =
+  | { readonly kind: "created"; readonly session: DesktopPlaySession }
+  | { readonly kind: "needs-input"; readonly questions: readonly CampaignFollowUpQuestion[] };
+
+export interface CampaignCreationOptions {
+  readonly onProgress?: (progress: CampaignCreationProgress) => void;
 }
 
 export interface DesktopApplication {
   readonly modelRuntime?: ModelRuntime;
   createWorld(input: CreateCampaignInput | string): Promise<DesktopPlaySession>;
+  createCampaign(
+    input: CreateCampaignInput,
+    options?: CampaignCreationOptions,
+  ): Promise<CampaignCreationResult>;
   listWorlds(): Promise<readonly WorldMetadata[]>;
   openWorld(worldId: string): Promise<DesktopPlaySession>;
 }
@@ -71,6 +104,40 @@ const generatedPackageDescriptorSchema = z.object({
   openingProposal: openingIncidentProposalSchema,
 }).strict();
 type GeneratedPackageDescriptor = z.infer<typeof generatedPackageDescriptorSchema>;
+
+const campaignGenerationStages = [
+  ["normalize", "Understanding your setup"],
+  ["region", "Establishing the wider region"],
+  ["settlement", "Shaping the starting settlement"],
+  ["institutions", "Creating local institutions"],
+  ["locality", "Mapping nearby places and routes"],
+  ["player-context", "Grounding your character in the world"],
+  ["npcs", "Populating recurring characters"],
+  ["pressures", "Seeding conflicts and supernatural pressures"],
+  ["opening-situation", "Framing the opening situation"],
+  ["coherence-audit", "Checking the campaign for contradictions"],
+  ["opening-incident", "Realizing the opening incident"],
+  ["finalize", "Saving the campaign and preparing play"],
+] as const;
+
+const campaignGenerationStageIndex = new Map<string, number>(
+  campaignGenerationStages.map(([id], index) => [id, index + 1]),
+);
+
+function addFollowUpAnswers(
+  description: string,
+  answers: readonly CampaignFollowUpAnswer[] | undefined,
+  scope: CampaignFollowUpQuestion["scope"],
+): string {
+  const relevant = (answers ?? []).filter((item) =>
+    item.scope === scope && item.answer.trim().length > 0
+  );
+  if (relevant.length === 0) return description;
+  const rendered = relevant.map((item) =>
+    `Question: ${item.question}\nAnswer: ${item.answer.trim()}`
+  ).join("\n\n");
+  return `${description}\n\nAdditional player-provided setup details:\n${rendered}`;
+}
 
 const transcriptEntrySchema = z.object({
   id: z.string().min(1),
@@ -291,11 +358,126 @@ export function createDesktopApplication(
     );
   }
 
+  async function createGeneratedCampaign(
+    inputValue: CreateCampaignInput,
+    creationOptions: CampaignCreationOptions = {},
+  ): Promise<CampaignCreationResult> {
+    if (!options.modelRuntime) {
+      throw new Error("A configured local model is required to generate a new campaign");
+    }
+    const report = (stageId: string, refining = false) => {
+      const current = campaignGenerationStageIndex.get(stageId);
+      const stage = campaignGenerationStages.find(([id]) => id === stageId);
+      if (!current || !stage) return;
+      creationOptions.onProgress?.({
+        current,
+        total: campaignGenerationStages.length,
+        stageId,
+        label: refining ? `Refining: ${stage[1]}` : stage[1],
+        refining,
+      });
+    };
+    const input = {
+      name: inputValue.name.trim() || "Untitled campaign",
+      locationDescription: addFollowUpAnswers(
+        inputValue.locationDescription.trim(),
+        inputValue.followUpAnswers,
+        "region",
+      ),
+      playerDescription: addFollowUpAnswers(
+        inputValue.playerDescription.trim(),
+        inputValue.followUpAnswers,
+        "player",
+      ),
+      allowGeneratedDetails: inputValue.allowGeneratedDetails ?? false,
+      ...(inputValue.powerGuidance?.trim()
+        ? { powerGuidance: inputValue.powerGuidance.trim() }
+        : {}),
+    };
+    const request: StartingRegionRequest = startingRegionRequestSchema.parse({
+      locationDescription: input.locationDescription,
+      player: {
+        description: input.playerDescription,
+        ...(input.powerGuidance ? { powerGuidance: input.powerGuidance } : {}),
+      },
+      startTime: now(),
+      campaignId: `campaign.generated-${randomId().toLowerCase()}`,
+      controlSeed: nextSeed(),
+      allowGeneratedDetails: input.allowGeneratedDetails,
+    });
+    const proposalModel = createStartingRegionProposalModel(options.modelRuntime);
+    const generated = await generateStartingRegion(request, {
+      propose(stageId, context) {
+        report(stageId);
+        return proposalModel.propose(stageId, context);
+      },
+      repair(stageId, candidate, issues, context) {
+        report(stageId, true);
+        return proposalModel.repair(stageId, candidate, issues, context);
+      },
+      audit(seed, context) {
+        report("coherence-audit");
+        return proposalModel.audit(seed, context);
+      },
+    });
+    if (generated.kind === "needs-input") {
+      return { kind: "needs-input", questions: generated.questions };
+    }
+    const baseGame = loadGameDefinition({
+      ...referenceGameDefinition,
+      campaign: generated.campaign,
+    });
+    const temporary = await createGameRuntime(
+      dependencies(baseGame, createInMemoryPersistence()),
+    ).createWorld("Opening incident proposal context");
+    const protectedContext = temporary.assembleContext({
+      role: "orchestrator",
+      perspective: { kind: "canonical" },
+      budget: { maxUnits: 50_000 },
+    });
+    report("opening-incident");
+    const openingProposal = await requestOpeningIncidentProposal({
+      modelRuntime: options.modelRuntime,
+      context: protectedContext,
+      openingBrief: openingBriefFromCampaign(generated.campaign),
+    });
+    report("finalize");
+    const campaign = realizeOpeningIncidentCampaign({
+      campaign: generated.campaign,
+      setting: referenceGameDefinition.setting,
+      world: temporary.snapshot(),
+      context: protectedContext,
+      proposal: openingProposal,
+    });
+    const game = loadGameDefinition({ ...referenceGameDefinition, campaign });
+    const session = await createGameRuntime(dependencies(game)).createWorld(input.name);
+    const playerActorId = generated.seed.playerContext.entity.id;
+    const localityScopeId = `scope.${generated.seed.locality.id}`;
+    const descriptor = generatedPackageDescriptorSchema.parse({
+      request,
+      seed: generated.seed,
+      diagnostics: generated.diagnostics,
+      openingProposal,
+    });
+    await database.execute(
+      "INSERT INTO desktop_play_sessions(world_id, generated_package_json, player_actor_id, locality_scope_id, narration_preference, transcript_json) VALUES ($1, $2, $3, $4, 'standard', '[]')",
+      [session.worldId, JSON.stringify(descriptor), playerActorId, localityScopeId],
+    );
+    await session.initializeCampaignPlan(createInitialPlan(
+      session,
+      playerActorId,
+      generated.seed,
+      openingProposal.incident.id,
+    ));
+    return { kind: "created", session: await wrap(session, (await sessionRow(session.worldId))!) };
+  }
+
   return {
     ...(options.modelRuntime ? { modelRuntime: options.modelRuntime } : {}),
     listWorlds() {
       return persistence.worlds.list();
     },
+    createCampaign: createGeneratedCampaign,
     async createWorld(inputValue) {
       if (typeof inputValue === "string") {
         const game = loadGameDefinition(referenceGameDefinition);
@@ -309,79 +491,11 @@ export function createDesktopApplication(
         );
         return wrap(session, (await sessionRow(session.worldId))!);
       }
-      if (!options.modelRuntime) {
-        throw new Error("A configured local model is required to generate a new campaign");
+      const result = await createGeneratedCampaign(inputValue);
+      if (result.kind === "needs-input") {
+        throw new Error(result.questions.map((question) => question.question).join(" "));
       }
-      const input = {
-        name: inputValue.name.trim() || "Untitled campaign",
-        locationDescription: inputValue.locationDescription.trim(),
-        playerDescription: inputValue.playerDescription.trim(),
-        ...(inputValue.powerGuidance?.trim()
-          ? { powerGuidance: inputValue.powerGuidance.trim() }
-          : {}),
-      };
-      const request: StartingRegionRequest = startingRegionRequestSchema.parse({
-        locationDescription: input.locationDescription,
-        player: {
-          description: input.playerDescription,
-          ...(input.powerGuidance ? { powerGuidance: input.powerGuidance } : {}),
-        },
-        startTime: now(),
-        campaignId: `campaign.generated-${randomId().toLowerCase()}`,
-        controlSeed: nextSeed(),
-      });
-      const generated = await generateStartingRegion(
-        request,
-        createStartingRegionProposalModel(options.modelRuntime),
-      );
-      if (generated.kind === "needs-input") {
-        throw new Error(generated.questions.map((question) => question.question).join(" "));
-      }
-      const baseGame = loadGameDefinition({
-        ...referenceGameDefinition,
-        campaign: generated.campaign,
-      });
-      const temporary = await createGameRuntime(
-        dependencies(baseGame, createInMemoryPersistence()),
-      ).createWorld("Opening incident proposal context");
-      const protectedContext = temporary.assembleContext({
-        role: "orchestrator",
-        perspective: { kind: "canonical" },
-        budget: { maxUnits: 50_000 },
-      });
-      const openingProposal = await requestOpeningIncidentProposal({
-        modelRuntime: options.modelRuntime,
-        context: protectedContext,
-        openingBrief: openingBriefFromCampaign(generated.campaign),
-      });
-      const campaign = realizeOpeningIncidentCampaign({
-        campaign: generated.campaign,
-        setting: referenceGameDefinition.setting,
-        world: temporary.snapshot(),
-        context: protectedContext,
-        proposal: openingProposal,
-      });
-      const game = loadGameDefinition({ ...referenceGameDefinition, campaign });
-      const session = await createGameRuntime(dependencies(game)).createWorld(input.name);
-      const playerActorId = generated.seed.playerContext.entity.id;
-      const localityScopeId = `scope.${generated.seed.locality.id}`;
-      const descriptor = generatedPackageDescriptorSchema.parse({
-        request,
-        seed: generated.seed,
-        diagnostics: generated.diagnostics,
-        openingProposal,
-      });
-      await database.execute(
-        "INSERT INTO desktop_play_sessions(world_id, generated_package_json, player_actor_id, locality_scope_id, narration_preference, transcript_json) VALUES ($1, $2, $3, $4, 'standard', '[]')",
-        [session.worldId, JSON.stringify(descriptor), playerActorId, localityScopeId],
-      );
-      await session.initializeCampaignPlan(createInitialPlan(
-        session,
-        playerActorId,
-        generated.seed,
-        openingProposal.incident.id,
-      ));
-      return wrap(session, (await sessionRow(session.worldId))!);
+      return result.session;
     },
     async openWorld(worldId) {
       const row = await sessionRow(worldId);

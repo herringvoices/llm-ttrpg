@@ -274,6 +274,7 @@ export const startingRegionRequestSchema = z.object({
   startTime: z.string().datetime(),
   campaignId: stableIdSchema,
   controlSeed: z.number().int().nonnegative().optional(),
+  allowGeneratedDetails: z.boolean().optional(),
 }).strict();
 export type StartingRegionRequest = z.infer<typeof startingRegionRequestSchema>;
 
@@ -549,6 +550,12 @@ export function createStartingRegionProposalModel(
           "Generate only grounded Awakening Earth campaign material for the requested stage.",
           "Preserve player-established facts verbatim and do not make unspecified details player-authored.",
           "Use stable lowercase dot- or dash-separated IDs and cite provenance for generated choices.",
+          ...(context.request.allowGeneratedDetails
+            ? [
+                "The player authorizes grounded generator-chosen details for anything they left unspecified.",
+                "Do not ask setup follow-up questions; choose those details yourself without presenting them as player-established facts.",
+              ]
+            : []),
           ...(repair ? ["Repair only the reported local validation problems; preserve unrelated accepted material."] : []),
         ],
         context: JSON.stringify({ workingState: context, ...(repair ?? {}) }),
@@ -1406,7 +1413,9 @@ export async function generateStartingRegion(
   | {
       readonly kind: "needs-input";
       readonly normalized: NormalizedRegionConstraints;
-      readonly questions: NormalizedRegionConstraints["followUpQuestions"];
+      readonly questions: readonly (NormalizedRegionConstraints["followUpQuestions"][number] & {
+        readonly scope: "region" | "player";
+      })[];
     }
   | {
       readonly kind: "generated";
@@ -1436,12 +1445,26 @@ export async function generateStartingRegion(
     ),
   ]);
   state = normalization.state;
-  if (state.normalized!.followUpQuestions.length > 0) {
+  const normalized = state.normalized!;
+  const questions = [
+    ...normalized.followUpQuestions.map((question) => ({ ...question, scope: "region" as const })),
+    ...normalized.player.followUpQuestions.map((question) => ({ ...question, scope: "player" as const })),
+  ];
+  if (!request.allowGeneratedDetails && questions.length > 0) {
     return {
       kind: "needs-input",
-      normalized: state.normalized!,
-      questions: state.normalized!.followUpQuestions,
+      normalized,
+      questions,
     };
+  }
+  if (request.allowGeneratedDetails && questions.length > 0) {
+    state = mergeState(state, {
+      normalized: {
+        ...normalized,
+        followUpQuestions: [],
+        player: { ...normalized.player, followUpQuestions: [] },
+      },
+    });
   }
 
   const stages: GenerationStage<StartingRegionWorkingState, unknown>[] = [

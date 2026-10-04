@@ -14,6 +14,7 @@ button:disabled { cursor: wait; opacity: .55; }
 input, textarea { width: 100%; border: 1px solid #56604f; border-radius: .4rem; padding: .7rem; color: #f6f1e6; background: #191d18; }
 textarea { min-height: 6rem; resize: vertical; }
 label { display: grid; gap: .4rem; color: #c9c4b8; }
+label small { color: #9d9b92; line-height: 1.4; }
 main { width: min(58rem, 100%); margin: 0 auto; padding: 2.5rem 1.25rem; }
 .model-setup { display: grid; align-content: center; min-height: 100vh; max-width: 42rem; }
 .model-setup progress { width: 100%; height: 1rem; margin: 1rem 0 .4rem; accent-color: #78906e; }
@@ -24,6 +25,16 @@ header h1, section h2 { margin: .2rem 0 .65rem; font-family: Georgia, serif; fon
 section { margin-top: 1.5rem; padding: 1.25rem; border: 1px solid #3b4338; border-radius: .7rem; background: rgba(24, 28, 23, .94); }
 section > label + label { margin-top: 1rem; }
 section > button { margin-top: 1rem; }
+.checkbox-row { display: flex; align-items: flex-start; gap: .65rem; margin-top: 1rem; }
+.checkbox-row input { width: auto; margin-top: .2rem; accent-color: #78906e; }
+.checkbox-row span { display: grid; gap: .2rem; }
+.generation-progress { display: grid; gap: .55rem; margin-top: 1rem; padding: .9rem; border: 1px solid #4d5c47; border-radius: .5rem; background: #151a14; }
+.generation-progress div { display: flex; justify-content: space-between; gap: 1rem; }
+.generation-progress span, .generation-progress small { color: #9d9b92; }
+.generation-progress progress { width: 100%; height: .8rem; accent-color: #78906e; }
+.follow-up-panel > p:not(.eyebrow) { color: #b8b8ae; line-height: 1.5; }
+.follow-up-actions { display: flex; gap: .65rem; margin-top: 1rem; }
+.secondary-button { background: transparent; }
 .eyebrow { margin: 0; color: #a8bd9d; font-size: .76rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 .world-list { display: grid; gap: .65rem; padding: 0; list-style: none; }
 .world-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; border-bottom: 1px solid #353b32; }
