@@ -279,7 +279,7 @@ const rulesMechanicalCoreBaseSchema = z.object({
 });
 
 export const rulesMechanicalCoreSchema = rulesMechanicalCoreBaseSchema
-  .strict()
+  .passthrough()
   .superRefine(validateMechanicalCollections);
 export type RulesMechanicalCore = z.infer<typeof rulesMechanicalCoreSchema>;
 
