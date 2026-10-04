@@ -9,6 +9,8 @@ import type { CanonicalEvent, EventQuery } from "./events.js";
 import type { GameComposition } from "./contracts.js";
 import type { WorldState } from "./world.js";
 import type { ActionRun } from "./player-action-contracts.js";
+import type { ActorSocialState } from "./actor-social-state.js";
+import type { MechanicalRealization } from "./mechanical-realization.js";
 
 export type WorldId = string;
 export type CheckpointId = string;
@@ -108,6 +110,8 @@ export interface WorldContentQueries {
   entities(worldId: WorldId): Promise<readonly Entity[]>;
   facts(worldId: WorldId): Promise<readonly CanonicalFact[]>;
   beliefs(worldId: WorldId): Promise<readonly Belief[]>;
+  actorSocialStates(worldId: WorldId): Promise<readonly ActorSocialState[]>;
+  mechanicalRealizations(worldId: WorldId): Promise<readonly MechanicalRealization[]>;
   documents(worldId: WorldId): Promise<readonly LongFormDocument[]>;
   documentSections(
     worldId: WorldId,
