@@ -28,6 +28,7 @@ This file records the current GitHub Project placement for the seeded issues.
 | #25 | Player Fantasy & Starting Situation | World / Content, Player UX |
 | #13 | NPC State, Knowledge, Goals & Relationships | NPCs & Social, Time & World Simulation |
 | #34 | Character & Creature Mechanical Generation | Actions & Rules, NPCs & Social, World / Content |
+| #35 | Monster Design, Threat Calibration & Encounter Composition | Actions & Rules, World / Content, Dev Tools / Testing |
 
 ## Done
 
