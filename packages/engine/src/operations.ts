@@ -54,6 +54,10 @@ export const operationMetadataSchema = z
 export type OperationMetadata = z.infer<typeof operationMetadataSchema>;
 
 export const mutationProposalSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("add-entity"),
+    entity: entitySchema,
+  }).strict(),
   z
     .object({
       kind: z.literal("set-entity-data"),
@@ -299,6 +303,15 @@ export function applyMutationProposals(
 
   for (const mutation of parsed) {
     switch (mutation.kind) {
+      case "add-entity": {
+        if (state.entities.some((item) => item.id === mutation.entity.id)) {
+          throw new OperationValidationError(
+            `Mutation cannot add duplicate entity: ${mutation.entity.id}`,
+          );
+        }
+        state.entities.push(clone(mutation.entity));
+        break;
+      }
       case "set-entity-data": {
         const entity = state.entities.find((item) => item.id === mutation.entityId);
         if (!entity) {
