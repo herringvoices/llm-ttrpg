@@ -1,6 +1,6 @@
 # Awakening Earth: Monster Design, Threat Calibration & Encounter Composition
 
-**Status:** Canonical design source for Issue #35  
+**Status:** Design complete; canonical source for closed Issue #35  
 **Scope:** Monster archetypes, signature abilities, threat envelopes, party-relative challenge calibration, encounter composition, rules-grounded challenge audits, and the boundary between authored/player-targeted threats and simulation-originated threats.
 
 ## Purpose
@@ -17,7 +17,20 @@ Awakening Earth needs monsters that:
 
 Issue #34 owns mechanical realization: turning established creature constraints into partial or complete rules state.
 
-Issue #35 owns the design constraints that tell #34 what sort of monster/encounter it is trying to realize.
+This document defines the design constraints that tell #34 what sort of monster/encounter it is trying to realize.
+
+## Runtime ownership
+
+Issue #35 is a completed design ticket. Runtime implementation is deliberately distributed across the capabilities that already own the relevant execution boundaries:
+
+- **#16 Simulation & Test Harness** — disposable deterministic/seeded challenge probes;
+- **#17 Starting Region Generation & Local World Seeding** — creation of concrete monster instances and threat envelopes for near-term player-facing supernatural pressures;
+- **#34 Character & Creature Mechanical Generation** — exact partial/complete rules realization constrained by the established creature concept and threat envelope;
+- **#18 Reference Game Rules & World Model Integration** — Awakening Earth/reference-rules schema and adapter integration;
+- **#19 First End-to-End Playable Loop** — integrated acceptance proof;
+- **#26 Content & Encounter Principles** — broader rules for why/how monster situations become player-facing.
+
+Closing #35 therefore closes the **design question**, not the downstream implementation work.
 
 ## Do not use one scalar as the source of truth
 
