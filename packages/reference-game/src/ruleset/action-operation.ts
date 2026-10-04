@@ -558,6 +558,11 @@ function updatedStateWithAwards(
     );
   }
   for (const award of awards) {
+    if (!("progression" in updated)) {
+      throw new OperationValidationError(
+        "Creature mechanics do not use human skill-progression evidence",
+      );
+    }
     const skill = updated.skills.find((candidate) => candidate.id === award.skillId);
     if (!skill) {
       throw new OperationValidationError(
