@@ -29,6 +29,11 @@ pub fn run() {
         description: "player_action_runs",
         sql: include_str!("../migrations/0005_player_action_runs.sql"),
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 6,
+        description: "social_realization_generation",
+        sql: include_str!("../migrations/0006_social_realization_generation.sql"),
+        kind: MigrationKind::Up,
     }];
 
     tauri::Builder::default()
