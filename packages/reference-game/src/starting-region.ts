@@ -4,6 +4,7 @@ import {
   emptyContentBundle,
   entitySchema,
   fictionalDurationMs,
+  fictionalInstant,
   generationIssueSchema,
   generationRecordSchema,
   jsonValueSchema,
@@ -32,6 +33,10 @@ import {
   type PlayerCreationInput,
   type StartingHumanProposal,
 } from "./player-creation.js";
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
 
 const provenanceSchema = z.object({
   class: z.enum([
@@ -643,15 +648,17 @@ function generatedWorldSimulation(
       scheduledTriggerTypes: [],
     },
     selectRelevantState({ scopeId, world }) {
-      if (scopeId !== descriptor.scopeId) return { active: false };
+      if (scopeId !== descriptor.scopeId) {
+        return jsonValueSchema.parse({ active: false });
+      }
       const pressure = world.entities.find((entity) => entity.id === descriptor.pressureId);
-      return {
+      return jsonValueSchema.parse({
         active: true,
         processValue:
           typeof pressure?.data.processValue === "number"
             ? pressure.data.processValue
             : 0,
-      };
+      });
     },
     runCatchUp(input) {
       const selected = input.relevantState as {
@@ -783,7 +790,7 @@ export function compileStartingRegionCampaign(
     readonly accepted: boolean;
   }[],
 ): Campaign {
-  const player = structuredClone(seed.playerContext.entity);
+  const player = clone(seed.playerContext.entity);
   player.data = {
     ...player.data,
     mechanics: jsonValueSchema.parse(seed.playerContext.mechanics.mechanics),
@@ -835,11 +842,11 @@ export function compileStartingRegionCampaign(
         generationProvenance: seed.locality.provenance,
       },
     ),
-    ...seed.locality.locations.map((entity) => structuredClone(entity)),
+    ...seed.locality.locations.map((entity) => clone(entity)),
     ...seed.institutions.map((institution) => ({
-      ...structuredClone(institution.entity),
+      ...clone(institution.entity),
       data: {
-        ...structuredClone(institution.entity.data),
+        ...clone(institution.entity.data),
         institutionType: institution.institutionType,
         serviceAreaEntityId: institution.serviceAreaEntityId,
         goals: institution.goals,
@@ -852,17 +859,17 @@ export function compileStartingRegionCampaign(
     })),
     player,
     ...seed.npcs.map((npc) => ({
-      ...structuredClone(npc.entity),
+      ...clone(npc.entity),
       data: {
-        ...structuredClone(npc.entity.data),
+        ...clone(npc.entity.data),
         simulationReasons: npc.simulationReasons,
         generationProvenance: npc.provenance,
       },
     })),
     ...seed.creatures.map((creature) => ({
-      ...structuredClone(creature.entity),
+      ...clone(creature.entity),
       data: {
-        ...structuredClone(creature.entity.data),
+        ...clone(creature.entity.data),
         origin: creature.origin,
         morphology: creature.morphology,
         behavior: creature.behavior,
@@ -887,12 +894,12 @@ export function compileStartingRegionCampaign(
     description:
       `Generated Awakening Earth campaign beginning in ${seed.settlement.name}.`,
     setting: { id: "awakening-earth", version: "0.2.0" },
-    startTime: request.startTime,
+    startTime: fictionalInstant(request.startTime),
     eventTypes: [generatedProcessAdvancedEventType],
     content,
     actorSocialStates: [
-      structuredClone(seed.playerContext.socialState),
-      ...seed.npcs.map((npc) => structuredClone(npc.socialState)),
+      clone(seed.playerContext.socialState),
+      ...seed.npcs.map((npc) => clone(npc.socialState)),
     ],
     mechanicalRealizations: initialMechanicalRealizations(seed, request.startTime),
     generationRecord: generationRecordSchema.parse({
