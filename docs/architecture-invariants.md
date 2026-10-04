@@ -150,6 +150,21 @@ These are project-level constraints. Implementation should work within them unle
 - Stream use is lazy and transactional. Invalid, automatic, impossible, and uncertain-without-draw resolutions consume no stream; a tentative draw advances authoritative progression only when the complete resolution commit succeeds.
 - Completed stochastic resolutions expose an inspectable reproduction trace. Checkpoints preserve the exact RNG progression captured with the rest of execution state.
 
+## Monster challenge calibration
+
+- A mechanically coherent creature is not automatically an appropriate or interesting player-facing challenge.
+- Creature archetypes, concrete creature instances, and mechanical realization are distinct concepts.
+- Meaningful monster design should establish a coherent core principle, behavior, at least one signature interaction, a tell, counterplay, and a plausible path to meaningful consequences.
+- Monster challenge is evaluated against the expected party's actual capability profile, not Character Level alone.
+- Baseline party capability is distinct from temporary current depletion/injury. Temporary weakness may affect pacing/selection but does not make an existing monster weaker.
+- Challenge bands are Routine, Challenging, Hard, Severe, and Overwhelming. They are design/audit targets, not guaranteed outcomes, XP categories, or setting metaphysics.
+- Simulation-originated monsters do not rubber-band to the player. Their threat follows origin, archetype, environment, survival/growth, and canonical world processes.
+- New deliberately player-targeted monster content may use a party capability snapshot and intended challenge band when its threat envelope is first created.
+- Once a creature/threat envelope is authoritative, later mechanical densification may not use the current party to silently rebalance it.
+- Multi-creature challenge is scenario-level and non-linear; do not sum individual threat scalars as the source of truth.
+- Pre-commit challenge audits should use actual registered rules operations in disposable deterministic/seeded test state where practical. The LLM may propose probes but cannot simply declare balance.
+- Challenge calibration does not define XP. Progression remains based on the actual experienced growth/stakes rubric.
+
 ## Presentation
 
 - The first version is text-first.
