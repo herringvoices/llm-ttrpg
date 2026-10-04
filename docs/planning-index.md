@@ -17,13 +17,13 @@ This file records the current GitHub Project placement for the seeded issues.
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
 | #18 | Reference Game Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
 | #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
-| #26 | Content & Encounter Principles | NPCs & Social, World / Content |
 | #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
 
 ## Ready for Dev
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
+| #26 | Content & Encounter Principles | NPCs & Social, World / Content |
 
 ## Done
 
