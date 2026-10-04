@@ -13,7 +13,6 @@ This file records the current GitHub Project placement for the seeded issues.
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
-| #13 | NPC State, Knowledge, Goals & Relationships | NPCs & Social, Time & World Simulation |
 | #14 | NPC Interaction & Conversation | NPCs & Social, Context & Tools |
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
 | #18 | Reference Game Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
@@ -27,6 +26,8 @@ This file records the current GitHub Project placement for the seeded issues.
 | --- | --- | --- |
 | #17 | Starting Region Generation & Local World Seeding | World / Content, Player UX |
 | #25 | Player Fantasy & Starting Situation | World / Content, Player UX |
+| #13 | NPC State, Knowledge, Goals & Relationships | NPCs & Social, Time & World Simulation |
+| #34 | Character & Creature Mechanical Generation | Actions & Rules, NPCs & Social, World / Content |
 
 ## Done
 
