@@ -22,18 +22,28 @@ import {
   manifestFirstPowerOperation,
 } from "./awakening-operation.js";
 import {
+  activateInvincibleOperation,
+  invincibleActivatedEventType,
+} from "./invincible.js";
+import {
   orderMaterialEffectsOperation,
   validateExtendedTaskOperation,
   validateRepeatAttemptOperation,
 } from "./task-operations.js";
+import {
+  routeTraversedEventType,
+  traverseRouteOperation,
+} from "./traversal-operation.js";
 
 export * from "./action-operation.js";
 export * from "./awakening-operation.js";
+export * from "./invincible.js";
 export * from "./mechanics.js";
 export * from "./mechanical-generation.js";
 export * from "./model.js";
 export * from "./state-operations.js";
 export * from "./task-operations.js";
+export * from "./traversal-operation.js";
 
 export const referenceRuleset: Ruleset = {
   identity: { id: "reference-rules", version: "0.3.0" },
@@ -99,11 +109,13 @@ export const referenceRuleset: Ruleset = {
     recoverStressOperation,
     createEmergentSkillOperation,
     manifestFirstPowerOperation,
+    activateInvincibleOperation,
     realizeMechanicsOperation,
     applyCreatureGrowthOperation,
     validateExtendedTaskOperation,
     validateRepeatAttemptOperation,
     orderMaterialEffectsOperation,
+    traverseRouteOperation,
   ],
   eventTypes: [
     actionResolvedEventType,
@@ -111,7 +123,9 @@ export const referenceRuleset: Ruleset = {
     skillCreatedEventType,
     stressRecoveredEventType,
     firstPowerManifestedEventType,
+    invincibleActivatedEventType,
     mechanicsRealizedEventType,
     creatureGrewEventType,
+    routeTraversedEventType,
   ],
 };

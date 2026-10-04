@@ -159,6 +159,7 @@ export const performanceCalculationSchema = z
           name: z.string().min(1),
           value: z.number().finite().nonnegative(),
           combinedContribution: z.number().finite().nonnegative(),
+          derivedBonus: z.number().finite(),
           modifiers: z.array(appliedModifierSchema),
           modifierPercent: z.number().finite(),
           modifiedValue: z.number().finite().nonnegative(),
@@ -276,6 +277,9 @@ export function calculatePerformance(
   const statusAttributeModifiers = actor.statuses.flatMap(
     (status) => status.attributeModifiers,
   );
+  const statusDerivedBonuses = actor.statuses.flatMap(
+    (status) => status.derivedAttributeBonuses ?? [],
+  );
   const attributes = parsedPlan.attributeIds.map((attributeId) => {
     const value = actor.attributes[attributeId];
     if (value === undefined) {
@@ -302,19 +306,24 @@ export function calculatePerformance(
       ...parsedPlan.attributeModifiers,
       ...statusAttributeModifiers,
     ].filter((modifier) => modifier.attributeId === attributeId);
+    const derivedBonus = statusDerivedBonuses
+      .filter((bonus) => bonus.attributeId === attributeId)
+      .reduce((total, bonus) => total + bonus.amount, 0);
     const modifierPercent = sumPercent(modifiers);
     return {
       id: attributeId,
       name: ATTRIBUTE_LABELS[attributeId],
       value,
       combinedContribution,
+      derivedBonus,
       modifiers: modifiers.map(({ attributeId: _attributeId, ...modifier }) =>
         modifier
       ),
       modifierPercent,
       modifiedValue: Math.max(
         0,
-        (value + combinedContribution) * (1 + modifierPercent / 100),
+        (value + combinedContribution + derivedBonus) *
+          (1 + modifierPercent / 100),
       ),
     };
   });

@@ -99,6 +99,13 @@ export const attributeModifierSchema = percentageModifierSchema
   .strict();
 export type AttributeModifier = z.infer<typeof attributeModifierSchema>;
 
+export const derivedAttributeBonusSchema = z.object({
+  id: stableIdSchema,
+  description: z.string().trim().min(1),
+  attributeId: attributeIdSchema,
+  amount: z.number().finite(),
+}).strict();
+
 export const statusSchema = z
   .object({
     id: stableIdSchema,
@@ -106,6 +113,12 @@ export const statusSchema = z
     description: z.string().trim().min(1),
     attributeModifiers: z.array(attributeModifierSchema),
     performanceModifiers: z.array(percentageModifierSchema),
+    derivedAttributeBonuses: z.array(derivedAttributeBonusSchema).optional(),
+    sourcePowerId: stableIdSchema.optional(),
+    expiresAt: z.string().datetime().optional(),
+    protection: z.object({
+      blocksExternalPhysicalBodilyInjury: z.literal(true),
+    }).strict().optional(),
   })
   .strict();
 export type Status = z.infer<typeof statusSchema>;
@@ -363,6 +376,7 @@ export const fixedResistanceProvenanceSchema = z
     kind: z.enum(["direct", "authored", "benchmark"]),
     description: z.string().trim().min(1),
     sourceId: stableIdSchema.optional(),
+    sourceIds: z.array(stableIdSchema).min(1).optional(),
   })
   .strict();
 export type FixedResistanceProvenance = z.infer<

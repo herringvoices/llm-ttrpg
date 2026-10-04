@@ -22,7 +22,6 @@ This file records the current GitHub Project placement for the seeded issues.
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
 | #14 | NPC Interaction & Conversation | NPCs & Social, Context & Tools |
-| #18 | Reference Game Rules & World Model Integration | Core Engine, Actions & Rules, World / Content |
 
 ## Done
 
@@ -67,6 +66,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Actions & Rules, NPCs & Social, World / Content
 - #26 — Content & Encounter Principles
   - Labels: NPCs & Social, World / Content
+- #18 — Reference Game Rules & World Model Integration
+  - Labels: Core Engine, Actions & Rules, World / Content
 
 ## Icebox
 

@@ -5,6 +5,7 @@ export * from "./context/index.js";
 export * from "./game-definition.js";
 export * from "./presentation/index.js";
 export * from "./player-creation.js";
+export * from "./reference-game-integration.js";
 export * from "./starting-region.js";
 export * from "./ruleset/index.js";
 export * from "./setting/index.js";

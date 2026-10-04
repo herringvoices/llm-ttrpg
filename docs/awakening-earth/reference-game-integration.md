@@ -1,6 +1,6 @@
 # Awakening Earth Reference Game Integration
 
-**Status:** Settled and implementation-ready by Issue #18 — Reference Game Rules & World Model Integration  
+**Status:** Settled and implemented by Issue #18 — Reference Game Rules & World Model Integration
 **Scope:** The first complete Awakening Earth integration slice: generated opening-incident realization, magical interaction, first-power execution, Gate representation, minimal institutional response, creature realization, and end-to-end persistence through the existing engine boundaries.
 
 ## Goal
@@ -398,30 +398,46 @@ It may not invent mechanics, bypass validation, or mutate truth through prose.
 
 ## Acceptance Criteria
 
-- [ ] `OpeningSituation` is treated as a generation/design brief rather than an already-happened canonical event
-- [ ] the production integration can request a structured opening-incident proposal through the existing local-model runtime
-- [ ] tests can inject a deterministic scripted proposal through the same realization contract
-- [ ] invalid/retconning incident proposals commit no partial state
-- [ ] incident realization obeys #26 grounding and commitment boundaries
-- [ ] generated near-term creature content preserves #35 threat-envelope requirements
-- [ ] creature mechanics can densify through #34 only when required
-- [ ] first-power manifestation uses the existing authoritative awakening/progression operation
-- [ ] Invincible is executable with its settled Level-1 passive/active behavior in the deterministic fixture
-- [ ] mundane direct material/bodily harm against magical structure is classified impossible in the first slice rather than modeled as a small percentage penalty
-- [ ] a mundane firearm/projectile cannot directly injure the weakest magical reference creature
-- [ ] magical/direct-contact attacks use normal rules interaction rather than the mundane harm barrier
-- [ ] an awakened actor's directly wielded mundane object qualifies for magical interaction only while directly/contactually used
-- [ ] ordinary ambient empowerment does not make released mundane projectiles magical at normal ranged impact
-- [ ] non-injury mundane effects such as displacement/restraint/environmental consequences remain independently resolvable
-- [ ] magical-interaction provenance records the applicable Awakening Earth setting facts
-- [ ] Gate instances/interiors can be represented and traversed through ordinary content/location/simulation structures with no Gate-specific generic-engine branch
-- [ ] a minimal public supernatural-response process advances authoritative state over fictional time
-- [ ] lazy catch-up can advance that response while the player is absent
-- [ ] generated/local content references setting/rule definitions rather than hard-coded encounter branches
-- [ ] one deterministic vertical thread commits state/time/events/NPC-or-institution consequences atomically and later context retrieves them
-- [ ] save/reload preserves the integrated consequences
-- [ ] architecture boundary tests continue to keep Awakening Earth concepts out of the generic engine
-- [ ] `npm run check` passes
+- [x] `OpeningSituation` is treated as a generation/design brief rather than an already-happened canonical event
+- [x] the production integration can request a structured opening-incident proposal through the existing local-model runtime
+- [x] tests can inject a deterministic scripted proposal through the same realization contract
+- [x] invalid/retconning incident proposals commit no partial state
+- [x] incident realization obeys #26 grounding and commitment boundaries
+- [x] generated near-term creature content preserves #35 threat-envelope requirements
+- [x] creature mechanics can densify through #34 only when required
+- [x] first-power manifestation uses the existing authoritative awakening/progression operation
+- [x] Invincible is executable with its settled Level-1 passive/active behavior in the deterministic fixture
+- [x] mundane direct material/bodily harm against magical structure is classified impossible in the first slice rather than modeled as a small percentage penalty
+- [x] a mundane firearm/projectile cannot directly injure the weakest magical reference creature
+- [x] magical/direct-contact attacks use normal rules interaction rather than the mundane harm barrier
+- [x] an awakened actor's directly wielded mundane object qualifies for magical interaction only while directly/contactually used
+- [x] ordinary ambient empowerment does not make released mundane projectiles magical at normal ranged impact
+- [x] non-injury mundane effects such as displacement/restraint/environmental consequences remain independently resolvable
+- [x] magical-interaction provenance records the applicable Awakening Earth setting facts
+- [x] Gate instances/interiors can be represented and traversed through ordinary content/location/simulation structures with no Gate-specific generic-engine branch
+- [x] a minimal public supernatural-response process advances authoritative state over fictional time
+- [x] lazy catch-up can advance that response while the player is absent
+- [x] generated/local content references setting/rule definitions rather than hard-coded encounter branches
+- [x] one deterministic vertical thread commits state/time/events/NPC-or-institution consequences atomically and later context retrieves them
+- [x] save/reload preserves the integrated consequences
+- [x] architecture boundary tests continue to keep Awakening Earth concepts out of the generic engine
+- [x] `npm run check` passes
+
+## Implemented Seam
+
+- Generated opening situations remain protected generation metadata. A production model request and deterministic fixture share one Zod-validated incident proposal and realization path.
+- Incident realization resolves authorized local references, verifies setting facts and grounding, preserves the committed threat envelope, rejects retcons atomically, and leaves exact creature mechanics constrained until rules interaction requires them.
+- The Awakening Earth adapter classifies effect-specific magical interaction from committed world state plus immutable setting facts, including awakened body contact, directly wielded ordinary objects, and released-projectile dissipation. Applicable fact IDs remain in Resistance provenance.
+- The reference ruleset implements Invincible's settled Level-1 passive bonuses and its timed, Mana-costed active protection without suppressing displacement or other non-injury consequences.
+- Gates compose ordinary entities, locations, route facts, and lazy-simulation scopes. Generic route traversal follows canonical route facts and stores current position as mutable world truth.
+- A campaign-owned public-response process advances reported incidents through dispatch, response, on-scene, and final disposition during ordinary lazy catch-up.
+- `packages/reference-game/test/reference-game-integration.test.ts` exercises the complete deterministic thread, including context, event history, narration immutability, and SQLite save/reload.
+
+## Verification
+
+- `npm run check`
+- Deterministic integration coverage: `packages/reference-game/test/reference-game-integration.test.ts`
+- Generic-engine boundary coverage: `tests/architecture-boundary.test.ts`
 
 ## Non-Goals
 

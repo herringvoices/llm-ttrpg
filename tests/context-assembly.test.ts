@@ -274,6 +274,35 @@ function setup() {
 }
 
 describe("context assembly and perspective boundaries", () => {
+  it("prefers a mutable current-location fact over an entity's seeded location", () => {
+    const { game, world } = setup();
+    world.facts.push({
+      id: "state.fact.location.campaign.entity.alice",
+      subjectId: aliceId,
+      predicate: "actor.current-location",
+      value: "campaign.location.brownbag-groceries",
+      visibility: "public",
+      tags: ["location", "movement"],
+    });
+
+    const { locationId: _seededLocation, ...derivedRequest } = request(
+      "actor",
+      aliceId,
+    );
+    const context = assembleContext({
+      game,
+      world,
+      worldRevision: 1,
+      request: derivedRequest,
+      sceneSource: referenceSceneSource,
+    });
+
+    expect(context.situation.locationRef).toBeDefined();
+    expect(
+      context.diagnostics.localReferences[context.situation.locationRef!],
+    ).toBe("campaign.location.brownbag-groceries");
+  });
+
   it("gives two NPCs shared observations but only the knowledgeable NPC the hidden element", () => {
     const { game, world } = setup();
     const alice = assembleContext({

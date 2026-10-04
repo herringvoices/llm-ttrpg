@@ -229,8 +229,10 @@ describe("generated starting region", () => {
     ).createWorld("Generated Haven");
     const initial = session.snapshot();
     expect(initial.entities.find((item) => item.id === "generated.actor.player")?.data)
-      .toEqual(expect.objectContaining({
-        openingSituation: expect.objectContaining({ combatRequired: false }),
+      .not.toHaveProperty("openingSituation");
+    expect(game.campaign.generationRecord?.acceptedStageOutputs)
+      .toHaveProperty("opening-situation", expect.objectContaining({
+        combatRequired: false,
       }));
     expect(initial.actorSocialStates).toHaveLength(3);
     expect(initial.mechanicalRealizations.find(

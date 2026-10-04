@@ -182,16 +182,16 @@ function deriveLocationId(
 ): string | undefined {
   if (request.locationId) return request.locationId;
   if (!request.focalActorId) return undefined;
-  const actor = world.entities.find((entity) => entity.id === request.focalActorId);
-  const fromData = actor?.data.currentLocation;
-  if (typeof fromData === "string") return fromData;
   const fact = world.facts.find(
     (candidate) =>
       candidate.subjectId === request.focalActorId &&
       candidate.predicate === "actor.current-location" &&
       typeof candidate.value === "string",
   );
-  return typeof fact?.value === "string" ? fact.value : undefined;
+  if (typeof fact?.value === "string") return fact.value;
+  const actor = world.entities.find((entity) => entity.id === request.focalActorId);
+  const fromData = actor?.data.currentLocation;
+  return typeof fromData === "string" ? fromData : undefined;
 }
 
 function actionPressureProjection(world: WorldState) {

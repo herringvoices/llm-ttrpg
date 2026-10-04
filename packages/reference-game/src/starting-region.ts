@@ -1094,8 +1094,23 @@ export function compileStartingRegionCampaign(
     mechanics: jsonValueSchema.parse(seed.playerContext.mechanics.mechanics),
     currentLocation: seed.playerContext.homeLocationId,
     generationProvenance: seed.playerContext.provenance,
-    openingSituation: jsonValueSchema.parse(seed.openingSituation),
+    context: {
+      locationId: seed.playerContext.homeLocationId,
+      category: "participant",
+      prominence: "prominent",
+      observable: true,
+      activeParticipant: true,
+      orchestratorVisible: true,
+      knownBy: [{ kind: "actor", id: seed.playerContext.entity.id }],
+      identities: [],
+    },
   };
+  const localityLocationIds = new Set(
+    seed.locality.locations.map((location) => location.id),
+  );
+  const openingLocationId = seed.openingSituation.ordinaryAnchorEntityIds.find(
+    (id) => localityLocationIds.has(id),
+  ) ?? seed.playerContext.homeLocationId;
   const entities: Entity[] = [
     seedEntity(
       seed.region.id,
@@ -1141,7 +1156,22 @@ export function compileStartingRegionCampaign(
         generationProvenance: seed.locality.provenance,
       },
     ),
-    ...seed.locality.locations.map((entity) => clone(entity)),
+    ...seed.locality.locations.map((entity) => ({
+      ...clone(entity),
+      data: {
+        ...clone(entity.data),
+        context: {
+          locationId: entity.id,
+          category: "feature",
+          prominence: "prominent",
+          observable: true,
+          activeParticipant: false,
+          orchestratorVisible: true,
+          knownBy: [],
+          identities: [],
+        },
+      },
+    })),
     ...seed.institutions.map((institution) => ({
       ...clone(institution.entity),
       data: {
@@ -1157,14 +1187,30 @@ export function compileStartingRegionCampaign(
       },
     })),
     player,
-    ...seed.npcs.map((npc) => ({
-      ...clone(npc.entity),
-      data: {
-        ...clone(npc.entity.data),
-        simulationReasons: npc.simulationReasons,
-        generationProvenance: npc.provenance,
-      },
-    })),
+    ...seed.npcs.map((npc) => {
+      const currentLocation = npc.socialState.commitments
+        .flatMap((commitment) => commitment.relatedEntityIds)
+        .find((id) => localityLocationIds.has(id)) ?? openingLocationId;
+      return {
+        ...clone(npc.entity),
+        data: {
+          ...clone(npc.entity.data),
+          currentLocation,
+          simulationReasons: npc.simulationReasons,
+          generationProvenance: npc.provenance,
+          context: {
+            locationId: currentLocation,
+            category: "participant",
+            prominence: "ambient",
+            observable: true,
+            activeParticipant: false,
+            orchestratorVisible: true,
+            knownBy: [{ kind: "actor", id: npc.entity.id }],
+            identities: [],
+          },
+        },
+      };
+    }),
     ...seed.creatures.map((creature) => ({
       ...clone(creature.entity),
       data: {
@@ -1176,6 +1222,21 @@ export function compileStartingRegionCampaign(
         observedTraits: creature.observedTraits,
         threatEnvelope: creature.threatEnvelope ?? null,
         generationProvenance: creature.provenance,
+        context: {
+          locationId: openingLocationId,
+          category: "participant",
+          prominence: "ambient",
+          unrecognizedIdentity: "unidentified supernatural creature",
+          observable: false,
+          activeParticipant: false,
+          orchestratorVisible: true,
+          knownBy: [],
+          identities: [],
+          privilegedDetail: {
+            corePrinciple: creature.corePrinciple,
+            behavior: creature.behavior,
+          },
+        },
       },
     })),
     ...seed.pressures.map(pressureEntity),
@@ -1184,6 +1245,20 @@ export function compileStartingRegionCampaign(
   const content = emptyContentBundle();
   content.entities.push(...entities);
   content.facts.push(...seed.knowledge.facts);
+  content.facts.push(...seed.locality.routes.map((route, index) => ({
+    id: `generated.fact.route-${index + 1}`,
+    subjectId: seed.locality.id,
+    predicate: "location.route",
+    value: {
+      fromId: route.fromId,
+      toId: route.toId,
+      summary: route.summary,
+      traversable: true,
+      bidirectional: true,
+    },
+    visibility: "public" as const,
+    tags: ["location", "route", "traversal"],
+  })));
   content.beliefs.push(...seed.knowledge.beliefs.map((belief) => clone(belief)));
 
   return {

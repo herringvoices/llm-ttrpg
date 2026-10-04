@@ -243,6 +243,10 @@ describe("game package contracts", () => {
           id: "rules.actions.resolve-action",
           kind: "resolution",
         }),
+        expect.objectContaining({
+          id: "rules.actions.traverse-route",
+          kind: "ordinary",
+        }),
       ]);
     expect(first.path).toBe("automatic");
     expect(first).toEqual(second);
@@ -261,6 +265,7 @@ describe("game package contracts", () => {
     )).toEqual([
       "rules.actions.concede",
       "rules.actions.resolve-action",
+      "rules.actions.traverse-route",
     ]);
     expect(game.toolCatalog.listTools("rules", "skills").map(
       (tool) => tool.id,

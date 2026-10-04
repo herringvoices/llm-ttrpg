@@ -107,6 +107,15 @@ const stressConsequenceSchema = z
     statusOnTakenOut: statusSchema.optional(),
     normallyFatal: z.boolean(),
     pcDeathConsent: z.boolean(),
+    consequenceKind: z.enum([
+      "external-physical-bodily-injury",
+      "displacement",
+      "restraint",
+      "suffocation",
+      "environmental",
+      "mind-social",
+      "other",
+    ]).optional(),
   })
   .strict()
   .superRefine((consequence, context) => {
@@ -231,6 +240,12 @@ const stressChangeSchema = z
   })
   .strict();
 
+const preventedConsequenceSchema = z.object({
+  actorId: stableIdSchema,
+  consequenceKind: z.literal("external-physical-bodily-injury"),
+  sourceStatusId: stableIdSchema,
+}).strict();
+
 const takenOutSchema = z
   .object({
     actorId: stableIdSchema,
@@ -262,6 +277,7 @@ export const resolveActionResultSchema = z
       })
       .strict(),
     stressChanges: z.array(stressChangeSchema),
+    preventedConsequences: z.array(preventedConsequenceSchema),
     statusesCreatedOrChanged: z.array(statusSchema),
     skillSpAwards: z.array(skillSpAwardSchema),
     takenOut: z.array(takenOutSchema),
@@ -283,6 +299,7 @@ export const actionResolvedPayloadSchema = z
     realizedEffect: realizedEffectSchema,
     skillSpAwards: z.array(skillSpAwardSchema),
     takenOut: z.array(takenOutSchema),
+    preventedConsequences: z.array(preventedConsequenceSchema),
   })
   .strict();
 
@@ -295,6 +312,7 @@ export const actionResolvedEventType: EventTypeDefinition<
 };
 
 interface ActionAssessment {
+  readonly fictionalTime: string;
   readonly actorState: RulesEntityState;
   readonly actorPerformance: PerformanceCalculation;
   readonly opponentState?: RulesEntityState;
@@ -476,6 +494,7 @@ function assessAction(
       : undefined;
 
   return {
+    fictionalTime: String(world.fictionalTime),
     actorState: primaryActorState,
     actorPerformance,
     ...(opponentState ? { opponentState } : {}),
@@ -697,6 +716,7 @@ function resolveResult(
   }
 
   const stressChanges: z.infer<typeof stressChangeSchema>[] = [];
+  const preventedConsequences: z.infer<typeof preventedConsequenceSchema>[] = [];
   const statusesCreatedOrChanged: z.infer<typeof statusSchema>[] = [];
   const takenOut: z.infer<typeof takenOutSchema>[] = [];
   if (input.stressConsequence && realizedEffect > 0) {
@@ -704,48 +724,64 @@ function resolveResult(
     const prior = states.get(consequence.targetId) ??
       actorStateFromAssessmentOrThrow(assessment, input, consequence.targetId);
     const target = clone(prior);
-    const before = target.stress[consequence.track];
-    const after = Math.min(5, before + realizedEffect);
-    target.stress[consequence.track] = after;
-    stressChanges.push({
-      actorId: consequence.targetId,
-      track: consequence.track,
-      before,
-      after,
-    });
-    if (before < 5 && after === 5) {
-      if (consequence.statusOnTakenOut) {
-        const index = target.statuses.findIndex(
-          (status) => status.id === consequence.statusOnTakenOut!.id,
-        );
-        if (index === -1) target.statuses.push(consequence.statusOnTakenOut);
-        else target.statuses[index] = consequence.statusOnTakenOut;
-        statusesCreatedOrChanged.push(consequence.statusOnTakenOut);
-      }
-      const pendingConsent =
-        target.isPlayerCharacter &&
-        consequence.normallyFatal &&
-        !consequence.pcDeathConsent;
-      const fatalOutcome = !consequence.normallyFatal
-        ? "nonfatal"
-        : target.isPlayerCharacter
-          ? consequence.pcDeathConsent
-            ? "pc-death-accepted"
-            : "pc-pending-consent"
-          : "npc-fatal";
-      takenOut.push({
+    const protection = target.statuses.find((status) =>
+      status.protection?.blocksExternalPhysicalBodilyInjury === true &&
+      (!status.expiresAt || status.expiresAt > assessment.fictionalTime)
+    );
+    if (
+      consequence.track === "injury" &&
+      consequence.consequenceKind === "external-physical-bodily-injury" &&
+      protection
+    ) {
+      preventedConsequences.push({
+        actorId: consequence.targetId,
+        consequenceKind: "external-physical-bodily-injury",
+        sourceStatusId: protection.id,
+      });
+    } else {
+      const before = target.stress[consequence.track];
+      const after = Math.min(5, before + realizedEffect);
+      target.stress[consequence.track] = after;
+      stressChanges.push({
         actorId: consequence.targetId,
         track: consequence.track,
-        statusId: consequence.statusOnTakenOut?.id ?? null,
-        fatalOutcome,
-        fatalToPcPendingConsent: pendingConsent,
-        deathAccepted:
+        before,
+        after,
+      });
+      if (before < 5 && after === 5) {
+        if (consequence.statusOnTakenOut) {
+          const index = target.statuses.findIndex(
+            (status) => status.id === consequence.statusOnTakenOut!.id,
+          );
+          if (index === -1) target.statuses.push(consequence.statusOnTakenOut);
+          else target.statuses[index] = consequence.statusOnTakenOut;
+          statusesCreatedOrChanged.push(consequence.statusOnTakenOut);
+        }
+        const pendingConsent =
           target.isPlayerCharacter &&
           consequence.normallyFatal &&
-          consequence.pcDeathConsent,
-      });
+          !consequence.pcDeathConsent;
+        const fatalOutcome = !consequence.normallyFatal
+          ? "nonfatal"
+          : target.isPlayerCharacter
+            ? consequence.pcDeathConsent
+              ? "pc-death-accepted"
+              : "pc-pending-consent"
+            : "npc-fatal";
+        takenOut.push({
+          actorId: consequence.targetId,
+          track: consequence.track,
+          statusId: consequence.statusOnTakenOut?.id ?? null,
+          fatalOutcome,
+          fatalToPcPendingConsent: pendingConsent,
+          deathAccepted:
+            target.isPlayerCharacter &&
+            consequence.normallyFatal &&
+            consequence.pcDeathConsent,
+        });
+      }
+      states.set(consequence.targetId, rulesEntityStateSchema.parse(target));
     }
-    states.set(consequence.targetId, rulesEntityStateSchema.parse(target));
   }
 
   const result = resolveActionResultSchema.parse({
@@ -756,6 +792,7 @@ function resolveResult(
     realizedEffect,
     performanceVariance: rolls,
     stressChanges,
+    preventedConsequences,
     statusesCreatedOrChanged,
     skillSpAwards: awards,
     takenOut,
@@ -845,6 +882,7 @@ function outcome(
           realizedEffect: resolved.result.realizedEffect,
           skillSpAwards: resolved.result.skillSpAwards,
           takenOut: resolved.result.takenOut,
+          preventedConsequences: resolved.result.preventedConsequences,
         }),
         access: "public" as const,
       },

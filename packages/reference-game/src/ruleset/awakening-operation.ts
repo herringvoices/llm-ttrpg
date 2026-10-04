@@ -8,6 +8,11 @@ import {
 } from "@llm-ttrpg/engine";
 import { z } from "zod";
 import {
+  invinciblePassiveStatus,
+  INVINCIBLE_POWER_ID,
+  validateInvinciblePower,
+} from "./invincible.js";
+import {
   powerStateSchema,
   rulesActorStateSchema,
   validateCompleteHumanMechanics,
@@ -133,6 +138,10 @@ export const manifestFirstPowerOperation: RulesOperation<
       mana: { current: maxMana, max: maxMana },
       powers: [input.power],
     };
+    if (input.power.id === INVINCIBLE_POWER_ID) {
+      validateInvinciblePower(input.power);
+      next.statuses.push(invinciblePassiveStatus(1, input.power));
+    }
     const mechanics = validateCompleteHumanMechanics(next);
     const result = manifestFirstPowerResultSchema.parse({
       actorId: input.actorId,
