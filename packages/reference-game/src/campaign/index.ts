@@ -4,6 +4,11 @@ import {
   type EventTypeDefinition,
 } from "@llm-ttrpg/engine";
 import { z } from "zod";
+import {
+  brownbagConsequenceEventType,
+  brownbagDetailCommittedEventType,
+  brownbagSocialActionEventType,
+} from "../content-situations.js";
 
 export const noticePostedPayloadSchema = z
   .object({ documentId: z.string().min(1) })
@@ -23,7 +28,12 @@ export const contractFixtureCampaign: Campaign = {
     "Tiny campaign fixture used only to prove package and content boundaries.",
   setting: { id: "awakening-earth", version: "0.2.0" },
   startTime: fictionalInstant("2026-04-12T14:00:00.000Z"),
-  eventTypes: [noticePostedEventType],
+  eventTypes: [
+    noticePostedEventType,
+    brownbagDetailCommittedEventType,
+    brownbagConsequenceEventType,
+    brownbagSocialActionEventType,
+  ],
   content: {
     entities: [
       {
@@ -107,9 +117,15 @@ export const contractFixtureCampaign: Campaign = {
         id: "campaign.location.brownbag-groceries",
         kind: "location",
         name: "Brownbag Groceries",
-        summary: "A neighborhood grocery store used by the fixture campaign.",
+        summary: "A locally owned neighborhood grocery store with aging equipment.",
         data: {
           open: true,
+          equipment: {
+            refrigeration: {
+              "age-band": "aging",
+              maintenance: "deferred where possible",
+            },
+          },
           context: {
             locationId: "campaign.location.brownbag-groceries",
             category: "feature",
@@ -123,6 +139,63 @@ export const contractFixtureCampaign: Campaign = {
           },
         },
       },
+      {
+        id: "campaign.entity.nina",
+        kind: "actor",
+        name: "Nina",
+        summary: "A Brownbag employee trying to keep steady work despite manager conflict.",
+        data: {
+          currentLocation: "campaign.location.brownbag-groceries",
+          context: {
+            locationId: "campaign.location.brownbag-groceries",
+            category: "participant",
+            prominence: "ambient",
+            observable: true,
+            activeParticipant: false,
+            orchestratorVisible: true,
+            knownBy: [{ kind: "actor", id: "campaign.entity.nina" }],
+            identities: [],
+          },
+        },
+      },
+      {
+        id: "campaign.entity.brownbag-manager",
+        kind: "actor",
+        name: "Morgan",
+        summary: "Brownbag's cash-strapped owner-manager.",
+        data: {
+          currentLocation: "campaign.location.brownbag-groceries",
+          context: {
+            locationId: "campaign.location.brownbag-groceries",
+            category: "participant",
+            prominence: "ambient",
+            observable: true,
+            activeParticipant: false,
+            orchestratorVisible: true,
+            knownBy: [{ kind: "actor", id: "campaign.entity.brownbag-manager" }],
+            identities: [],
+          },
+        },
+      },
+      {
+        id: "campaign.entity.salt-customer",
+        kind: "actor",
+        name: "Ellis",
+        summary: "A regular customer whose recent salt purchases are unusually large.",
+        data: {
+          currentLocation: "campaign.location.brownbag-groceries",
+          context: {
+            locationId: "campaign.location.brownbag-groceries",
+            category: "participant",
+            prominence: "ambient",
+            observable: true,
+            activeParticipant: false,
+            orchestratorVisible: true,
+            knownBy: [],
+            identities: [],
+          },
+        },
+      },
     ],
     facts: [
       {
@@ -132,6 +205,30 @@ export const contractFixtureCampaign: Campaign = {
         value: "campaign.location.brownbag-groceries",
         visibility: "public",
         tags: ["location"],
+      },
+      {
+        id: "campaign.fact.brownbag-aging-equipment",
+        subjectId: "campaign.location.brownbag-groceries",
+        predicate: "equipment.refrigeration-age",
+        value: "aging equipment with deferred maintenance",
+        visibility: "public",
+        tags: ["equipment", "economy"],
+      },
+      {
+        id: "campaign.fact.brownbag-financial-pressure",
+        subjectId: "campaign.location.brownbag-groceries",
+        predicate: "institution.financial-pressure",
+        value: "cash flow is tight enough to defer some maintenance",
+        visibility: "hidden",
+        tags: ["economy", "pressure"],
+      },
+      {
+        id: "campaign.fact.salt-purchases",
+        subjectId: "campaign.entity.salt-customer",
+        predicate: "customer.purchase-pattern",
+        value: "repeated unusually large purchases of salt",
+        visibility: "public",
+        tags: ["behavior", "observation"],
       },
     ],
     events: [
@@ -186,6 +283,52 @@ export const contractFixtureCampaign: Campaign = {
         truthStatus: "false",
         confidence: 0.8,
       },
+      {
+        id: "campaign.belief.nina-salt-rumor",
+        holder: { kind: "actor", id: "campaign.entity.nina" },
+        subjectId: "campaign.entity.salt-customer",
+        proposition: "Ellis may be using the salt to ward off something supernatural.",
+        truthStatus: "uncertain",
+        confidence: 0.45,
+        sources: [{ kind: "testimony", id: "campaign.entity.salt-customer" }],
+      },
     ],
   },
+  actorSocialStates: [
+    {
+      actorId: "campaign.entity.nina",
+      goals: [{
+        id: "campaign.goal.nina-keep-job",
+        description: "Keep steady hours at Brownbag long enough to cover rent.",
+        priority: 0.85,
+        status: "active",
+        relatedEntityIds: ["campaign.location.brownbag-groceries"],
+        createdAt: fictionalInstant("2026-04-01T14:00:00.000Z"),
+      }],
+      relationships: [{
+        id: "campaign.relationship.nina-manager",
+        targetEntityId: "campaign.entity.brownbag-manager",
+        dimensions: { trust: -0.35, resentment: 0.55 },
+        salience: 0.8,
+        tags: ["employment", "conflict"],
+        lastUpdatedAt: fictionalInstant("2026-04-12T12:00:00.000Z"),
+      }],
+      memories: [],
+      commitments: [],
+    },
+    {
+      actorId: "campaign.entity.brownbag-manager",
+      goals: [{
+        id: "campaign.goal.manager-control-costs",
+        description: "Keep Brownbag operating despite immediate cash-flow pressure.",
+        priority: 0.9,
+        status: "active",
+        relatedEntityIds: ["campaign.location.brownbag-groceries"],
+        createdAt: fictionalInstant("2026-03-15T14:00:00.000Z"),
+      }],
+      relationships: [],
+      memories: [],
+      commitments: [],
+    },
+  ],
 };

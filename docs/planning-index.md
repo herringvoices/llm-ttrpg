@@ -19,12 +19,6 @@ This file records the current GitHub Project placement for the seeded issues.
 | #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
 | #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
 
-## Ready for Dev
-
-| Issue | Capability | Suggested subsystem labels |
-| --- | --- | --- |
-| #26 | Content & Encounter Principles | NPCs & Social, World / Content |
-
 ## Done
 
 - #5 — Project Shell & Persistence Foundation
@@ -66,6 +60,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: World / Content, Player UX
 - #34 — Character & Creature Mechanical Generation
   - Labels: Actions & Rules, NPCs & Social, World / Content
+- #26 — Content & Encounter Principles
+  - Labels: NPCs & Social, World / Content
 
 ## Icebox
 

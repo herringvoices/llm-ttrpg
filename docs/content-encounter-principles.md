@@ -1,6 +1,6 @@
 # Content & Encounter Principles
 
-**Status:** Settled and implementation-ready by Issue #26 — Content & Encounter Principles  
+**Status:** Settled and implemented by Issue #26 — Content & Encounter Principles
 **Scope:** How authored content, world simulation, NPC goals, generated detail, protected GM planning, and perspective-aware presentation combine to create discoverable situations without a rigid quest tree or uncontrolled narration.
 
 ## Goal
@@ -428,21 +428,28 @@ Prove:
 
 ## Acceptance Criteria
 
-- [ ] game-agnostic schemas/contracts exist for grounded non-authoritative situation candidates, provisional details, discovery affordances, and commitment evidence
-- [ ] these planning/content objects are not stored as canonical World State merely because they were proposed
-- [ ] deterministic validation rejects a hook that depends on still-provisional persistent detail
-- [ ] committed details point to ordinary authoritative records rather than a parallel truth store
-- [ ] existing no-retcon behavior prevents changing a committed detail while still allowing unrelated undefined detail to be densified
-- [ ] perspective-aware surfacing uses existing knowledge/context boundaries and does not leak hidden or provisional information
-- [ ] an NPC cannot causally act from a provisional hidden detail; the required fact/goal/belief/social state is committed first
-- [ ] false or uncertain NPC claims can be represented canonically as beliefs/testimony without converting the proposition into world truth
-- [ ] authored-seed, simulation-emergent, and query-driven-local-generation patterns are demonstrated
-- [ ] ignoring a hook causes no special quest-state mutation or automatic failure
-- [ ] engagement/failure produces ordinary authoritative state/events through existing execution/simulation boundaries
-- [ ] the Brownbag fixture demonstrates social, environmental/economic, and supernatural situations from one shared world state
-- [ ] automated tests prove provisional -> committed -> no-retcon behavior
-- [ ] architecture tests continue to enforce engine/reference-game separation
-- [ ] `npm run check` passes
+- [x] game-agnostic schemas/contracts exist for grounded non-authoritative situation candidates, provisional details, discovery affordances, and commitment evidence
+- [x] these planning/content objects are not stored as canonical World State merely because they were proposed
+- [x] deterministic validation rejects a hook that depends on still-provisional persistent detail
+- [x] committed details point to ordinary authoritative records rather than a parallel truth store
+- [x] existing no-retcon behavior prevents changing a committed detail while still allowing unrelated undefined detail to be densified
+- [x] perspective-aware surfacing uses existing knowledge/context boundaries and does not leak hidden or provisional information
+- [x] an NPC cannot causally act from a provisional hidden detail; the required fact/goal/belief/social state is committed first
+- [x] false or uncertain NPC claims can be represented canonically as beliefs/testimony without converting the proposition into world truth
+- [x] authored-seed, simulation-emergent, and query-driven-local-generation patterns are demonstrated
+- [x] ignoring a hook causes no special quest-state mutation or automatic failure
+- [x] engagement/failure produces ordinary authoritative state/events through existing execution/simulation boundaries
+- [x] the Brownbag fixture demonstrates social, environmental/economic, and supernatural situations from one shared world state
+- [x] automated tests prove provisional -> committed -> no-retcon behavior
+- [x] architecture tests continue to enforce engine/reference-game separation
+- [x] `npm run check` passes
+
+## Implemented Seam
+
+- `packages/engine/src/content-planning.ts` owns the game-agnostic Zod contracts, authoritative-grounding catalog, commitment checks, readiness assessment, and opaque perspective-safe handoff.
+- `packages/reference-game/src/content-situations.ts` derives all three Brownbag situation patterns from the shared reference world and proposes canonicalization through existing mutations and densification rules.
+- `packages/reference-game/test/content-situations.test.ts` proves provisional-to-committed behavior, perspective boundaries, no-retcon enforcement, ordinary consequences, and the absence of quest/situation persistence.
+- `tests/content-planning.test.ts` verifies the generic engine boundary and confirms that content-planning material is rejected by the canonical World State schema.
 
 ## Non-Goals
 

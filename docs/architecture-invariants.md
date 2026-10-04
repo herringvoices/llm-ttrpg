@@ -101,6 +101,14 @@ These are project-level constraints. Implementation should work within them unle
 - Planner input must come from current state/history, NPC/faction goals, campaign content, player behavior/interests, and presentation/storytelling guidance.
 - GM-plan context must never leak into ordinary player/NPC perspectives or become a back door for canonical mutation.
 
+## Content and encounter development
+
+- Situation candidates, provisional details, discovery affordances, and commitment evidence are protected non-authoritative content/planning material, not World State or event history.
+- Persistent provisional detail must be validated and committed through ordinary entity, fact, belief, social-state, event, or generation boundaries before a perspective can observe it or an actor/simulation process can use it causally.
+- Commitment evidence points back to the ordinary canonical records that establish a detail; it never creates a parallel truth store.
+- Discovery affordances may hand orchestration only opaque local references to information authorized by the existing context/knowledge boundary. GM summaries, hidden grounding, canonical IDs, and provisional content do not cross that handoff.
+- Ignoring or engaging a hook creates no special quest state. Consequences remain ordinary authoritative mutations and events, and established details remain subject to no-retcon rules.
+
 ## Time
 
 - Fictional time and wall-clock metadata use distinct types and dependencies. Wall time timestamps files/records; it never decides when a fictional event happened.

@@ -549,10 +549,10 @@ describe("lazy generated detail", () => {
       candidateData: {
         district: "Riverside",
         open: true,
-        ownerName: "Mara",
+        "owner-name": "Mara",
         layout: "two rooms and a rear kitchen",
       },
-      requiredPaths: ["ownerName", "layout"],
+      requiredPaths: ["owner-name", "layout"],
       provenance: {
         class: "later-densification",
         sourceIds: [existing.id],
@@ -560,8 +560,10 @@ describe("lazy generated detail", () => {
       },
     });
     expect(densified.entity.data).toEqual(expect.objectContaining({
-      ownerName: "Mara",
-      densificationHistory: [expect.objectContaining({ requiredPaths: ["ownerName", "layout"] })],
+      "owner-name": "Mara",
+      "densification-history": [expect.objectContaining({
+        requiredPaths: ["owner-name", "layout"],
+      })],
     }));
     expect(() => densifyGeneratedEntity(existing, {
       entityId: existing.id,
