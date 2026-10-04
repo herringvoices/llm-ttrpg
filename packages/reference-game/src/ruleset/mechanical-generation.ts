@@ -23,6 +23,10 @@ import {
 
 const realizationLevelSchema = z.enum(["constrained", "partial", "complete"]);
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 export const realizeMechanicsInputSchema = z.object({
   entityId: stableIdSchema,
   subjectKind: z.enum(["human", "creature"]),
@@ -76,7 +80,7 @@ function appendConstraints(
   prior: readonly MechanicalConstraint[],
   proposed: readonly MechanicalConstraint[],
 ): MechanicalConstraint[] {
-  const merged = prior.map((constraint) => structuredClone(constraint));
+  const merged = prior.map((constraint) => clone(constraint));
   const byId = new Map(merged.map((constraint) => [constraint.id, constraint]));
   for (const constraint of proposed) {
     const existing = byId.get(constraint.id);
@@ -88,7 +92,7 @@ function appendConstraints(
       }
       continue;
     }
-    const cloned = structuredClone(constraint);
+    const cloned = clone(constraint);
     merged.push(cloned);
     byId.set(cloned.id, cloned);
   }
@@ -327,10 +331,11 @@ export const applyCreatureGrowthOperation: RulesOperation<
         `Entity ${input.entityId} does not have complete creature mechanics`,
       );
     }
-    const updated = structuredClone(current.data);
+    const updated = clone(current.data);
     for (const [attributeId, amount] of Object.entries(input.attributeDeltas)) {
       if (amount === undefined) continue;
-      updated.attributes[attributeId as keyof typeof updated.attributes] += amount;
+      const key = attributeId as keyof typeof updated.attributes;
+      updated.attributes[key] = (updated.attributes[key] ?? 0) + amount;
     }
     for (const delta of input.skillSpDeltas) {
       const skill = updated.skills.find((candidate) => candidate.id === delta.skillId);
