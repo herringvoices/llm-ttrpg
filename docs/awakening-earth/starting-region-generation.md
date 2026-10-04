@@ -525,6 +525,37 @@ The initial generator should produce the smallest cast that makes starting relat
 
 The coherence auditor should flag NPCs that can be removed without affecting any meaningful starting system.
 
+## Mechanical Realization Boundary
+
+World/population detail and rules-mechanical detail are separate axes.
+
+The population ladder above answers how much **individual identity and simulation state** exists. It does not imply that every identified or persistent person has a complete character sheet.
+
+Issue #34 defines the independent mechanical-realization ladder:
+
+- unrealized;
+- constrained;
+- partial;
+- complete.
+
+Region generation may establish mechanically meaningful constraints without choosing exact rules values, including:
+
+- occupation/training/history;
+- mundane or awakened status;
+- species/origin;
+- size/morphology;
+- observed capabilities;
+- supernatural traits;
+- survival/growth history.
+
+Those constraints become authoritative inputs to later mechanical densification.
+
+A persistent NPC may therefore begin play with detailed relationships, beliefs, goals, and obligations but only constrained mechanical state.
+
+Likewise, a concrete monster instance may be established by origin, morphology, behavior, location, observed effects, and campaign role before exact encounter mechanics are needed.
+
+Mechanical realization may add specificity later but may not contradict the region seed or subsequent authoritative observations.
+
 ## Generation Provenance and Diagnostics
 
 Generation should retain enough non-player-facing metadata to explain how important world facts were established.
