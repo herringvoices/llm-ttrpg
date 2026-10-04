@@ -1,4 +1,7 @@
 import type { ContentBundle, JsonValue } from "./content.js";
+import type { ActorSocialState } from "./actor-social-state.js";
+import type { MechanicalRealization } from "./mechanical-realization.js";
+import type { GenerationRecord } from "./generation.js";
 import type { ComponentIdentity, ComponentReference } from "./identity.js";
 import type {
   OperationRegistry,
@@ -68,6 +71,9 @@ export interface Campaign
   readonly setting: ComponentReference;
   readonly startTime: FictionalInstant;
   readonly content: ContentBundle;
+  readonly actorSocialStates?: readonly ActorSocialState[];
+  readonly mechanicalRealizations?: readonly MechanicalRealization[];
+  readonly generationRecord?: GenerationRecord;
 }
 
 export interface PresentationConfig {
