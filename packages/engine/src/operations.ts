@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   beliefSchema,
   canonicalFactSchema,
+  entitySchema,
   jsonValueSchema,
   type JsonValue,
 } from "./content.js";
