@@ -11,14 +11,14 @@ import {
   fixedResistanceProvenanceSchema,
   percentageModifierSchema,
   realizedEffectSchema,
-  rulesActorStateSchema,
+  rulesMechanicalCoreSchema,
   rulesConstants,
   skillSchema,
   stressTrackSchema,
   type AttributeId,
   type EffectMagnitude,
   type RealizedEffect,
-  type RulesActorState,
+  type RulesMechanicalCore,
   type Skill,
 } from "./model.js";
 
@@ -255,11 +255,11 @@ function skillCalculation(skill: Skill, attributeBasis: number) {
   };
 }
 
-export function totalStressPoints(state: RulesActorState): number {
+export function totalStressPoints(state: RulesMechanicalCore): number {
   return Object.values(state.stress).reduce((total, value) => total + value, 0);
 }
 
-export function stressPenaltyPercent(state: RulesActorState): number {
+export function stressPenaltyPercent(state: RulesMechanicalCore): number {
   return Math.min(
     totalStressPoints(state) * rulesConstants.stressPenaltyPercentPerPoint,
     rulesConstants.maximumStressPenaltyPercent,
@@ -267,11 +267,11 @@ export function stressPenaltyPercent(state: RulesActorState): number {
 }
 
 export function calculatePerformance(
-  actorState: RulesActorState,
+  actorState: RulesMechanicalCore,
   plan: PerformancePlan,
-  combinedActorStates: ReadonlyMap<string, RulesActorState> = new Map(),
+  combinedActorStates: ReadonlyMap<string, RulesMechanicalCore> = new Map(),
 ): PerformanceCalculation {
-  const actor = rulesActorStateSchema.parse(actorState);
+  const actor = rulesMechanicalCoreSchema.parse(actorState);
   const parsedPlan = performancePlanSchema.parse(plan);
   const statusAttributeModifiers = actor.statuses.flatMap(
     (status) => status.attributeModifiers,
@@ -464,7 +464,7 @@ export function skillSpAward(
 }
 
 export function benchmarkFixedResistance(
-  benchmark: RulesActorState,
+  benchmark: RulesMechanicalCore,
   plan: PerformancePlan,
   description: string,
 ) {
