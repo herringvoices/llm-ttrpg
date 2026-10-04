@@ -2,4 +2,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
-
+apps/desktop/.bundle-cache/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/resources/llama/*
+!apps/desktop/src-tauri/resources/llama/.gitkeep

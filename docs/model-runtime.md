@@ -45,11 +45,13 @@ The fundamental `generate` operation is non-streaming and supports a structural 
 
 Streaming is optional and text-only. It emits text deltas followed by provider-neutral completion metadata or one normalized failure. Partial structured JSON is never exposed as a semantic result.
 
-## Ollama implementation
+## Development and bundled implementations
 
 `apps/desktop/src/model/ollama-model-runtime.ts` contains all Ollama message, HTTP, response, and NDJSON-streaming types. `OllamaModelRuntime` accepts a base URL and model through application configuration. It maps semantic prompts internally, requests JSON-Schema-constrained structured generation, revalidates with Zod, supports native text streaming, and normalizes transport failures.
 
-During development, Ollama is an externally managed local service. This issue does not install, launch, monitor, or stop it. A future Tauri-managed bundled llama.cpp-compatible implementation can satisfy the same `ModelRuntime` interface and own its separate process lifecycle without changing engine or gameplay contracts.
+During browser development, Ollama remains an externally managed local service. Shipping Tauri builds instead use `LlamaCppModelRuntime`, an OpenAI-compatible adapter over a bundled, pinned llama.cpp CPU server. The Tauri host downloads the pinned Qwen3 8B Q4 model into application-local data on first launch, resumes partial downloads, verifies the model checksum, launches it on a dynamically selected authenticated localhost port, waits for readiness, and stops it on application exit. Model installation/progress and process lifecycle are infrastructure concerns and never enter canonical game history.
+
+The 5 GB model is deliberately not embedded in the NSIS setup executable: NSIS has an approximately 2 GB single-installer ceiling. The setup executable includes the app and inference runtime, and the installed app completes the model installation automatically. No separately installed Ollama, Python, or model manager is required.
 
 The desktop application accepts an optional provider-neutral `ModelRuntime` dependency. It does not import Ollama types, and the headless game runtime remains independent of model transport.
 

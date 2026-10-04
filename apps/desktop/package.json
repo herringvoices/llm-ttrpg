@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "prepare:llama": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-llama-runtime.ps1",
+    "bundle:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bundle-windows.ps1"
   },
   "dependencies": {
     "@llm-ttrpg/engine": "*",

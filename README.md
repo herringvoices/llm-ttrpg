@@ -88,6 +88,10 @@ Run the developer harness with `npm run harness`. The CLI ships with a tiny pack
 
 Run the playable desktop web shell with `npm run dev --workspace @llm-ttrpg/desktop`. It connects to Ollama at `VITE_OLLAMA_BASE_URL` (default `http://localhost:11434`) and uses `VITE_OLLAMA_MODEL` (default `qwen3:8b`). The Tauri host supplies the persistent SQLite database and the same UI/application boundary.
 
+Build the Windows installer with `npm run bundle:windows` from a machine with Rust and the Visual Studio 2022 C++ Build Tools. The build script initializes the MSVC environment, downloads and verifies a pinned Windows CPU build of llama.cpp, then produces an NSIS `*-setup.exe` under `apps/desktop/src-tauri/target/release/bundle/nsis`. The installed app needs no Ollama, Rust, Visual Studio, or Python installation. On first launch it downloads the pinned Qwen3 8B Q4 model (about 5 GB), resumes interrupted downloads, verifies its SHA-256, starts an authenticated localhost model service, and stops that service when the app exits. The one-time model download is necessary because the model is larger than the NSIS single-file installer limit.
+
+The shipping build currently targets 64-bit Windows and CPU inference for maximum compatibility. Allow roughly 7 GB of free disk space and 8 GB of RAM; more memory and faster CPUs improve play. See [third-party runtime notices](THIRD_PARTY_NOTICES.md) for pinned versions, licenses, and checksums.
+
 The concrete selected mechanics are documented in [Reference Rules](docs/reference-rules.md). They remain ruleset-owned and are exposed through the engine's generic operation, resolution, and tool-catalog contracts.
 
 ## Core principle

@@ -86,7 +86,7 @@ These are project-level constraints. Implementation should work within them unle
 - Non-streaming generation is fundamental. Streaming is optional and text-only; cancellation and timeouts cannot produce a later actionable result.
 - Runtime capabilities and diagnostics are provider-neutral. Unknown context-window sizes are not fabricated, and model lifecycle diagnostics never become canonical world events.
 - #10's deterministic context budget remains provider-independent. Provider token counts/context overflow belong to transport diagnostics and do not change context selection.
-- Ollama is an externally managed development service. A future bundled llama.cpp-compatible adapter/process lifecycle must fit the same semantic interface without changing gameplay contracts.
+- Ollama is an externally managed development service. Shipping desktop builds use a Tauri-managed, bundled llama.cpp-compatible adapter/process lifecycle through the same semantic interface without changing gameplay contracts.
 - The model runtime transports prompts/results only. It owns no authorization, state mutation, time, rules, action pressure, NPC behavior, campaign planning, or world simulation.
 
 ## Campaign planning

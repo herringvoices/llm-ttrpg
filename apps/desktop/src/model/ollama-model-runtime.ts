@@ -68,6 +68,7 @@ export class OllamaTransportError extends Error {
 export interface OllamaModelRuntimeConfig {
   readonly baseUrl: string;
   readonly model: string;
+  readonly runtimeId?: string;
   readonly structuredOutput?: boolean;
   readonly streamingText?: boolean;
   readonly contextWindowTokens?: number;
@@ -370,7 +371,7 @@ export class OllamaModelRuntime implements ModelRuntime {
   ): ModelResultMetadata {
     const reportedUsage = response ? usage(response) : undefined;
     return {
-      runtimeId: "ollama",
+      runtimeId: this.config.runtimeId ?? "ollama",
       modelId: response?.model ?? this.config.model,
       elapsedMs: Math.max(0, this.now() - startedAt),
       ...(reportedUsage ? { usage: reportedUsage } : {}),

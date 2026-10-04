@@ -11,7 +11,9 @@
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.tests.json --pretty false",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test && npm run build",
-    "harness": "npm run build --workspace @llm-ttrpg/harness --workspace @llm-ttrpg/harness-cli && npm run start --workspace @llm-ttrpg/harness-cli"
+    "harness": "npm run build --workspace @llm-ttrpg/harness --workspace @llm-ttrpg/harness-cli && npm run start --workspace @llm-ttrpg/harness-cli",
+    "bundle:windows": "npm run bundle:windows --workspace @llm-ttrpg/desktop",
+    "prepare:llama": "npm run prepare:llama --workspace @llm-ttrpg/desktop"
   },
   "dependencies": {
     "zod": "^3.25.28"

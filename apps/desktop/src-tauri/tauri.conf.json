@@ -24,5 +24,15 @@
   "plugins": {
     "sql": { "preload": ["sqlite:llm-ttrpg.db"] }
   },
-  "bundle": { "active": true, "targets": "all" }
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "RolePlayingGame",
+    "shortDescription": "A local, persistent, text-first RPG",
+    "longDescription": "A local, single-player RPG where an embedded language model interprets natural-language actions and an authoritative simulation owns world truth.",
+    "resources": ["resources/llama/*", "resources/THIRD_PARTY_NOTICES.md"],
+    "windows": {
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
 }

@@ -178,7 +178,7 @@ export class DesktopPlaySession {
   private requireModel(): ModelRuntime {
     if (!this.modelRuntime) {
       throw new Error(
-        "No local model runtime is configured. Configure Ollama and restart; the world was not changed.",
+        "No local model runtime is configured; the world was not changed.",
       );
     }
     return this.modelRuntime;
