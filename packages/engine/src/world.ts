@@ -33,6 +33,18 @@ import {
   type ActionPressureState,
 } from "./action-pressure.js";
 import {
+  actorSocialStateSchema,
+  type ActorSocialState,
+} from "./actor-social-state.js";
+import {
+  mechanicalRealizationSchema,
+  type MechanicalRealization,
+} from "./mechanical-realization.js";
+import {
+  generationRecordSchema,
+  type GenerationRecord,
+} from "./generation.js";
+import {
   initialRandomnessState,
   randomnessStateSchema,
   type RandomnessState,
@@ -70,6 +82,9 @@ export const worldStateSchema = z
     facts: z.array(canonicalFactSchema),
     documents: z.array(longFormDocumentSchema),
     beliefs: z.array(beliefSchema),
+    actorSocialStates: z.array(actorSocialStateSchema).default([]),
+    mechanicalRealizations: z.array(mechanicalRealizationSchema).default([]),
+    generationRecord: generationRecordSchema.optional(),
     scheduledTriggers: z.array(scheduledTriggerSchema),
     simulationCursors: z.array(simulationCursorSchema),
   })
@@ -92,6 +107,43 @@ export const worldStateSchema = z
           path: ["simulationCursors", index, "lastSimulatedAt"],
         });
       }
+    }
+    const entityIds = new Set(state.entities.map((entity) => entity.id));
+    const socialActors = new Set<string>();
+    for (const [index, social] of state.actorSocialStates.entries()) {
+      if (!entityIds.has(social.actorId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Social state references missing actor: ${social.actorId}`,
+          path: ["actorSocialStates", index, "actorId"],
+        });
+      }
+      if (socialActors.has(social.actorId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate social state: ${social.actorId}`,
+          path: ["actorSocialStates", index, "actorId"],
+        });
+      }
+      socialActors.add(social.actorId);
+    }
+    const mechanicalEntities = new Set<string>();
+    for (const [index, realization] of state.mechanicalRealizations.entries()) {
+      if (!entityIds.has(realization.entityId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Mechanical realization references missing entity: ${realization.entityId}`,
+          path: ["mechanicalRealizations", index, "entityId"],
+        });
+      }
+      if (mechanicalEntities.has(realization.entityId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate mechanical realization: ${realization.entityId}`,
+          path: ["mechanicalRealizations", index, "entityId"],
+        });
+      }
+      mechanicalEntities.add(realization.entityId);
     }
     const triggerIds = new Set<string>();
     for (const [index, trigger] of state.scheduledTriggers.entries()) {
@@ -116,6 +168,9 @@ export interface WorldState {
   facts: CanonicalFact[];
   documents: LongFormDocument[];
   beliefs: Belief[];
+  actorSocialStates: ActorSocialState[];
+  mechanicalRealizations: MechanicalRealization[];
+  generationRecord?: GenerationRecord;
   scheduledTriggers: ScheduledTrigger[];
   simulationCursors: SimulationCursor[];
 }
@@ -141,6 +196,11 @@ export function initializeCampaignWorld(
     facts: content.facts,
     documents: content.documents,
     beliefs: content.beliefs,
+    actorSocialStates: JSON.parse(JSON.stringify(game.campaign.actorSocialStates ?? [])),
+    mechanicalRealizations: JSON.parse(JSON.stringify(game.campaign.mechanicalRealizations ?? [])),
+    ...(game.campaign.generationRecord
+      ? { generationRecord: JSON.parse(JSON.stringify(game.campaign.generationRecord)) }
+      : {}),
     scheduledTriggers: [],
     simulationCursors: game.worldSimulationRegistry.listScopes().map((scope) => ({
       scopeId: scope.id,
