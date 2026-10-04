@@ -10,6 +10,7 @@ import type { WorldState } from "./world.js";
 import type { CanonicalEvent, EventQuery } from "./events.js";
 import type { EventHistoryStore, WorldId } from "./persistence.js";
 import type { ModelRole } from "./context-contracts.js";
+import { actorSocialStateSchema, type ActorSocialState } from "./actor-social-state.js";
 
 export type Perspective =
   | { readonly kind: "canonical" }
@@ -77,6 +78,16 @@ export function retrieveKnowledge(
           );
 
   return { facts, beliefs };
+}
+
+export function retrieveActorSocialState(
+  world: WorldState,
+  actorId: string,
+): ActorSocialState | undefined {
+  const state = world.actorSocialStates.find((candidate) => candidate.actorId === actorId);
+  return state
+    ? actorSocialStateSchema.parse(JSON.parse(JSON.stringify(state)))
+    : undefined;
 }
 
 export type DocumentRetrievalRequest =
