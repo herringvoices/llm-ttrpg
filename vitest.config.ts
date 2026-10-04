@@ -7,6 +7,9 @@ export default defineConfig({
       "@llm-ttrpg/engine": fileURLToPath(
         new URL("./packages/engine/src/index.ts", import.meta.url),
       ),
+      "@llm-ttrpg/harness": fileURLToPath(
+        new URL("./packages/harness/src/index.ts", import.meta.url),
+      ),
       "@llm-ttrpg/reference-game": fileURLToPath(
         new URL("./packages/reference-game/src/index.ts", import.meta.url),
       ),
@@ -18,4 +21,3 @@ export default defineConfig({
     },
   },
 });
-

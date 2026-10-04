@@ -1,6 +1,7 @@
 # Simulation & Test Harness
 
-**Status:** Settled and implementation-ready by Issue #16 — Simulation & Test Harness  
+**Status:** Settled and implemented by Issue #16 — Simulation & Test Harness
+
 **Scope:** A reusable developer harness for deterministic scenario setup, direct simulation control, model scripting, context/tool inspection, semantic state/history diffs, disposable forks, challenge probes, and reproducible bug reports without using the player UI.
 
 ## Goal
@@ -606,37 +607,68 @@ Run the tiny fantasy architecture fixture through:
 
 Verify no engine/harness branch recognizes Awakening Earth specifically.
 
+## Implemented Seam
+
+Issue #16 is implemented as two developer-only workspace packages:
+
+- `packages/harness` provides plain-TypeScript scenarios, isolated deterministic `HarnessSession` instances, validated mutation/event injection, explicit unsafe corruption testing, separate time and catch-up control, production operation/player-action/conversation execution, context/query/tool inspection, semantic snapshots/diffs, layered traces, exact disposable forks, seeded challenge probes, and reproduction export/replay;
+- `ScriptedModelRuntime` matches stable invocation metadata and predicates, supports dynamic or static structured/text results plus all provider-neutral failure kinds, validates outputs through the requested Zod schema, and records matched-step diagnostics;
+- reproduction bundles serialize the exact starting disposable state/history, deterministic command sequence, scripted invocation diagnostics, and expected final state/history so forks replay from their real checkpoint rather than merely resetting a scenario;
+- `apps/harness-cli` is a persistent REPL over the same public harness API, with human-readable or JSON output for scenario/session, inspection, mutation, comparison, fork, trace, export, and replay commands;
+- `HARNESS_MODEL_MODULE` lets the CLI load an externally configured provider-neutral real `ModelRuntime` without making CI depend on real-model determinism;
+- `fantasy.fixture-town` is a tiny test/developer-only wizard/goblin package with its own operation and lazy simulation process, proving the harness contains no Awakening Earth branch.
+
+The harness remains a client of public engine contracts. Its injection and corruption helpers are methods on the developer package and never enter a game operation registry or player tool catalog.
+
+## Verification
+
+`tests/harness.test.ts` composes the existing lazy-simulation and contract-game fixtures and verifies:
+
+- a deterministic three-week town run where time advancement does not wake simulation, validated route disruption carries harness provenance, selected-scope catch-up produces stable process/RNG diagnostics, and reset reproduces identical state/history;
+- separately authorized actor knowledge queries, tool contracts, normal #11 freeform action execution, scripted schema failure, and no partial authoritative commit;
+- exact fork isolation, seeded probes, export, and replay from a changed branch checkpoint;
+- normal #14 conversation orchestration and scripted invocation capture;
+- package-neutral fantasy operation/context/tool/time/catch-up behavior plus isolated unsafe corruption and reset recovery.
+
+The completed repository gate passes:
+
+```text
+npm run check
+Test Files  19 passed | 1 skipped (20)
+Tests       151 passed | 1 skipped (152)
+```
+
 ## Acceptance Criteria
 
-- [ ] reusable headless harness package exists independently of the normal player UI
-- [ ] interactive developer CLI consumes the same harness API
-- [ ] CLI maintains a loaded scenario/session for iterative debugging
-- [ ] scenarios are plain TypeScript definitions, not a custom DSL
-- [ ] Vitest and CLI can use the same scenario definitions
-- [ ] deterministic scenario reset reproduces the same starting state
-- [ ] fictional-time advancement is separate from lazy-scope catch-up
-- [ ] a chosen simulation scope can be caught up directly
-- [ ] seed/RNG state and randomness traces are inspectable
-- [ ] validated test event/state injection exists with clear harness provenance
-- [ ] unsafe corruption helper is isolated/obviously unsafe and absent from player tooling
-- [ ] scripted model runtime supports deterministic structured/text success and failure cases
-- [ ] interactive harness may use the real local model without making CI depend on it
-- [ ] direct registered operations can be executed through production validation paths
-- [ ] freeform actions can execute through normal orchestration with mocked or real model responses
-- [ ] context packages and perspective/omission diagnostics can be inspected
-- [ ] tool discovery/contracts/availability can be inspected
-- [ ] semantic snapshots/diffs cover time, state, social data, mechanics, scheduled work, cursors, events, and RNG
-- [ ] semantic diff ordering is deterministic and raw before/after values remain inspectable
-- [ ] summary, decision, and full diagnostic trace levels exist
-- [ ] full diagnostics remain developer-only and do not weaken actor authorization
-- [ ] disposable forks preserve exact base state and cannot mutate the source world
-- [ ] seeded monster-challenge probes can run repeatedly over disposable forks
-- [ ] reproduction bundles can export and replay a failing scenario/run
-- [ ] a replayed deterministic bundle reproduces the same authoritative result/trace-relevant identifiers
-- [ ] existing test-support fixtures are reusable through the harness where practical
-- [ ] tiny fantasy architecture fixture runs through the harness without engine changes
-- [ ] tests/scenarios run without opening the desktop player UI
-- [ ] `npm run check` passes
+- [x] reusable headless harness package exists independently of the normal player UI
+- [x] interactive developer CLI consumes the same harness API
+- [x] CLI maintains a loaded scenario/session for iterative debugging
+- [x] scenarios are plain TypeScript definitions, not a custom DSL
+- [x] Vitest and CLI can use the same scenario definitions
+- [x] deterministic scenario reset reproduces the same starting state
+- [x] fictional-time advancement is separate from lazy-scope catch-up
+- [x] a chosen simulation scope can be caught up directly
+- [x] seed/RNG state and randomness traces are inspectable
+- [x] validated test event/state injection exists with clear harness provenance
+- [x] unsafe corruption helper is isolated/obviously unsafe and absent from player tooling
+- [x] scripted model runtime supports deterministic structured/text success and failure cases
+- [x] interactive harness may use the real local model without making CI depend on it
+- [x] direct registered operations can be executed through production validation paths
+- [x] freeform actions can execute through normal orchestration with mocked or real model responses
+- [x] context packages and perspective/omission diagnostics can be inspected
+- [x] tool discovery/contracts/availability can be inspected
+- [x] semantic snapshots/diffs cover time, state, social data, mechanics, scheduled work, cursors, events, and RNG
+- [x] semantic diff ordering is deterministic and raw before/after values remain inspectable
+- [x] summary, decision, and full diagnostic trace levels exist
+- [x] full diagnostics remain developer-only and do not weaken actor authorization
+- [x] disposable forks preserve exact base state and cannot mutate the source world
+- [x] seeded monster-challenge probes can run repeatedly over disposable forks
+- [x] reproduction bundles can export and replay a failing scenario/run
+- [x] a replayed deterministic bundle reproduces the same authoritative result/trace-relevant identifiers
+- [x] existing test-support fixtures are reusable through the harness where practical
+- [x] tiny fantasy architecture fixture runs through the harness without engine changes
+- [x] tests/scenarios run without opening the desktop player UI
+- [x] `npm run check` passes
 
 ## Non-Goals
 

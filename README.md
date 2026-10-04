@@ -69,8 +69,10 @@ See:
 The workspace keeps the native shell and game logic separated:
 
 - `packages/engine` — DOM-free, game-agnostic TypeScript contracts, runtime orchestration, persistence ports, and an in-memory adapter
+- `packages/harness` — reusable deterministic scenario sessions, scripted models, diagnostics, semantic diffs, forks, probes, and reproduction replay
 - `packages/reference-game` — the headless reusable Performance/Resistance ruleset plus the first setting, adapter, campaign, and presentation modules
 - `apps/desktop` — React/Vite presentation, the SQLite adapter, and a thin Tauri 2 host that registers migrations
+- `apps/harness-cli` — a persistent interactive developer shell over the same harness API used by Vitest
 
 Canonical changes follow `validate -> apply -> persist atomically -> expose`. Worlds are persistent campaign lineages. Current World State is separate from append-only meaningful event history and from future scheduled work. Named save slots point to immutable checkpoints of both state and the history visible at that point, so saving again moves the slot without rewriting history.
 
@@ -79,6 +81,8 @@ Install dependencies with `npm install`, then run the complete verification suit
 ```sh
 npm run check
 ```
+
+Run the developer harness with `npm run harness`. The CLI ships with a tiny package-neutral fantasy fixture; additional plain-TypeScript scenarios can be registered by developer tooling. Set `HARNESS_MODEL_MODULE` to an ESM module exporting a provider-neutral `ModelRuntime` as `default` or `modelRuntime` to use a configured real local model interactively.
 
 The concrete selected mechanics are documented in [Reference Rules](docs/reference-rules.md). They remain ruleset-owned and are exposed through the engine's generic operation, resolution, and tool-catalog contracts.
 
