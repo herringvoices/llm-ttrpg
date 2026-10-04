@@ -1,5 +1,6 @@
 import {
   actorSocialStateSchema,
+  assertNoRetconJsonExtension,
   beliefSchema,
   canonicalFactSchema,
   emptyContentBundle,
@@ -20,6 +21,7 @@ import {
   type GenerationStage,
   type JsonValue,
   type MechanicalRealization,
+  type MutationProposal,
   type WorldProcessDefinition,
   type WorldSimulationContribution,
 } from "@llm-ttrpg/engine";
@@ -51,6 +53,217 @@ const provenanceSchema = z.object({
   sourceIds: z.array(stableIdSchema),
   rationale: z.string().trim().min(1),
 }).strict();
+
+
+export const identityResolutionLevelSchema = z.enum([
+  "statistical",
+  "ephemeral",
+  "identified",
+  "persistent",
+]);
+export type IdentityResolutionLevel = z.infer<
+  typeof identityResolutionLevelSchema
+>;
+
+const identityResolutionRank: Readonly<Record<IdentityResolutionLevel, number>> = {
+  statistical: 0,
+  ephemeral: 1,
+  identified: 2,
+  persistent: 3,
+};
+
+export const identityResolutionStepSchema = z.object({
+  id: stableIdSchema,
+  level: identityResolutionLevelSchema,
+  establishedAt: z.string().datetime(),
+  provenance: provenanceSchema,
+}).strict();
+
+export const observedPersonSeedSchema = z.object({
+  id: stableIdSchema,
+  summary: z.string().trim().min(1),
+  resolution: z.enum(["statistical", "ephemeral"]),
+  establishedData: z.record(z.string(), jsonValueSchema),
+  provenance: provenanceSchema,
+}).strict();
+export type ObservedPersonSeed = z.infer<typeof observedPersonSeedSchema>;
+
+export const generatedPersonPromotionSchema = z.object({
+  entity: entitySchema,
+  targetResolution: z.enum(["identified", "persistent"]),
+  resolutionStep: identityResolutionStepSchema,
+  socialState: actorSocialStateSchema.optional(),
+}).strict().superRefine((proposal, context) => {
+  if (proposal.resolutionStep.level !== proposal.targetResolution) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Promotion step must establish the requested target resolution",
+      path: ["resolutionStep", "level"],
+    });
+  }
+  if (
+    proposal.targetResolution === "persistent" &&
+    !proposal.socialState
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Persistent promotion requires actor social state",
+      path: ["socialState"],
+    });
+  }
+  if (
+    proposal.socialState &&
+    proposal.socialState.actorId !== proposal.entity.id
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Promoted social state must belong to the promoted entity",
+      path: ["socialState", "actorId"],
+    });
+  }
+});
+export type GeneratedPersonPromotion = z.infer<
+  typeof generatedPersonPromotionSchema
+>;
+
+export function promoteObservedPerson(
+  observationValue: unknown,
+  proposalValue: unknown,
+): {
+  readonly entity: Entity;
+  readonly socialState?: ActorSocialState;
+  readonly mutations: readonly MutationProposal[];
+} {
+  const observation = observedPersonSeedSchema.parse(observationValue);
+  const proposal = generatedPersonPromotionSchema.parse(proposalValue);
+  if (
+    identityResolutionRank[proposal.targetResolution] <=
+      identityResolutionRank[observation.resolution]
+  ) {
+    throw new Error("Person promotion must increase identity resolution");
+  }
+  try {
+    assertNoRetconJsonExtension(
+      observation.establishedData,
+      proposal.entity.data,
+    );
+  } catch (error) {
+    throw new Error(
+      `Promoted person contradicts an established observation: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  const entity = clone(proposal.entity);
+  entity.data = {
+    ...entity.data,
+    identityResolutionHistory: jsonValueSchema.parse([
+      {
+        id: `resolution.${observation.id}.${observation.resolution}`,
+        level: observation.resolution,
+        establishedAt: proposal.resolutionStep.establishedAt,
+        provenance: observation.provenance,
+      },
+      proposal.resolutionStep,
+    ]),
+  };
+
+  const mutations: MutationProposal[] = [{
+    kind: "add-entity",
+    entity,
+  }];
+  if (proposal.socialState) {
+    mutations.push({
+      kind: "ensure-actor-social-state",
+      actorId: entity.id,
+    });
+    for (const goal of proposal.socialState.goals) {
+      mutations.push({ kind: "upsert-actor-goal", actorId: entity.id, goal });
+    }
+    for (const relationship of proposal.socialState.relationships) {
+      mutations.push({
+        kind: "upsert-actor-relationship",
+        actorId: entity.id,
+        relationship,
+      });
+    }
+    for (const memory of proposal.socialState.memories) {
+      mutations.push({ kind: "upsert-actor-memory", actorId: entity.id, memory });
+    }
+    for (const commitment of proposal.socialState.commitments) {
+      mutations.push({
+        kind: "upsert-actor-commitment",
+        actorId: entity.id,
+        commitment,
+      });
+    }
+  }
+  return {
+    entity,
+    ...(proposal.socialState ? { socialState: clone(proposal.socialState) } : {}),
+    mutations,
+  };
+}
+
+export const generatedEntityDensificationSchema = z.object({
+  entityId: stableIdSchema,
+  candidateData: z.record(z.string(), jsonValueSchema),
+  requiredPaths: z.array(z.string().trim().min(1)).min(1),
+  provenance: provenanceSchema.extend({
+    class: z.literal("later-densification"),
+  }),
+}).strict();
+
+export function densifyGeneratedEntity(
+  existingValue: unknown,
+  requestValue: unknown,
+): {
+  readonly entity: Entity;
+  readonly mutations: readonly MutationProposal[];
+} {
+  const existing = entitySchema.parse(existingValue);
+  const request = generatedEntityDensificationSchema.parse(requestValue);
+  if (request.entityId !== existing.id) {
+    throw new Error("Densification request targets a different entity");
+  }
+  try {
+    assertNoRetconJsonExtension(existing.data, request.candidateData);
+  } catch (error) {
+    throw new Error(
+      `Generated detail would retcon established truth: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  const history = Array.isArray(existing.data.densificationHistory)
+    ? existing.data.densificationHistory
+    : [];
+  const nextData = {
+    ...request.candidateData,
+    densificationHistory: jsonValueSchema.parse([
+      ...history,
+      {
+        id: `densification.${existing.id}.${history.length + 1}`,
+        requiredPaths: request.requiredPaths,
+        provenance: request.provenance,
+      },
+    ]),
+  };
+  const entity = entitySchema.parse({ ...existing, data: nextData });
+  const mutations: MutationProposal[] = [];
+  for (const [key, value] of Object.entries(nextData)) {
+    if (JSON.stringify(existing.data[key]) === JSON.stringify(value)) continue;
+    mutations.push({
+      kind: "set-entity-data",
+      entityId: existing.id,
+      key,
+      value,
+    });
+  }
+  return { entity, mutations };
+}
 
 export const startingRegionRequestSchema = z.object({
   locationDescription: z.string().trim().min(1),
