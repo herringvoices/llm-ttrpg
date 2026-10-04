@@ -96,6 +96,12 @@ export const beliefHolderSchema = z
   .strict();
 export type BeliefHolder = z.infer<typeof beliefHolderSchema>;
 
+export const beliefSourceSchema = z.object({
+  kind: z.enum(["fact", "event", "testimony", "document", "memory"]),
+  id: stableIdSchema,
+}).strict();
+export type BeliefSource = z.infer<typeof beliefSourceSchema>;
+
 export const beliefSchema = z
   .object({
     id: stableIdSchema,
@@ -105,6 +111,7 @@ export const beliefSchema = z
     truthStatus: beliefTruthStatusSchema,
     confidence: z.number().min(0).max(1),
     sourceFactId: stableIdSchema.optional(),
+    sources: z.array(beliefSourceSchema).optional(),
   })
   .strict();
 export type Belief = z.infer<typeof beliefSchema>;
