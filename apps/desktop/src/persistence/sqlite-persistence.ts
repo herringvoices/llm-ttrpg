@@ -21,6 +21,9 @@ import type {
   RandomnessState,
   ScheduledTrigger,
   SimulationCursor,
+  ActorSocialState,
+  MechanicalRealization,
+  GenerationRecord,
 } from "@llm-ttrpg/engine";
 import {
   PersistenceConflictError,
@@ -90,6 +93,12 @@ interface ActionRunRow {
   run_json: string;
 }
 
+interface ExtendedWorldStateRow {
+  actor_social_json: string;
+  mechanical_realizations_json: string;
+  generation_record_json: string | null;
+}
+
 function parse<T>(value: string): T {
   return JSON.parse(value) as T;
 }
@@ -131,13 +140,45 @@ async function payloads<T>(
   return rows.map((row) => parse<T>(row.payload_json));
 }
 
+async function readExtendedWorldState(
+  database: SqlClient,
+  worldId: string,
+  checkpointId: string | null,
+): Promise<{
+  actorSocialStates: ActorSocialState[];
+  mechanicalRealizations: MechanicalRealization[];
+  generationRecord?: GenerationRecord;
+}> {
+  const rows = await database.select<ExtendedWorldStateRow[]>(
+    `SELECT actor_social_json, mechanical_realizations_json, generation_record_json
+     FROM extended_world_states
+     WHERE owner_key = $1`,
+    [checkpointId === null ? `world:${worldId}` : `checkpoint:${checkpointId}`],
+  );
+  if (rows.length !== 1) {
+    throw new PersistenceConflictError(
+      `Expected exactly one extended world-state row; found ${rows.length}`,
+    );
+  }
+  const row = rows[0]!;
+  return {
+    actorSocialStates: parse<ActorSocialState[]>(row.actor_social_json),
+    mechanicalRealizations: parse<MechanicalRealization[]>(
+      row.mechanical_realizations_json,
+    ),
+    ...(row.generation_record_json
+      ? { generationRecord: parse<GenerationRecord>(row.generation_record_json) }
+      : {}),
+  };
+}
+
 async function readState(
   database: SqlClient,
   owner: WorldRow | CheckpointRow,
   checkpointId: string | null,
 ): Promise<WorldState> {
   const worldId = "world_id" in owner ? owner.world_id : owner.id;
-  const [entities, facts, beliefs, documents, scheduledTriggers, simulationCursors, actionPressure, randomness] = await Promise.all([
+  const [entities, facts, beliefs, documents, scheduledTriggers, simulationCursors, actionPressure, randomness, extended] = await Promise.all([
     payloads<Entity>(database, "entities", worldId, checkpointId, "entity_id"),
     payloads<CanonicalFact>(database, "facts", worldId, checkpointId, "fact_id"),
     payloads<Belief>(database, "beliefs", worldId, checkpointId, "belief_id"),
@@ -146,6 +187,7 @@ async function readState(
     payloads<SimulationCursor>(database, "simulation_cursors", worldId, checkpointId, "scope_id"),
     readActionPressure(database, worldId, checkpointId),
     readRandomness(database, worldId, checkpointId),
+    readExtendedWorldState(database, worldId, checkpointId),
   ]);
   const sectionsByDocument = new Map<string, DocumentSection[]>();
   const sectionRows = await database.select<Array<PayloadRow & { document_id: string }>>(
@@ -168,6 +210,9 @@ async function readState(
     entities,
     facts,
     beliefs,
+    actorSocialStates: extended.actorSocialStates,
+    mechanicalRealizations: extended.mechanicalRealizations,
+    ...(extended.generationRecord ? { generationRecord: extended.generationRecord } : {}),
     documents: documents.map((document) => ({
       ...document,
       sections: sectionsByDocument.get(document.id) ?? [],
@@ -440,6 +485,12 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
       entities: (worldId) => payloads(database, "entities", worldId, null, "entity_id"),
       facts: (worldId) => payloads(database, "facts", worldId, null, "fact_id"),
       beliefs: (worldId) => payloads(database, "beliefs", worldId, null, "belief_id"),
+      async actorSocialStates(worldId) {
+        return (await loadWorld(worldId))?.state.actorSocialStates ?? [];
+      },
+      async mechanicalRealizations(worldId) {
+        return (await loadWorld(worldId))?.state.mechanicalRealizations ?? [];
+      },
       async documents(worldId) {
         return (await loadWorld(worldId))?.state.documents ?? [];
       },
