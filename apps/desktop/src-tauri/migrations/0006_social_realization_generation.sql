@@ -12,6 +12,20 @@ CREATE TABLE extended_world_states (
 CREATE UNIQUE INDEX extended_world_checkpoint_unique
   ON extended_world_states(checkpoint_id) WHERE checkpoint_id IS NOT NULL;
 
+INSERT INTO extended_world_states (
+  owner_key, world_id, checkpoint_id, actor_social_json,
+  mechanical_realizations_json, generation_record_json
+)
+SELECT 'world:' || id, id, NULL, '[]', '[]', NULL
+FROM worlds;
+
+INSERT INTO extended_world_states (
+  owner_key, world_id, checkpoint_id, actor_social_json,
+  mechanical_realizations_json, generation_record_json
+)
+SELECT 'checkpoint:' || id, world_id, id, '[]', '[]', NULL
+FROM checkpoints;
+
 CREATE TRIGGER validate_extended_world_state_command
 BEFORE INSERT ON persistence_commands
 WHEN json_extract(NEW.payload_json, '$.operation') IN
