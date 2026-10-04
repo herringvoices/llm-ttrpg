@@ -59,6 +59,7 @@ See:
 - [Awakening Earth setting premise](docs/awakening-earth/setting-premise.md)
 - [Awakening Earth institutions, economy, and society](docs/awakening-earth/institutions-economy-society.md)
 - [Awakening Earth starting region generation](docs/awakening-earth/starting-region-generation.md)
+- [Awakening Earth reference-game integration](docs/awakening-earth/reference-game-integration.md)
 - [Awakening Earth monster design and challenge calibration](docs/awakening-earth/monster-design-challenge-calibration.md)
 
 ## Development
