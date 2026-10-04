@@ -305,6 +305,22 @@ An immutable snapshot of a world's canonical current state, exact game compositi
 
 A friendly named pointer to a checkpoint. Saving to an existing slot creates a new immutable checkpoint and moves the pointer; it never mutates the old checkpoint.
 
+## Provisional detail
+
+Protected GM-facing detail proposed inside genuinely undefined space but not yet committed to authoritative World State, event history, actor knowledge, or social state. It may be revised or discarded until it crosses a commitment boundary.
+
+## Commitment boundary
+
+The point at which provisional persistent detail must be validated and committed through ordinary authoritative mechanisms before it can be observed, used causally by an actor or simulation process, establish durable knowledge/belief, or support another canonical consequence. After commitment, ordinary no-retcon rules apply.
+
+## Situation candidate
+
+A non-authoritative GM-facing framing of grounded circumstances that may deserve attention. It may reference canonical facts, actors, pressures, processes, goals, events, and explicitly provisional details. A situation candidate is planning/content material, not a competing World State object and not a promise that any future development will occur.
+
+## Discovery affordance
+
+A grounded, perspective-safe way a situation may come into view, such as direct observation, conversation, a public notice, an environmental change, institutional contact, or a rumor held by an appropriate actor/group. Persistent detail required by the affordance must cross the commitment boundary before the affordance is surfaced.
+
 ## Campaign plan
 
 Hidden, persisted, non-authoritative GM state that tracks revisable campaign direction. It can guide attention, pacing, and context selection, but it cannot establish events, mutate World State, or force player/NPC actions.
