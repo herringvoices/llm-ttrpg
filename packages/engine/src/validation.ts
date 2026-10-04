@@ -25,6 +25,9 @@ import {
 } from "./tool-catalog.js";
 import { createContextToolCatalogContribution } from "./context-tools.js";
 import { createWorldSimulationRegistry } from "./simulation.js";
+import { actorSocialStateSchema } from "./actor-social-state.js";
+import { mechanicalRealizationSchema } from "./mechanical-realization.js";
+import { generationRecordSchema } from "./generation.js";
 
 const worldSimulationBoundarySchema = z.object({
   scopes: z.array(z.unknown()).optional(),
@@ -47,6 +50,9 @@ const settingBoundarySchema = z
     identity: componentIdentitySchema,
     description: z.string().min(1),
     content: contentBundleSchema,
+    actorSocialStates: z.array(actorSocialStateSchema).optional(),
+    mechanicalRealizations: z.array(mechanicalRealizationSchema).optional(),
+    generationRecord: generationRecordSchema.optional(),
     eventTypes: z.array(z.unknown()),
     toolCatalog: z.unknown().optional(),
     worldSimulation: worldSimulationBoundarySchema.optional(),
@@ -159,6 +165,8 @@ function validateContentReferences(
 ): void {
   const entityIds = new Set(availableContent.entities.map((item) => item.id));
   const factIds = new Set(availableContent.facts.map((item) => item.id));
+  const eventIds = new Set(availableContent.events.map((item) => item.id));
+  const documentIds = new Set(availableContent.documents.map((item) => item.id));
 
   for (const fact of content.facts) {
     if (!entityIds.has(fact.subjectId)) {
@@ -200,6 +208,150 @@ function validateContentReferences(
       throw new GameValidationError(
         `${label} belief ${belief.id} references missing fact ${belief.sourceFactId}`,
       );
+    }
+    for (const source of belief.sources ?? []) {
+      const valid = source.kind === "fact"
+        ? factIds.has(source.id)
+        : source.kind === "event"
+          ? eventIds.has(source.id)
+          : source.kind === "document"
+            ? documentIds.has(source.id)
+            : source.kind === "testimony"
+              ? entityIds.has(source.id)
+              : true;
+      if (!valid) {
+        throw new GameValidationError(
+          `${label} belief ${belief.id} references missing ${source.kind} source ${source.id}`,
+        );
+      }
+    }
+  }
+}
+
+function validateCampaignStateReferences(
+  game: GameDefinition,
+  availableContent: ContentBundle,
+): void {
+  const entityIds = new Set(availableContent.entities.map((item) => item.id));
+  const eventIds = new Set(availableContent.events.map((item) => item.id));
+  const factIds = new Set(availableContent.facts.map((item) => item.id));
+  const socialStates = game.campaign.actorSocialStates ?? [];
+  const memoryIds = new Set(socialStates.flatMap((state) =>
+    state.memories.map((memory) => memory.id)
+  ));
+
+  const requireEntity = (owner: string, entityId: string): void => {
+    if (!entityIds.has(entityId)) {
+      throw new GameValidationError(
+        `${owner} references missing entity ${entityId}`,
+      );
+    }
+  };
+  const requireEvent = (owner: string, eventId: string): void => {
+    if (!eventIds.has(eventId)) {
+      throw new GameValidationError(
+        `${owner} references missing event ${eventId}`,
+      );
+    }
+  };
+
+  const actorIds = new Set<string>();
+  for (const state of socialStates) {
+    actorSocialStateSchema.parse(state);
+    requireEntity(`Social state ${state.actorId}`, state.actorId);
+    if (actorIds.has(state.actorId)) {
+      throw new GameValidationError(
+        `Duplicate campaign actor social state: ${state.actorId}`,
+      );
+    }
+    actorIds.add(state.actorId);
+    for (const goal of state.goals) {
+      goal.relatedEntityIds.forEach((id) =>
+        requireEntity(`Goal ${goal.id}`, id)
+      );
+      goal.sourceEventIds?.forEach((id) =>
+        requireEvent(`Goal ${goal.id}`, id)
+      );
+    }
+    for (const relationship of state.relationships) {
+      requireEntity(`Relationship ${relationship.id}`, relationship.targetEntityId);
+      relationship.sourceEventIds?.forEach((id) =>
+        requireEvent(`Relationship ${relationship.id}`, id)
+      );
+    }
+    for (const memory of state.memories) {
+      memory.relatedEntityIds.forEach((id) =>
+        requireEntity(`Memory ${memory.id}`, id)
+      );
+      memory.sourceEventIds.forEach((id) =>
+        requireEvent(`Memory ${memory.id}`, id)
+      );
+    }
+    for (const commitment of state.commitments) {
+      commitment.relatedEntityIds.forEach((id) =>
+        requireEntity(`Commitment ${commitment.id}`, id)
+      );
+      commitment.sourceEventIds?.forEach((id) =>
+        requireEvent(`Commitment ${commitment.id}`, id)
+      );
+    }
+  }
+
+  for (const belief of game.campaign.content.beliefs) {
+    for (const source of belief.sources ?? []) {
+      if (source.kind === "memory" && !memoryIds.has(source.id)) {
+        throw new GameValidationError(
+          `Campaign belief ${belief.id} references missing memory source ${source.id}`,
+        );
+      }
+    }
+  }
+
+  const realized = new Set<string>();
+  for (const realization of game.campaign.mechanicalRealizations ?? []) {
+    mechanicalRealizationSchema.parse(realization);
+    requireEntity(`Mechanical realization ${realization.entityId}`, realization.entityId);
+    if (realized.has(realization.entityId)) {
+      throw new GameValidationError(
+        `Duplicate campaign mechanical realization: ${realization.entityId}`,
+      );
+    }
+    realized.add(realization.entityId);
+    const constraintIds = new Set(realization.constraints.map((item) => item.id));
+    for (const constraint of realization.constraints) {
+      if (
+        constraint.sourceKind === "canonical-fact" &&
+        !factIds.has(constraint.sourceId)
+      ) {
+        throw new GameValidationError(
+          `Mechanical constraint ${constraint.id} references missing fact ${constraint.sourceId}`,
+        );
+      }
+      if (
+        constraint.sourceKind === "canonical-event" &&
+        !eventIds.has(constraint.sourceId)
+      ) {
+        throw new GameValidationError(
+          `Mechanical constraint ${constraint.id} references missing event ${constraint.sourceId}`,
+        );
+      }
+      if (
+        constraint.sourceKind === "entity" &&
+        !entityIds.has(constraint.sourceId)
+      ) {
+        throw new GameValidationError(
+          `Mechanical constraint ${constraint.id} references missing entity ${constraint.sourceId}`,
+        );
+      }
+    }
+    for (const step of realization.history) {
+      for (const constraintId of step.constraintIds) {
+        if (!constraintIds.has(constraintId)) {
+          throw new GameValidationError(
+            `Realization step ${step.id} references missing constraint ${constraintId}`,
+          );
+        }
+      }
     }
   }
 }
@@ -314,6 +466,7 @@ export function loadGameDefinition(
   }
   validateContentReferences("Setting", game.setting.content, game.setting.content);
   validateContentReferences("Campaign", game.campaign.content, combinedContent);
+  validateCampaignStateReferences(game, combinedContent);
   validateAuthoredEventCausality(game.setting.content);
   validateAuthoredEventCausality(game.campaign.content);
   for (const event of game.campaign.content.events) {
@@ -381,6 +534,11 @@ export function loadGameDefinition(
   // campaign reality is created only by initializeCampaignWorld.
   deepFreeze(game.setting.content);
   deepFreeze(game.campaign.content);
+  if (game.campaign.actorSocialStates) deepFreeze(game.campaign.actorSocialStates);
+  if (game.campaign.mechanicalRealizations) {
+    deepFreeze(game.campaign.mechanicalRealizations);
+  }
+  if (game.campaign.generationRecord) deepFreeze(game.campaign.generationRecord);
   for (const component of [game.ruleset, game.setting, game.adapter, game.campaign]) {
     if (component.worldSimulation) deepFreeze(component.worldSimulation);
   }
