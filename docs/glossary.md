@@ -305,6 +305,22 @@ An immutable snapshot of a world's canonical current state, exact game compositi
 
 A friendly named pointer to a checkpoint. Saving to an existing slot creates a new immutable checkpoint and moves the pointer; it never mutates the old checkpoint.
 
+## Communication act
+
+A structured, non-prose representation of what an actor is authorized/intending to communicate: speaker, recipients, described/quoted/mixed input mode, literal player-authored quote fragments where present, semantic content, and any materially consequential request, disclosure, promise, threat, offer, agreement, or intended social effect. Generated wording does not gain authority merely by appearing in dialogue prose.
+
+## Scene-local actor state
+
+Private non-authoritative working cognition for one materially involved actor during an interaction, such as current interpretation, attention, immediate priorities, stance, withholding, and intended next move. It is constrained by that actor's perspective and expires unless some result is promoted into ordinary durable belief, goal, relationship, memory, commitment, event, or world state.
+
+## Conversation interaction
+
+Interaction-local continuity among currently engaged actors. It is not a separate dialogue game mode and does not create a competing truth store. Speech, movement, investigation, physical action, and other ordinary actions may coexist inside the same interaction.
+
+## Narration length preference
+
+A non-authoritative player presentation preference controlling target response-length ranges without changing fictional time or what events occur. The first slice exposes Concise, Standard, and Expansive profiles; each response independently chooses a small, medium, or large target band based on what the committed beat needs.
+
 ## Provisional detail
 
 Protected GM-facing detail proposed inside genuinely undefined space but not yet committed to authoritative World State, event history, actor knowledge, or social state. It may be revised or discarded until it crosses a commitment boundary.
