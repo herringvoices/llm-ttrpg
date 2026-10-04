@@ -170,6 +170,37 @@ Persisted authoritative simulation-control state consisting of a versioned algor
 
 Reproduction metadata for one completed stochastic resolution: algorithm, local stream index, derived seed, and draw count. A resolution that does not draw has no trace and consumes no stream.
 
+## Persistent simulation actor
+
+An identified person whose individual goals, relationships, memories, commitments, knowledge, obligations, or other durable state matter enough to persist and participate in later simulation.
+
+Persistent social state does not imply a complete mechanical character sheet.
+
+## Actor social state
+
+Generic authoritative state for one persistent actor's durable goals, directed relationships, episodic memories, and commitments. Identity/world facts remain ordinary entity/fact state, knowledge uses actor/group beliefs, and rules mechanics remain separate.
+
+## Mechanical realization
+
+The degree to which an entity's exact rules representation has been authoritatively instantiated.
+
+The ladder is:
+
+- **unrealized** — no exact rules profile is needed yet
+- **constrained** — canonical fiction establishes mechanical bounds/requirements without exact values
+- **partial** — only the mechanics currently required have been realized
+- **complete** — the active ruleset/adapter has no missing required fields for the entity's currently supported mechanical model
+
+Mechanical realization is independent of world/social resolution.
+
+## Mechanical densification
+
+Demand-driven movement toward a more specific mechanical realization state. Densification adds only necessary rules detail unless a complete profile is explicitly required and may never contradict prior authoritative facts, mechanics, observations, or outcomes.
+
+## Creature concept
+
+The authoritative fictional description that constrains a generated creature before or alongside exact rules values: origin, ancestry where applicable, morphology, scale, locomotion, senses, behavior/intelligence, ecology, survival/growth history, supernatural traits, observed effects, and death/loot implications.
+
 ## Sleeping system
 
 A region, town, building, NPC, organization, economy, or other simulation subsystem that is not continuously ticking while irrelevant.
