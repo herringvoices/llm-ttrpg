@@ -270,10 +270,7 @@ export function createContextToolCatalogContribution(
           if (!context.world.entities.some((entity) => entity.id === actorId)) {
             throw new RetrievalError(`Unknown actor: ${actorId}`);
           }
-          return retrieveActorSocialState(
-            context.world as Parameters<typeof retrieveActorSocialState>[0],
-            actorId,
-          ) ?? null;
+          return retrieveActorSocialState(context.world, actorId) ?? null;
         },
       },
       {
