@@ -61,6 +61,22 @@ These are project-level constraints. Implementation should work within them unle
 - Context assembly, retrieval, compression, and rendering are read-only. They cannot mutate state, advance time, append events, consume RNG, change pressure, or alter beliefs.
 - Plan material is protected from actor/NPC roles and remains visibly non-authoritative even when supplied to orchestration/planning context.
 
+## NPC state and mechanical realization
+
+- Persistent NPC social/intentional state and mechanical character-sheet realization are separate axes.
+- World/social resolution may progress from statistical population to ephemeral person to identified person to persistent simulation actor without requiring a complete rules profile.
+- Mechanical realization may progress independently from unrealized to constrained to partial to complete.
+- Persistent actor social state generically owns goals, directed relationships, episodic memories, and commitments. Identity/world facts remain ordinary entity/fact state; rules mechanics remain ruleset-owned.
+- NPC knowledge reuses canonical facts plus actor/group beliefs. Do not create a parallel NPC knowledge database.
+- A public fact means generally/common perspective-safe knowledge. Actor-specific observations normally become beliefs rather than globally public facts.
+- Beliefs/rumors may influence actor behavior but do not constrain canonical mechanical generation unless backed by authoritative truth.
+- Mechanical densification is demand-driven. Generate only the rules state required by current mechanics unless an authorized effect or coherence requirement needs a complete profile.
+- Later generation may add specificity but may never contradict committed mechanics, canonical facts/observations, or prior authoritative outcomes.
+- Monsters and humans may share rules primitives such as species-neutral Attributes without forcing creatures through human biography or human Character XP/power-progression semantics.
+- Human/monster generation formulas, creature taxonomies, and mechanical mappings belong to the active ruleset/setting/adapter, not the generic engine.
+- Mechanics-inspection abilities may legitimately trigger fuller mechanical realization before returning their validated result; ordinary narration may not fabricate a sheet.
+- NPCs do not receive one simulation scope each by default. Their social state and creature growth normally participate in existing locality/household/institution/faction/etc. catch-up scopes.
+
 ## Local model runtime
 
 - Model callers provide semantic instructions, opaque already-authorized context, semantic conversation turns, and current input. Provider message arrays and Ollama types remain adapter-private.
