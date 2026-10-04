@@ -233,6 +233,42 @@ A replaceable predicate that decides whether a registered tool is currently avai
 
 The separately persisted causal record of meaningful occurrences. Events carry fictional time, deterministic sequence, related entities/scopes, backward causal links, execution provenance, explicit access, source-package identity/version, and a package-validated payload. History helps catch-up systems and targeted retrieval without being embedded in current World State.
 
+## Creature archetype
+
+A reusable setting/campaign definition for a recognizable kind of monster, including its coherent supernatural principle, morphology ranges, behavior/ecology, capability ranges, signature ability family, tells/counterplay, and growth tendencies.
+
+## Creature instance
+
+One concrete monster in authoritative World State. It may reference an archetype while retaining its own origin/history, size, growth state, conditions, location, mechanical realization, variations, and observations.
+
+## Threat envelope
+
+A durable package-owned constraint over a creature's intended capability range, such as offensive pressure, survivability, mobility, control, multi-target/resource pressure, hard-counter risks, signature capabilities, tells/counterplay, and allowed growth.
+
+It is established before or alongside exact mechanical realization and prevents later densification from secretly scaling an existing monster to the current party.
+
+## Party capability snapshot
+
+A structured picture of the expected active group's relevant progression, Attributes, Skills, Powers, equipment/resources, size, synergies, gaps, and established preparation used when deliberately generating/auditing new player-targeted challenge content.
+
+Character Level is one input rather than the whole difficulty metric.
+
+## Challenge band
+
+A non-authoritative design/audit target for a direct confrontation:
+
+- **Routine** — reliably manageable with little lasting cost
+- **Challenging** — party favored but meaningful decisions/resources matter
+- **Hard** — substantial danger; poor play/bad luck can take someone out
+- **Severe** — victory plausible but defeat/retreat is a serious outcome
+- **Overwhelming** — direct victory is not the expected fair solution; survival/escape/preparation/etc. is the challenge
+
+Challenge bands do not set XP and are not necessarily visible in-world.
+
+## Challenge audit
+
+A pre-commit evaluation of deliberately generated player-targeted monster content. It checks affectability, threat, decision quality, counterplay, hard counters, durability/tempo, party-size pressure, resources, escape/alternate approaches, and fictional coherence, using real rules-grounded scenario probes where practical.
+
 ## Ruleset
 
 A versioned package boundary that defines mechanics and discoverable deterministic rules operations. It does not define the fictional world in which those mechanics are used.
