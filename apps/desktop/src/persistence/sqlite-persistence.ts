@@ -140,6 +140,17 @@ async function payloads<T>(
   return rows.map((row) => parse<T>(row.payload_json));
 }
 
+async function tableExists(
+  database: SqlClient,
+  tableName: string,
+): Promise<boolean> {
+  const rows = await database.select<Array<{ name: string }>>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = $1",
+    [tableName],
+  );
+  return rows.length > 0;
+}
+
 async function readExtendedWorldState(
   database: SqlClient,
   worldId: string,
@@ -149,6 +160,9 @@ async function readExtendedWorldState(
   mechanicalRealizations: MechanicalRealization[];
   generationRecord?: GenerationRecord;
 }> {
+  if (!(await tableExists(database, "extended_world_states"))) {
+    return { actorSocialStates: [], mechanicalRealizations: [] };
+  }
   const rows = await database.select<ExtendedWorldStateRow[]>(
     `SELECT actor_social_json, mechanical_realizations_json, generation_record_json
      FROM extended_world_states
