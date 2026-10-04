@@ -23,11 +23,11 @@ describe("game package contracts", () => {
 
   it("loads one explicit, versioned game composition", () => {
     expect(game.composition).toEqual({
-      ruleset: { id: "reference-rules", version: "0.2.0" },
+      ruleset: { id: "reference-rules", version: "0.3.0" },
       setting: { id: "awakening-earth", version: "0.2.0" },
       adapter: {
         id: "awakening-earth-reference-adapter",
-        version: "0.2.0",
+        version: "0.3.0",
       },
       campaign: { id: "reference-contract-fixture", version: "0.3.0" },
       presentation: { id: "grounded-dramatic", version: "0.1.0" },
@@ -227,6 +227,7 @@ describe("game package contracts", () => {
     expect(game.operationRegistry.listSubsystems("rules")).toEqual([
       { id: "actions", label: "Actions" },
       { id: "recovery", label: "Recovery" },
+      { id: "realization", label: "Mechanical Realization" },
       { id: "skills", label: "Skills" },
       { id: "tasks", label: "Tasks" },
       { id: "timing", label: "Timing" },
