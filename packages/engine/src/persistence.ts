@@ -11,6 +11,7 @@ import type { WorldState } from "./world.js";
 import type { ActionRun } from "./player-action-contracts.js";
 import type { ActorSocialState } from "./actor-social-state.js";
 import type { MechanicalRealization } from "./mechanical-realization.js";
+import type { CampaignPlanDocument } from "./campaign-planning.js";
 
 export type WorldId = string;
 export type CheckpointId = string;
@@ -81,12 +82,37 @@ export interface ActionRunStore {
 export interface SaveCheckpointInput {
   readonly checkpoint: CheckpointMetadata;
   readonly state: WorldState;
+  readonly plannerState?: CampaignPlanDocument;
   readonly slot: {
     readonly id: SaveSlotId;
     readonly name: string;
     readonly createdAt: string;
     readonly updatedAt: string;
   };
+}
+
+export interface InitializeCampaignPlanInput {
+  readonly worldId: WorldId;
+  readonly expectedWorldRevision: number;
+  readonly expectedEventSequence: number;
+  readonly plan: CampaignPlanDocument;
+}
+
+export interface CommitCampaignPlanInput extends InitializeCampaignPlanInput {
+  readonly expectedPlanRevision: number;
+}
+
+export interface CampaignPlannerStore {
+  load(worldId: WorldId): Promise<CampaignPlanDocument | undefined>;
+  initialize(input: InitializeCampaignPlanInput): Promise<CampaignPlanDocument>;
+  commit(input: CommitCampaignPlanInput): Promise<CampaignPlanDocument>;
+  loadCheckpoint(checkpointId: CheckpointId): Promise<CampaignPlanDocument | undefined>;
+  restoreCheckpoint(input: {
+    readonly checkpointId: CheckpointId;
+    readonly targetWorldId: WorldId;
+    readonly expectedWorldRevision: number;
+    readonly expectedEventSequence: number;
+  }): Promise<CampaignPlanDocument | undefined>;
 }
 
 export interface WorldStore {
@@ -136,6 +162,7 @@ export interface PersistencePorts {
   readonly content: WorldContentQueries;
   readonly history: EventHistoryStore;
   readonly actionRuns: ActionRunStore;
+  readonly planner: CampaignPlannerStore;
 }
 
 export class PersistenceConflictError extends Error {

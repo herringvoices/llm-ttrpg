@@ -24,6 +24,7 @@ import type {
   ActorSocialState,
   MechanicalRealization,
   GenerationRecord,
+  CampaignPlanDocument,
 } from "@llm-ttrpg/engine";
 import {
   PersistenceConflictError,
@@ -35,6 +36,7 @@ import {
   randomnessStateSchema,
   validateActionRunMetadataUpdate,
   validateActionRunWorldCommit,
+  campaignPlanDocumentSchema,
 } from "@llm-ttrpg/engine";
 import type { SqlBindValue, SqlClient } from "./sql-client.js";
 
@@ -99,8 +101,23 @@ interface ExtendedWorldStateRow {
   generation_record_json: string | null;
 }
 
+interface CampaignPlanRow {
+  document_json: string;
+}
+
 function parse<T>(value: string): T {
   return JSON.parse(value) as T;
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function asSlot(row: SlotRow): SaveSlot {
@@ -381,6 +398,15 @@ async function issueCommand(database: SqlClient, command: unknown): Promise<void
 }
 
 export function createSqlitePersistence(database: SqlClient): PersistencePorts {
+  const loadCampaignPlan = async (worldId: string): Promise<CampaignPlanDocument | undefined> => {
+    const rows = await database.select<CampaignPlanRow[]>(
+      "SELECT document_json FROM campaign_plans WHERE world_id = $1",
+      [worldId],
+    );
+    return rows[0]
+      ? campaignPlanDocumentSchema.parse(parse(rows[0].document_json))
+      : undefined;
+  };
   const loadActionRun = async (worldId: string, actionId: string): Promise<ActionRun | undefined> => {
     const rows = await database.select<ActionRunRow[]>(
       "SELECT run_json FROM action_runs WHERE world_id = $1 AND action_id = $2",
@@ -583,6 +609,126 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
           [JSON.stringify(parsedRun), parsedRun.worldId, parsedRun.id],
         );
         return parsedRun;
+      },
+    },
+    planner: {
+      load: loadCampaignPlan,
+      async initialize(input) {
+        const plan = campaignPlanDocumentSchema.parse(input.plan);
+        if (
+          plan.planRevision !== 0 ||
+          plan.basedOnWorldRevision !== input.expectedWorldRevision ||
+          plan.basedOnEventSequence !== input.expectedEventSequence
+        ) {
+          throw new PersistenceConflictError("Campaign plan initialization basis is stale or invalid");
+        }
+        try {
+          await database.execute(
+            `INSERT INTO campaign_plans (
+              world_id, schema_version, plan_revision,
+              based_on_world_revision, based_on_event_sequence, document_json
+            )
+            SELECT $1, 1, $2, $3, $4, $5
+            FROM worlds
+            WHERE id = $1 AND revision = $3 AND event_sequence = $4`,
+            [input.worldId, plan.planRevision, input.expectedWorldRevision, input.expectedEventSequence, JSON.stringify(plan)],
+          );
+        } catch (error) {
+          throw new PersistenceConflictError(error instanceof Error ? error.message : "Campaign plan initialization failed");
+        }
+        const stored = await loadCampaignPlan(input.worldId);
+        if (!stored || canonicalJson(stored) !== canonicalJson(plan)) {
+          throw new PersistenceConflictError("Campaign plan initialization basis is stale");
+        }
+        return stored;
+      },
+      async commit(input) {
+        const plan = campaignPlanDocumentSchema.parse(input.plan);
+        if (
+          plan.planRevision !== input.expectedPlanRevision + 1 ||
+          plan.basedOnWorldRevision !== input.expectedWorldRevision ||
+          plan.basedOnEventSequence !== input.expectedEventSequence
+        ) {
+          throw new PersistenceConflictError("Campaign plan commit is non-contiguous or has a stale basis");
+        }
+        try {
+          await database.execute(
+            `UPDATE campaign_plans
+             SET plan_revision = ?,
+                 based_on_world_revision = ?,
+                 based_on_event_sequence = ?,
+                 document_json = ?
+             WHERE world_id = ?
+               AND plan_revision = ?
+               AND EXISTS (
+                 SELECT 1 FROM worlds
+                 WHERE id = ? AND revision = ? AND event_sequence = ?
+               )`,
+            [
+              plan.planRevision,
+              input.expectedWorldRevision,
+              input.expectedEventSequence,
+              JSON.stringify(plan),
+              input.worldId,
+              input.expectedPlanRevision,
+              input.worldId,
+              input.expectedWorldRevision,
+              input.expectedEventSequence,
+            ],
+          );
+        } catch (error) {
+          throw new PersistenceConflictError(error instanceof Error ? error.message : "Campaign plan commit failed");
+        }
+        const stored = await loadCampaignPlan(input.worldId);
+        if (!stored || canonicalJson(stored) !== canonicalJson(plan)) {
+          throw new PersistenceConflictError("Campaign plan commit lost an optimistic-concurrency race");
+        }
+        return stored;
+      },
+      async loadCheckpoint(checkpointId) {
+        const checkpoints = await database.select<Array<{ id: string }>>(
+          "SELECT id FROM checkpoints WHERE id = $1",
+          [checkpointId],
+        );
+        if (!checkpoints[0]) throw new PersistenceConflictError(`Checkpoint not found: ${checkpointId}`);
+        const rows = await database.select<CampaignPlanRow[]>(
+          "SELECT document_json FROM checkpoint_campaign_plans WHERE checkpoint_id = $1",
+          [checkpointId],
+        );
+        return rows[0]
+          ? campaignPlanDocumentSchema.parse(parse(rows[0].document_json))
+          : undefined;
+      },
+      async restoreCheckpoint(input) {
+        const snapshotRows = await database.select<CampaignPlanRow[]>(
+          "SELECT document_json FROM checkpoint_campaign_plans WHERE checkpoint_id = $1",
+          [input.checkpointId],
+        );
+        if (!snapshotRows[0]) return undefined;
+        const snapshot = campaignPlanDocumentSchema.parse(parse(snapshotRows[0].document_json));
+        const worlds = await database.select<Array<{ fictional_time: string }>>(
+          "SELECT fictional_time FROM worlds WHERE id = $1 AND revision = $2 AND event_sequence = $3",
+          [input.targetWorldId, input.expectedWorldRevision, input.expectedEventSequence],
+        );
+        if (!worlds[0]) throw new PersistenceConflictError("Campaign-plan restore basis is stale");
+        const restored = campaignPlanDocumentSchema.parse({
+          ...snapshot,
+          basedOnWorldRevision: input.expectedWorldRevision,
+          basedOnEventSequence: input.expectedEventSequence,
+          updatedAtFictionalTime: worlds[0].fictional_time,
+        });
+        try {
+          await database.execute(
+            `INSERT INTO campaign_plans (
+              world_id, schema_version, plan_revision,
+              based_on_world_revision, based_on_event_sequence, document_json
+            ) VALUES ($1, 1, $2, $3, $4, $5)`,
+            [input.targetWorldId, restored.planRevision, input.expectedWorldRevision, input.expectedEventSequence, JSON.stringify(restored)],
+          );
+        } catch (error) {
+          throw new PersistenceConflictError(error instanceof Error ? error.message : "Campaign-plan restore failed");
+        }
+        return restored;
       },
     },
   };

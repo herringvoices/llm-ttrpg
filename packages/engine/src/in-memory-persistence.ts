@@ -26,6 +26,7 @@ import {
   validateActionRunWorldCommit,
   type ActionRun,
 } from "./player-action-contracts.js";
+import { campaignPlanDocumentSchema, type CampaignPlanDocument } from "./campaign-planning.js";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -41,6 +42,8 @@ export function createInMemoryPersistence(): PersistencePorts {
   const slots = new Map<string, SaveSlot>();
   const histories = new Map<string, CanonicalEvent[]>();
   const actionRuns = new Map<string, ActionRun>();
+  const campaignPlans = new Map<string, CampaignPlanDocument>();
+  const checkpointPlans = new Map<string, CampaignPlanDocument>();
   const actionRunKey = (worldId: string, actionId: string) => `${worldId}\u0000${actionId}`;
 
   function loadRequiredWorld(worldId: WorldId): PersistedWorld {
@@ -283,11 +286,15 @@ export function createInMemoryPersistence(): PersistencePorts {
             `Save slot name already exists: ${input.slot.name}`,
           );
         }
+        const plannerState = input.plannerState
+          ? campaignPlanDocumentSchema.parse(input.plannerState)
+          : undefined;
         checkpoints.set(input.checkpoint.id, {
           metadata: clone(input.checkpoint),
           state: clone(input.state),
           history: clone(histories.get(input.checkpoint.worldId) ?? []),
         });
+        if (plannerState) checkpointPlans.set(input.checkpoint.id, clone(plannerState));
         const slot: SaveSlot = {
           id: input.slot.id,
           worldId: input.checkpoint.worldId,
@@ -404,6 +411,81 @@ export function createInMemoryPersistence(): PersistencePorts {
         }
         actionRuns.set(key, clone(parsed));
         return clone(parsed);
+      },
+    },
+    planner: {
+      async load(worldId) {
+        loadRequiredWorld(worldId);
+        const plan = campaignPlans.get(worldId);
+        return plan ? clone(plan) : undefined;
+      },
+      async initialize(input) {
+        const world = loadRequiredWorld(input.worldId);
+        if (campaignPlans.has(input.worldId)) {
+          throw new PersistenceConflictError(`Campaign plan already exists: ${input.worldId}`);
+        }
+        const plan = campaignPlanDocumentSchema.parse(input.plan);
+        if (
+          world.revision !== input.expectedWorldRevision ||
+          world.eventSequence !== input.expectedEventSequence ||
+          plan.planRevision !== 0 ||
+          plan.basedOnWorldRevision !== input.expectedWorldRevision ||
+          plan.basedOnEventSequence !== input.expectedEventSequence
+        ) {
+          throw new PersistenceConflictError("Campaign plan initialization basis is stale or invalid");
+        }
+        campaignPlans.set(input.worldId, clone(plan));
+        return clone(plan);
+      },
+      async commit(input) {
+        const world = loadRequiredWorld(input.worldId);
+        const current = campaignPlans.get(input.worldId);
+        if (!current) throw new PersistenceNotFoundError(`Campaign plan not found: ${input.worldId}`);
+        const plan = campaignPlanDocumentSchema.parse(input.plan);
+        if (
+          world.revision !== input.expectedWorldRevision ||
+          world.eventSequence !== input.expectedEventSequence ||
+          current.planRevision !== input.expectedPlanRevision ||
+          plan.planRevision !== current.planRevision + 1 ||
+          plan.basedOnWorldRevision !== input.expectedWorldRevision ||
+          plan.basedOnEventSequence !== input.expectedEventSequence
+        ) {
+          throw new PersistenceConflictError("Campaign plan commit is stale or non-contiguous");
+        }
+        campaignPlans.set(input.worldId, clone(plan));
+        return clone(plan);
+      },
+      async loadCheckpoint(checkpointId) {
+        if (!checkpoints.has(checkpointId)) {
+          throw new PersistenceNotFoundError(`Checkpoint not found: ${checkpointId}`);
+        }
+        const plan = checkpointPlans.get(checkpointId);
+        return plan ? clone(plan) : undefined;
+      },
+      async restoreCheckpoint(input) {
+        const world = loadRequiredWorld(input.targetWorldId);
+        if (campaignPlans.has(input.targetWorldId)) {
+          throw new PersistenceConflictError(`Campaign plan already exists: ${input.targetWorldId}`);
+        }
+        if (
+          world.revision !== input.expectedWorldRevision ||
+          world.eventSequence !== input.expectedEventSequence
+        ) {
+          throw new PersistenceConflictError("Campaign-plan restore basis is stale");
+        }
+        if (!checkpoints.has(input.checkpointId)) {
+          throw new PersistenceNotFoundError(`Checkpoint not found: ${input.checkpointId}`);
+        }
+        const snapshot = checkpointPlans.get(input.checkpointId);
+        if (!snapshot) return undefined;
+        const restored = campaignPlanDocumentSchema.parse({
+          ...clone(snapshot),
+          basedOnWorldRevision: input.expectedWorldRevision,
+          basedOnEventSequence: input.expectedEventSequence,
+          updatedAtFictionalTime: world.state.fictionalTime,
+        });
+        campaignPlans.set(input.targetWorldId, restored);
+        return clone(restored);
       },
     },
   };

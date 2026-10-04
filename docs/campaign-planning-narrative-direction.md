@@ -1,6 +1,14 @@
 # Campaign Planning & Narrative Direction
 
-**Status:** Settled and implementation-ready by Issue #28 — Campaign Planning & Narrative Direction
+**Status:** Settled and implemented by Issue #28 — Campaign Planning & Narrative Direction
+
+## Implemented architecture
+
+- `packages/engine/src/campaign-planning.ts` owns the version-1 Zod document, planning signals, deterministic assumption validation, structured mutation protocol, horizon write boundaries, escalation, diagnostics, protected context projection, and the bounded planner-model pass.
+- The dedicated `CampaignPlannerStore` persists independent plan revisions and rejects stale authoritative or plan bases.
+- In-memory and SQLite adapters snapshot planner state with immutable checkpoints. `createWorldFromCheckpoint()` restores the older plan into a new campaign branch without leaking later direction backward.
+- Planner state is initialized only through the explicit session API; old worlds and checkpoints do not receive fabricated plans.
+- `tests/campaign-planning.test.ts` runs the same structured planner contract against both adapters and proves that plan changes do not mutate World State or canonical history.
 
 ## Goal
 
@@ -375,38 +383,38 @@ Start with grounded Awakening Earth material including several threads and one e
 
 ## Acceptance criteria
 
-- planner state persists separately from `WorldState`, events, and beliefs
-- independent plan revision and authoritative basis are recorded
-- plan changes do not increment world revision or create canonical events
-- checkpoint branches snapshot/restore corresponding planner state
-- one versioned document contains linked high/medium/low horizons
-- threads have stable grounding, priority, horizon, and active/dormant/retired lifecycle
-- thread promotion/demotion changes attention only
-- machine-checkable assumptions are validated deterministically
-- invalid assumptions generate targeted planning signals
-- possible developments remain conditional
-- explicit player goals strongly influence planning
-- inferred interests require meaningful accumulated evidence
-- ignored optional threads can diminish/become dormant
-- planning signals cite canonical causes and are batched
-- replanning starts at the lowest affected horizon
-- lower horizons cannot directly rewrite higher horizons
-- escalation requires a separate structured pass
-- planner output is validated structured mutations rather than prose replacement
-- stale/invalid proposals change neither plan nor world
-- planner failures preserve prior plan and do not roll back gameplay
-- initial planning is grounded in generated campaign/player/world state
-- established material/callbacks are preferred over arbitrary novelty where appropriate
-- mysteries preserve truth-vs-knowledge boundaries
-- planner material is available only to authorized GM/planner/debug context
-- player/NPC contexts cannot retrieve hidden plan material
-- planning guides attention rather than forcing events
-- NPC/world actions still execute through normal systems
-- diagnostics explain triggers, assumptions, thread changes, and escalation
-- schema/version validation is explicit
-- deterministic tests use the same structured planner contract as production
-- architecture tests prove plan revision cannot mutate canonical truth
-- `npm run check` passes
+- [x] planner state persists separately from `WorldState`, events, and beliefs
+- [x] independent plan revision and authoritative basis are recorded
+- [x] plan changes do not increment world revision or create canonical events
+- [x] checkpoint branches snapshot/restore corresponding planner state
+- [x] one versioned document contains linked high/medium/low horizons
+- [x] threads have stable grounding, priority, horizon, and active/dormant/retired lifecycle
+- [x] thread promotion/demotion changes attention only
+- [x] machine-checkable assumptions are validated deterministically
+- [x] invalid assumptions generate targeted planning signals
+- [x] possible developments remain conditional
+- [x] explicit player goals strongly influence planning
+- [x] inferred interests require meaningful accumulated evidence
+- [x] ignored optional threads can diminish/become dormant
+- [x] planning signals cite canonical causes and are batched
+- [x] replanning starts at the lowest affected horizon
+- [x] lower horizons cannot directly rewrite higher horizons
+- [x] escalation requires a separate structured pass
+- [x] planner output is validated structured mutations rather than prose replacement
+- [x] stale/invalid proposals change neither plan nor world
+- [x] planner failures preserve prior plan and do not roll back gameplay
+- [x] initial planning is grounded in generated campaign/player/world state
+- [x] established material/callbacks are preferred over arbitrary novelty where appropriate
+- [x] mysteries preserve truth-vs-knowledge boundaries
+- [x] planner material is available only to authorized GM/planner/debug context
+- [x] player/NPC contexts cannot retrieve hidden plan material
+- [x] planning guides attention rather than forcing events
+- [x] NPC/world actions still execute through normal systems
+- [x] diagnostics explain triggers, assumptions, thread changes, and escalation
+- [x] schema/version validation is explicit
+- [x] deterministic tests use the same structured planner contract as production
+- [x] architecture tests prove plan revision cannot mutate canonical truth
+- [x] `npm run check` passes
 
 ## Non-goals
 

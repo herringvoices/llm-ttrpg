@@ -57,6 +57,7 @@ See:
 - [NPC state, knowledge, goals, and relationships](docs/npc-state-knowledge-goals-relationships.md)
 - [NPC interaction and conversation](docs/npc-interaction-conversation.md)
 - [Content and encounter principles](docs/content-encounter-principles.md)
+- [Campaign planning and narrative direction](docs/campaign-planning-narrative-direction.md)
 - [Character and creature mechanical generation](docs/character-creature-mechanical-generation.md)
 - [Awakening Earth setting premise](docs/awakening-earth/setting-premise.md)
 - [Awakening Earth institutions, economy, and society](docs/awakening-earth/institutions-economy-society.md)

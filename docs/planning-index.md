@@ -9,12 +9,6 @@ This file records the current GitHub Project placement for the seeded issues.
 - #3 — MVP Boundary
 - #4 — Glossary & Core Terms
 
-## Needs Design
-
-| Issue | Capability | Suggested subsystem labels |
-| --- | --- | --- |
-| #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
-
 ## Ready for Dev
 
 | Issue | Capability | Suggested subsystem labels |
@@ -70,6 +64,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: NPCs & Social, Context & Tools
 - #16 — Simulation & Test Harness
   - Labels: Dev Tools / Testing, Core Engine
+- #28 — Campaign Planning & Narrative Direction
+  - Labels: Core Engine, Context & Tools, World / Content
 
 ## Icebox
 

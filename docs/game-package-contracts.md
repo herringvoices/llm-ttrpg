@@ -131,11 +131,11 @@ The campaign-planning decision does not add a sixth `GameDefinition` component o
 - Generic planning orchestration, validation, persistence/state, triggers, and context isolation belong to the engine.
 - Presentation guidance may shape pacing and narrative emphasis but never truth.
 
-Exact planner schemas and persistence are intentionally deferred to [issue #28](https://github.com/herringvoices/llm-ttrpg/issues/28). The implemented composition metadata will identify the game a save belongs to; later save payloads can additionally persist validated plan state without embedding it in immutable campaign source content.
+The engine now implements the planner schemas and dedicated persistence boundary from [issue #28](https://github.com/herringvoices/llm-ttrpg/issues/28). Composition metadata identifies the game a save belongs to, while checkpoint payloads snapshot validated living plan state without embedding it in immutable campaign source content.
 
 ## Intentionally deferred
 
-There is no dynamic loader, plugin marketplace, mod SDK, player-action orchestrator, model-driven gameplay orchestration, campaign-planner runtime, sophisticated desktop UI, or complete Awakening Earth campaign/region content in this slice. Context assembly deliberately uses deterministic size units rather than a provider tokenizer and deterministic structured retrieval rather than embeddings/vector search.
+There is no dynamic loader, plugin marketplace, mod SDK, sophisticated autonomous campaign director, sophisticated desktop UI, or complete Awakening Earth campaign/region content in this slice. Context assembly deliberately uses deterministic size units rather than a provider tokenizer and deterministic structured retrieval rather than embeddings/vector search.
 
 ## Local model transport
 

@@ -102,6 +102,10 @@ import {
   type PlayerActionResult,
   type PlayerActionTraceEntry,
 } from "./player-action-contracts.js";
+import {
+  campaignPlanDocumentSchema,
+  type CampaignPlanDocument,
+} from "./campaign-planning.js";
 
 export interface WallClock {
   now(): string;
@@ -143,6 +147,13 @@ export interface PerformPlayerActionOptions {
 export interface GameSession {
   readonly worldId: string;
   snapshot(): WorldState;
+  planningBasis(): { readonly worldRevision: number; readonly eventSequence: number };
+  campaignPlan(): Promise<CampaignPlanDocument | undefined>;
+  initializeCampaignPlan(plan: CampaignPlanDocument): Promise<CampaignPlanDocument>;
+  commitCampaignPlan(
+    expectedPlanRevision: number,
+    plan: CampaignPlanDocument,
+  ): Promise<CampaignPlanDocument>;
   applyActionPressureAssessment(
     assessment: ActionPressureAssessment,
   ): Promise<ActionPressureState>;
@@ -448,6 +459,31 @@ function openSession(
     worldId: persisted.metadata.id,
     snapshot() {
       return clone(state);
+    },
+    planningBasis() {
+      return { worldRevision: revision, eventSequence };
+    },
+    campaignPlan() {
+      return dependencies.persistence.planner.load(persisted.metadata.id);
+    },
+    initializeCampaignPlan(planValue) {
+      const plan = campaignPlanDocumentSchema.parse(planValue);
+      return dependencies.persistence.planner.initialize({
+        worldId: persisted.metadata.id,
+        expectedWorldRevision: revision,
+        expectedEventSequence: eventSequence,
+        plan,
+      });
+    },
+    commitCampaignPlan(expectedPlanRevision, planValue) {
+      const plan = campaignPlanDocumentSchema.parse(planValue);
+      return dependencies.persistence.planner.commit({
+        worldId: persisted.metadata.id,
+        expectedPlanRevision,
+        expectedWorldRevision: revision,
+        expectedEventSequence: eventSequence,
+        plan,
+      });
     },
     async applyActionPressureAssessment(assessment) {
       const parsed = actionPressureAssessmentSchema.parse(assessment);
@@ -1532,9 +1568,13 @@ function openSession(
         eventSequence,
         game: clone(state.game),
       };
+      const plannerState = await dependencies.persistence.planner.load(
+        persisted.metadata.id,
+      );
       return dependencies.persistence.saves.saveCheckpoint({
         checkpoint,
         state,
+        ...(plannerState ? { plannerState } : {}),
         slot: {
           id: existingSlot?.id ?? dependencies.idGenerator.next("slot"),
           name: slotName,
@@ -1585,6 +1625,39 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies) {
         throw new PersistenceNotFoundError(`World not found: ${worldId}`);
       }
       validateGameCompositionForGame(world.state.game, dependencies.game);
+      return openSession(dependencies, {
+        ...world,
+        state: validateWorldState(world.state),
+      });
+    },
+    async createWorldFromCheckpoint(
+      checkpointId: string,
+      name: string,
+    ): Promise<GameSession> {
+      const checkpoint = await dependencies.persistence.saves.loadCheckpoint(checkpointId);
+      if (!checkpoint) {
+        throw new PersistenceNotFoundError(`Checkpoint not found: ${checkpointId}`);
+      }
+      validateGameCompositionForGame(checkpoint.state.game, dependencies.game);
+      const timestamp = dependencies.wallClock.now();
+      const id = dependencies.idGenerator.next("world");
+      const world = await dependencies.persistence.worlds.create({
+        metadata: {
+          id,
+          name,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          game: clone(checkpoint.state.game),
+        },
+        state: validateWorldState(clone(checkpoint.state)),
+        initialEvents: clone(checkpoint.history),
+      });
+      await dependencies.persistence.planner.restoreCheckpoint({
+        checkpointId,
+        targetWorldId: id,
+        expectedWorldRevision: world.revision,
+        expectedEventSequence: world.eventSequence,
+      });
       return openSession(dependencies, {
         ...world,
         state: validateWorldState(world.state),
