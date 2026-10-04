@@ -21,7 +21,6 @@ This file records the current GitHub Project placement for the seeded issues.
 | --- | --- | --- |
 | #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
-| #14 | NPC Interaction & Conversation | NPCs & Social, Context & Tools |
 
 ## Done
 
@@ -68,6 +67,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: NPCs & Social, World / Content
 - #18 — Reference Game Rules & World Model Integration
   - Labels: Core Engine, Actions & Rules, World / Content
+- #14 — NPC Interaction & Conversation
+  - Labels: NPCs & Social, Context & Tools
 
 ## Icebox
 

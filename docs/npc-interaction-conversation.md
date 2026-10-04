@@ -1,6 +1,7 @@
 # NPC Interaction & Conversation
 
-**Status:** Settled and implementation-ready by Issue #14 — NPC Interaction & Conversation  
+**Status:** Settled and implemented by Issue #14 — NPC Interaction & Conversation
+
 **Scope:** Freeform player/NPC conversation, scene-local actor cognition, social uncertainty, multi-NPC reaction orchestration, communication consequences, transcript/memory policy, narration length preferences, and NPC-initiated action execution.
 
 ## Goal
@@ -717,40 +718,62 @@ Verify:
 - target ranges influence generation without truncating required information;
 - changing preference changes no canonical state/revision.
 
+## Implemented Seam
+
+Issue #14 is implemented as a headless engine conversation seam plus reference-game authority bindings:
+
+- `packages/engine/src/conversation-contracts.ts` owns the validated communication-act, scene-local cognition, NPC-decision, stop-reason, transcript, extraction, and narration-target contracts;
+- `packages/engine/src/conversation.ts` interprets authorized player communication, applies Action Pressure, reuses the #11 player-action pipeline for mixed physical/action declarations, assembles separate actor-perspective NPC contexts, executes consequential NPC actions through registered operations/resolution, selectively commits durable consequences, and narrates only authorized/committed material;
+- `packages/reference-game/src/ruleset/conversation-operations.ts` records causal communication/testimony without promoting claims to facts, applies selectively extracted consequences through existing belief/social stores, and provides an ordinary timed call operation used by the integration fixture;
+- interaction transcripts and scene-local cognition remain outside `WorldState`; ending an interaction discards them, while committed beliefs/memories/events survive save and reopen;
+- narration preferences are headless, advisory presentation inputs and never mutate canonical state.
+
+## Verification
+
+`packages/reference-game/test/conversation-integration.test.ts` covers input forms and literal quotes, unauthorized-intent rejection, two-actor knowledge isolation and validated learning, automatic/impossible/uncertain social paths, mixed speech plus a #11 action run, grounded deception, multi-NPC perspective separation, ordinary NPC action execution, selective durable extraction across save/reopen, narration target bands, and pressure-bounded speech.
+
+The completed repository gate passes with 146 tests passing and one intentionally skipped test:
+
+```text
+npm run check
+Test Files  18 passed | 1 skipped (19)
+Tests       146 passed | 1 skipped (147)
+```
+
 ## Acceptance Criteria
 
-- [ ] described, quoted, and mixed player speech are supported
-- [ ] first-person and player-character-name third-person declarations are semantically equivalent
-- [ ] quoted player text is preserved exactly when spoken
-- [ ] described speech cannot silently add consequential player intent
-- [ ] conversation is interaction continuity, not a separate dialogue-tree mode
-- [ ] conversation may coexist with ordinary physical/risky actions
-- [ ] materially involved NPCs receive private scene-local cognition grounded only in their perspectives
-- [ ] ambient NPCs do not each require continuous model reasoning
-- [ ] NPC structured decision output is separate from final dialogue prose
-- [ ] ordinary speech requires no check unless a material effect is uncertain
-- [ ] automatic/impossible/uncertain social paths reuse the active ruleset's resolution philosophy
-- [ ] successful social resolution is bounded and does not create mind control
-- [ ] NPC social checks do not author PC choices/beliefs without an explicit rules effect
-- [ ] claims/testimony do not automatically become world truth
-- [ ] deception preserves perspective/truth boundaries
-- [ ] consequential speech can commit beliefs, goals, relationships, memories, commitments, events, transfers, or other existing structured consequences
-- [ ] no parallel conversation-truth store is created
-- [ ] recent transcript/scene state remains non-authoritative working context
-- [ ] older transcript may compact without losing committed consequences
-- [ ] selective durable memory extraction avoids one-memory-per-line behavior
-- [ ] multi-NPC reactions use separate actor-perspective reasoning
-- [ ] reaction chains stop at meaningful player choice/answer/material-change/pressure boundaries
-- [ ] NPC-initiated consequential actions use ordinary operation/resolution/persistence machinery
-- [ ] Action Pressure bounds conversation without introducing rounds
-- [ ] the game never invents the PC's next conversational decision
-- [ ] Concise/Standard/Expansive response preferences exist with small/medium/large target bands
-- [ ] response-length preference is non-authoritative and separate from Action Pressure
-- [ ] response targets are guidance rather than hard mid-thought truncation
-- [ ] perspective verification proves an NPC cannot reveal unknown information and can use it only after validated learning
-- [ ] persisted consequences survive ending/restarting conversation context
-- [ ] architecture boundaries remain intact
-- [ ] `npm run check` passes
+- [x] described, quoted, and mixed player speech are supported
+- [x] first-person and player-character-name third-person declarations are semantically equivalent
+- [x] quoted player text is preserved exactly when spoken
+- [x] described speech cannot silently add consequential player intent
+- [x] conversation is interaction continuity, not a separate dialogue-tree mode
+- [x] conversation may coexist with ordinary physical/risky actions
+- [x] materially involved NPCs receive private scene-local cognition grounded only in their perspectives
+- [x] ambient NPCs do not each require continuous model reasoning
+- [x] NPC structured decision output is separate from final dialogue prose
+- [x] ordinary speech requires no check unless a material effect is uncertain
+- [x] automatic/impossible/uncertain social paths reuse the active ruleset's resolution philosophy
+- [x] successful social resolution is bounded and does not create mind control
+- [x] NPC social checks do not author PC choices/beliefs without an explicit rules effect
+- [x] claims/testimony do not automatically become world truth
+- [x] deception preserves perspective/truth boundaries
+- [x] consequential speech can commit beliefs, goals, relationships, memories, commitments, events, transfers, or other existing structured consequences
+- [x] no parallel conversation-truth store is created
+- [x] recent transcript/scene state remains non-authoritative working context
+- [x] older transcript may compact without losing committed consequences
+- [x] selective durable memory extraction avoids one-memory-per-line behavior
+- [x] multi-NPC reactions use separate actor-perspective reasoning
+- [x] reaction chains stop at meaningful player choice/answer/material-change/pressure boundaries
+- [x] NPC-initiated consequential actions use ordinary operation/resolution/persistence machinery
+- [x] Action Pressure bounds conversation without introducing rounds
+- [x] the game never invents the PC's next conversational decision
+- [x] Concise/Standard/Expansive response preferences exist with small/medium/large target bands
+- [x] response-length preference is non-authoritative and separate from Action Pressure
+- [x] response targets are guidance rather than hard mid-thought truncation
+- [x] perspective verification proves an NPC cannot reveal unknown information and can use it only after validated learning
+- [x] persisted consequences survive ending/restarting conversation context
+- [x] architecture boundaries remain intact
+- [x] `npm run check` passes
 
 ## Non-Goals
 

@@ -34,9 +34,18 @@ import {
   routeTraversedEventType,
   traverseRouteOperation,
 } from "./traversal-operation.js";
+import {
+  applyConversationConsequencesOperation,
+  callPlacedEventType,
+  communicationRecordedEventType,
+  conversationConsequencesAppliedEventType,
+  placeCallOperation,
+  recordCommunicationOperation,
+} from "./conversation-operations.js";
 
 export * from "./action-operation.js";
 export * from "./awakening-operation.js";
+export * from "./conversation-operations.js";
 export * from "./invincible.js";
 export * from "./mechanics.js";
 export * from "./mechanical-generation.js";
@@ -95,6 +104,12 @@ export const referenceRuleset: Ruleset = {
           "Meaningful staging and retry validation for extended or repeated work.",
       },
       {
+        id: "social",
+        domainId: "rules",
+        description:
+          "Consequential communication, selective social persistence, and ordinary calls.",
+      },
+      {
         id: "timing",
         domainId: "rules",
         description:
@@ -116,6 +131,9 @@ export const referenceRuleset: Ruleset = {
     validateRepeatAttemptOperation,
     orderMaterialEffectsOperation,
     traverseRouteOperation,
+    recordCommunicationOperation,
+    applyConversationConsequencesOperation,
+    placeCallOperation,
   ],
   eventTypes: [
     actionResolvedEventType,
@@ -127,5 +145,8 @@ export const referenceRuleset: Ruleset = {
     mechanicsRealizedEventType,
     creatureGrewEventType,
     routeTraversedEventType,
+    communicationRecordedEventType,
+    conversationConsequencesAppliedEventType,
+    callPlacedEventType,
   ],
 };
