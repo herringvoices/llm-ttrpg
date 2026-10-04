@@ -17,8 +17,10 @@ import {
   retrieveDocument,
   retrieveEventHistory,
   retrieveKnowledge,
+  retrieveActorSocialState,
   RetrievalError,
 } from "./retrieval.js";
+import { actorSocialStateSchema } from "./actor-social-state.js";
 import type {
   SourcedToolCatalogContribution,
   ToolCatalogContribution,
@@ -116,6 +118,12 @@ const inspectEntityOutputSchema = z
   })
   .strict();
 
+const socialStateInputSchema = z.object({
+  actorId: stableIdSchema.optional(),
+}).strict();
+
+const socialStateOutputSchema = actorSocialStateSchema.nullable();
+
 const historyInputSchema = eventQuerySchema;
 
 const retrievedEventSchema = canonicalEventSchema
@@ -161,6 +169,11 @@ export function createContextToolCatalogContribution(
         id: "facts",
         domainId: "knowledge",
         description: "Canonical public facts and perspective-owned beliefs.",
+      },
+      {
+        id: "social",
+        domainId: "knowledge",
+        description: "Perspective-safe persistent goals, relationships, memories, and commitments for one actor.",
       },
       {
         id: "history",
@@ -218,6 +231,49 @@ export function createContextToolCatalogContribution(
             perspective,
             input,
           );
+        },
+      },
+      {
+        id: "knowledge.social.retrieve",
+        description: "Retrieve one actor's persistent social state. Actor-role callers may retrieve only their own state.",
+        domainId: "knowledge",
+        subsystemId: "social",
+        inputSchema: socialStateInputSchema,
+        outputSchema: socialStateOutputSchema,
+        query(context, input) {
+          const authorization = requireAuthorization(context.authorization);
+          const privileged = authorization.role === "orchestrator" ||
+            authorization.role === "planner" ||
+            authorization.role === "debug";
+          let actorId: string;
+          if (privileged) {
+            actorId = input.actorId ??
+              (authorization.perspective.kind === "actor"
+                ? authorization.perspective.id
+                : "");
+          } else {
+            if (authorization.perspective.kind !== "actor") {
+              throw new RetrievalError(
+                "Actor social-state retrieval requires an actor perspective",
+              );
+            }
+            actorId = authorization.perspective.id;
+            if (input.actorId && input.actorId !== actorId) {
+              throw new RetrievalError(
+                "Actor-role callers may retrieve only their own social state",
+              );
+            }
+          }
+          if (!actorId) {
+            throw new RetrievalError("An actor ID is required for social-state retrieval");
+          }
+          if (!context.world.entities.some((entity) => entity.id === actorId)) {
+            throw new RetrievalError(`Unknown actor: ${actorId}`);
+          }
+          return retrieveActorSocialState(
+            context.world as Parameters<typeof retrieveActorSocialState>[0],
+            actorId,
+          ) ?? null;
         },
       },
       {
