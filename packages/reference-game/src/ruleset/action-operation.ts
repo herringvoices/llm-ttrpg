@@ -28,11 +28,11 @@ import {
   effectMagnitudeSchema,
   fixedResistanceProvenanceSchema,
   realizedEffectSchema,
-  rulesActorStateSchema,
+  rulesEntityStateSchema,
   statusSchema,
   stressTrackSchema,
   type EffectMagnitude,
-  type RulesActorState,
+  type RulesEntityState,
 } from "./model.js";
 
 const fixedResistanceSchema = z
@@ -295,10 +295,10 @@ export const actionResolvedEventType: EventTypeDefinition<
 };
 
 interface ActionAssessment {
-  readonly actorState: RulesActorState;
+  readonly actorState: RulesEntityState;
   readonly actorPerformance: PerformanceCalculation;
-  readonly opponentState?: RulesActorState;
-  readonly stressTargetState?: RulesActorState;
+  readonly opponentState?: RulesEntityState;
+  readonly stressTargetState?: RulesEntityState;
   readonly opponentPerformance?: PerformanceCalculation;
   readonly effectPerformance?: PerformanceCalculation;
   readonly actionClassification: CheckClassification;
@@ -323,9 +323,9 @@ function entity(
 function actorState(
   world: DeepReadonly<OperationWorldView>,
   id: string,
-): RulesActorState {
+): RulesEntityState {
   const mechanics = entity(world, id).data.mechanics;
-  const parsed = rulesActorStateSchema.safeParse(mechanics);
+  const parsed = rulesEntityStateSchema.safeParse(mechanics);
   if (!parsed.success) {
     throw new OperationValidationError(
       `Entity ${id} does not have valid reference-rules mechanics`,
@@ -344,7 +344,7 @@ function participantIds(plan: PerformancePlan): string[] {
 function combinedStates(
   world: DeepReadonly<OperationWorldView>,
   plan: PerformancePlan,
-): Map<string, RulesActorState> {
+): Map<string, RulesEntityState> {
   return new Map(
     plan.combinedAttributeContributions.map((contribution) => [
       contribution.actorId,
@@ -369,12 +369,13 @@ function validateParticipants(
 }
 
 function hasPriorAward(
-  state: RulesActorState,
+  state: RulesEntityState,
   declaredActionId: string,
 ): boolean {
-  return state.progression.skillUseEvidence.some(
-    (evidence) => evidence.declaredActionId === declaredActionId,
-  );
+  return "progression" in state &&
+    state.progression.skillUseEvidence.some(
+      (evidence) => evidence.declaredActionId === declaredActionId,
+    );
 }
 
 function assessAction(
@@ -394,7 +395,7 @@ function assessAction(
     combinedStates(world, input.performance),
   );
 
-  let opponentState: RulesActorState | undefined;
+  let opponentState: RulesEntityState | undefined;
   let opponentPerformance: PerformanceCalculation | undefined;
   let resistanceBasis: z.infer<typeof resistanceBasisSchema>;
   let actionClassification: CheckClassification;
@@ -525,12 +526,12 @@ function addAward(
 
 function awardFor(
   actorId: string,
-  actor: RulesActorState,
+  actor: RulesEntityState,
   performance: PerformanceCalculation,
   potentialEffect: EffectMagnitude,
   succeeded: boolean,
 ) {
-  if (!performance.selectedSkillId) return undefined;
+  if (!performance.selectedSkillId || !("progression" in actor)) return undefined;
   const baseAmount = skillSpAward(potentialEffect, succeeded);
   return skillSpAwardSchema.parse({
         actorId,
@@ -546,11 +547,16 @@ function awardFor(
 }
 
 function updatedStateWithAwards(
-  original: RulesActorState,
+  original: RulesEntityState,
   input: ResolveActionInput,
   awards: readonly z.infer<typeof skillSpAwardSchema>[],
-): RulesActorState {
+): RulesEntityState {
   const updated = clone(original);
+  if (awards.length > 0 && !("progression" in updated)) {
+    throw new OperationValidationError(
+      "Creature mechanics do not use human skill-progression evidence",
+    );
+  }
   for (const award of awards) {
     const skill = updated.skills.find((candidate) => candidate.id === award.skillId);
     if (!skill) {
@@ -569,7 +575,7 @@ function updatedStateWithAwards(
       succeeded: award.succeeded,
     });
   }
-  return rulesActorStateSchema.parse(updated);
+  return rulesEntityStateSchema.parse(updated);
 }
 
 function resolveResult(
@@ -664,7 +670,7 @@ function resolveResult(
     );
   }
 
-  const states = new Map<string, RulesActorState>();
+  const states = new Map<string, RulesEntityState>();
   states.set(
     input.actorId,
     updatedStateWithAwards(
@@ -734,7 +740,7 @@ function resolveResult(
           consequence.pcDeathConsent,
       });
     }
-    states.set(consequence.targetId, rulesActorStateSchema.parse(target));
+    states.set(consequence.targetId, rulesEntityStateSchema.parse(target));
   }
 
   const result = resolveActionResultSchema.parse({
@@ -758,7 +764,7 @@ function actorStateFromAssessmentOrThrow(
   assessment: ActionAssessment,
   input: ResolveActionInput,
   actorId: string,
-): RulesActorState {
+): RulesEntityState {
   if (actorId === input.actorId) return assessment.actorState;
   if (
     input.resistance.kind === "opposed" &&
