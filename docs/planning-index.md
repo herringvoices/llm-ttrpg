@@ -13,13 +13,13 @@ This file records the current GitHub Project placement for the seeded issues.
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
-| #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
 | #28 | Campaign Planning & Narrative Direction | Core Engine, Context & Tools, World / Content |
 
 ## Ready for Dev
 
 | Issue | Capability | Suggested subsystem labels |
 | --- | --- | --- |
+| #19 | First End-to-End Playable Loop | Core Engine, Player UX, Dev Tools / Testing |
 | #16 | Simulation & Test Harness | Dev Tools / Testing, Core Engine |
 | #14 | NPC Interaction & Conversation | NPCs & Social, Context & Tools |
 
