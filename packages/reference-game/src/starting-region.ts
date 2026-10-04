@@ -1,5 +1,6 @@
 import {
   actorSocialStateSchema,
+  beliefSchema,
   canonicalFactSchema,
   emptyContentBundle,
   entitySchema,
@@ -262,7 +263,7 @@ export type ActiveProcessSeed = z.infer<typeof activeProcessSeedSchema>;
 
 export const knowledgeSeedSchema = z.object({
   facts: z.array(canonicalFactSchema),
-  beliefs: z.array(z.unknown()),
+  beliefs: z.array(beliefSchema),
 }).strict();
 export type KnowledgeSeed = z.infer<typeof knowledgeSeedSchema>;
 
@@ -885,9 +886,7 @@ export function compileStartingRegionCampaign(
   const content = emptyContentBundle();
   content.entities.push(...entities);
   content.facts.push(...seed.knowledge.facts);
-  content.beliefs.push(...seed.knowledge.beliefs.map((belief) =>
-    (belief as ReturnType<typeof JSON.parse>)
-  ));
+  content.beliefs.push(...seed.knowledge.beliefs.map((belief) => clone(belief)));
 
   return {
     identity: { id: request.campaignId, version: "0.1.0" },
