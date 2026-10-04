@@ -81,7 +81,7 @@ export function retrieveKnowledge(
 }
 
 export function retrieveActorSocialState(
-  world: Pick<WorldState, "actorSocialStates">,
+  world: { readonly actorSocialStates: readonly ActorSocialState[] },
   actorId: string,
 ): ActorSocialState | undefined {
   const state = world.actorSocialStates.find((candidate) => candidate.actorId === actorId);
