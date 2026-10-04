@@ -92,6 +92,10 @@ export const mutationProposalSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
   z.object({
+    kind: z.literal("ensure-actor-social-state"),
+    actorId: stableIdSchema,
+  }).strict(),
+  z.object({
     kind: z.literal("upsert-actor-goal"),
     actorId: stableIdSchema,
     goal: actorGoalSchema,
@@ -341,6 +345,10 @@ export function applyMutationProposals(
       case "remove-belief":
         state.beliefs = state.beliefs.filter((item) => item.id !== mutation.beliefId);
         break;
+      case "ensure-actor-social-state": {
+        socialState(mutation.actorId);
+        break;
+      }
       case "upsert-actor-goal": {
         const social = socialState(mutation.actorId);
         social.goals = upsert(social.goals, mutation.goal);
