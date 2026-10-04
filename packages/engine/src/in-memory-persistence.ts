@@ -332,6 +332,12 @@ export function createInMemoryPersistence(): PersistencePorts {
       async beliefs(worldId) {
         return clone(loadRequiredWorld(worldId).state.beliefs);
       },
+      async actorSocialStates(worldId) {
+        return clone(loadRequiredWorld(worldId).state.actorSocialStates);
+      },
+      async mechanicalRealizations(worldId) {
+        return clone(loadRequiredWorld(worldId).state.mechanicalRealizations);
+      },
       async documents(worldId) {
         return clone(loadRequiredWorld(worldId).state.documents);
       },
