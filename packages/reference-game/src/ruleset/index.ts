@@ -12,6 +12,12 @@ import {
   stressRecoveredEventType,
 } from "./state-operations.js";
 import {
+  applyCreatureGrowthOperation,
+  creatureGrewEventType,
+  mechanicsRealizedEventType,
+  realizeMechanicsOperation,
+} from "./mechanical-generation.js";
+import {
   orderMaterialEffectsOperation,
   validateExtendedTaskOperation,
   validateRepeatAttemptOperation,
@@ -19,12 +25,13 @@ import {
 
 export * from "./action-operation.js";
 export * from "./mechanics.js";
+export * from "./mechanical-generation.js";
 export * from "./model.js";
 export * from "./state-operations.js";
 export * from "./task-operations.js";
 
 export const referenceRuleset: Ruleset = {
-  identity: { id: "reference-rules", version: "0.2.0" },
+  identity: { id: "reference-rules", version: "0.3.0" },
   description:
     "Reusable, inspectable Performance-versus-Resistance rules for physical, mental, social, environmental, competitive, and high-pressure play.",
   toolCatalog: {
@@ -55,6 +62,12 @@ export const referenceRuleset: Ruleset = {
           "Authorized learning and discovery of open-ended competencies after semantic review.",
       },
       {
+        id: "realization",
+        domainId: "rules",
+        description:
+          "Demand-driven, no-retcon mechanical realization and species-appropriate growth.",
+      },
+      {
         id: "tasks",
         domainId: "rules",
         description:
@@ -74,6 +87,8 @@ export const referenceRuleset: Ruleset = {
     concedeOperation,
     recoverStressOperation,
     createEmergentSkillOperation,
+    realizeMechanicsOperation,
+    applyCreatureGrowthOperation,
     validateExtendedTaskOperation,
     validateRepeatAttemptOperation,
     orderMaterialEffectsOperation,
@@ -83,5 +98,7 @@ export const referenceRuleset: Ruleset = {
     concessionRecordedEventType,
     skillCreatedEventType,
     stressRecoveredEventType,
+    mechanicsRealizedEventType,
+    creatureGrewEventType,
   ],
 };
