@@ -28,7 +28,6 @@ This file records the current GitHub Project placement for the seeded issues.
 | #25 | Player Fantasy & Starting Situation | World / Content, Player UX |
 | #13 | NPC State, Knowledge, Goals & Relationships | NPCs & Social, Time & World Simulation |
 | #34 | Character & Creature Mechanical Generation | Actions & Rules, NPCs & Social, World / Content |
-| #35 | Monster Design, Threat Calibration & Encounter Composition | Actions & Rules, World / Content, Dev Tools / Testing |
 
 ## Done
 
@@ -60,6 +59,9 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Core Engine
 - #22 — Character Progression & Abilities
   - Labels: Actions & Rules, World / Content
+- #35 — Monster Design, Threat Calibration & Encounter Composition
+  - Labels: Actions & Rules, World / Content, Dev Tools / Testing
+  - Design complete; runtime obligations are carried by #16, #17, #18, #19, #26, and #34
 
 ## Icebox
 
