@@ -39,7 +39,6 @@ function generatedCampaignModel() {
               accessEntityIds: player.accessEntityIds,
               currentObligations: player.currentObligations,
               ordinaryPressures: player.ordinaryPressures,
-              socialState: player.socialState,
               mechanicalSignals: {
                 attributeDirections: player.mechanics.attributeEvidence.filter((item) =>
                   item.direction !== "near-baseline"
@@ -377,6 +376,16 @@ describe("desktop playable session integration", () => {
     expect((await play.engineSession().eventHistory()).some((event) =>
       event.type === "campaign.opening-incident-realized"
     )).toBe(true);
+    expect(play.engineSession().snapshot().actorSocialStates.find((state) =>
+      state.actorId === "generated.actor.player"
+    )).toEqual(expect.objectContaining({
+      goals: [expect.objectContaining({
+        description: expect.stringContaining("protect their sibling"),
+      })],
+      relationships: [],
+      memories: [],
+      commitments: [],
+    }));
     expect((await play.engineSession().campaignPlan())?.threads).toHaveLength(3);
     await play.save("Generated save");
 

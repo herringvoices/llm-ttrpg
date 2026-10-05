@@ -1,14 +1,10 @@
 import {
   actorSocialStateSchema,
-  actorCommitmentSchema,
-  actorGoalSchema,
   assertNoRetconJsonExtension,
   beliefSchema,
   canonicalFactSchema,
   emptyContentBundle,
-  directedRelationshipSchema,
   entitySchema,
-  episodicMemorySchema,
   fictionalDurationMs,
   fictionalInstant,
   generationIssueSchema,
@@ -406,14 +402,6 @@ export const playerContextSeedSchema = z.object({
 }).strict();
 export type PlayerContextSeed = z.infer<typeof playerContextSeedSchema>;
 
-const compactPlayerSocialStateSchema = z.object({
-  actorId: stableIdSchema,
-  goals: z.array(actorGoalSchema).max(3),
-  relationships: z.array(directedRelationshipSchema).max(2),
-  memories: z.array(episodicMemorySchema).max(3),
-  commitments: z.array(actorCommitmentSchema).max(3),
-}).strict();
-
 const playerContextModelProposalSchema = z.object({
   entity: z.object({
     id: stableIdSchema,
@@ -425,7 +413,6 @@ const playerContextModelProposalSchema = z.object({
   accessEntityIds: z.array(stableIdSchema).max(8),
   currentObligations: z.array(z.string().trim().min(1).max(240)).max(3),
   ordinaryPressures: z.array(z.string().trim().min(1).max(240)).max(5),
-  socialState: compactPlayerSocialStateSchema,
   mechanicalSignals: z.object({
     attributeDirections: z.array(z.object({
       attributeId: attributeIdSchema,
@@ -580,14 +567,6 @@ function expandPlayerContextProposal(
   rawProposal: unknown,
   context: Readonly<StartingRegionWorkingState>,
 ): PlayerContextSeed {
-  const uniqueById = <T extends { readonly id: string }>(values: readonly T[]): T[] => {
-    const seen = new Set<string>();
-    return values.filter((value) => {
-      if (seen.has(value.id)) return false;
-      seen.add(value.id);
-      return true;
-    });
-  };
   const proposal = playerContextModelProposalSchema.parse(rawProposal);
   const establishedFactIds = new Set(
     context.normalized?.player.establishedFacts.map((fact) => fact.id) ?? [],
@@ -656,14 +635,22 @@ function expandPlayerContextProposal(
       : [homeLocationId],
     currentObligations: proposal.currentObligations,
     ordinaryPressures: proposal.ordinaryPressures,
-    socialState: {
-      ...proposal.socialState,
+    socialState: actorSocialStateSchema.parse({
       actorId: proposal.entity.id,
-      goals: uniqueById(proposal.socialState.goals),
-      relationships: uniqueById(proposal.socialState.relationships),
-      memories: uniqueById(proposal.socialState.memories),
-      commitments: uniqueById(proposal.socialState.commitments),
-    },
+      goals: (context.normalized?.player.currentWants ?? []).slice(0, 3).map(
+        (description, index) => ({
+          id: `goal.${proposal.entity.id}.starting-${index + 1}`,
+          description,
+          priority: Math.max(0.5, 0.9 - index * 0.1),
+          status: "active",
+          relatedEntityIds: [],
+          createdAt: context.request.startTime,
+        }),
+      ),
+      relationships: [],
+      memories: [],
+      commitments: [],
+    }),
     mechanics: {
       mechanics: createEmptyMundanePlayerMechanics(
         attributes,
@@ -751,7 +738,8 @@ export function createStartingRegionProposalModel(
             ? [
                 "Keep player-context compact. In mechanicalSignals.attributeDirections include only established-fact-supported departures from baseline; omitted attributes are filled deterministically at baseline.",
                 "Provide one to four concise grounded skills in mechanicalSignals.skills. Do not emit stress, progression, statuses, powers, mana, or boilerplate attribute evidence; the engine supplies those mundane defaults.",
-                "Use unique IDs and names. Every commitment must end after it starts. Use at most three goals, two relationships, three memories, three commitments, and five entries in any other open-ended list.",
+                "Do not emit goals, relationships, memories, commitments, or other social-state boilerplate; the engine derives initial goals from the normalized player setup.",
+                "Use unique IDs, concise strings, and only location/institution references present in the provided context.",
               ]
             : []),
           ...(context.request.allowGeneratedDetails
