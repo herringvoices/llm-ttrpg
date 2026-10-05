@@ -57,6 +57,56 @@ function generatedCampaignModel() {
               provenance: player.provenance,
             };
           })()
+        : stageId === "npcs"
+          ? outputs.npcs.map((npc) => {
+              const relationship = npc.socialState.relationships.find((item) =>
+                item.targetEntityId === outputs["player-context"].entity.id
+              );
+              return {
+                name: npc.entity.name,
+                summary: npc.entity.summary,
+                simulationReasons: npc.simulationReasons,
+                goals: npc.socialState.goals.map((goal) => goal.description),
+                ...(relationship
+                  ? {
+                      relationshipToPlayer: {
+                        dimensions: relationship.dimensions,
+                        salience: relationship.salience,
+                        tags: relationship.tags,
+                      },
+                    }
+                  : {}),
+                memories: npc.socialState.memories.map((memory) => ({
+                  summary: memory.summary,
+                  salience: memory.salience,
+                  tags: memory.tags,
+                })),
+                mechanicallyRelevantConstraints: npc.mechanicallyRelevantConstraints.map(
+                  (constraint) => ({ summary: constraint.summary }),
+                ),
+                ...("awakenedLicenseBand" in npc
+                  ? { awakenedLicenseBand: npc.awakenedLicenseBand }
+                  : {}),
+              };
+            })
+        : stageId === "pressures"
+          ? {
+              ...outputs.pressures,
+              knowledge: {
+                ...outputs.pressures.knowledge,
+                beliefs: outputs.pressures.knowledge.beliefs.map((belief) => ({
+                  ...belief,
+                  sources: belief.sources.map((source) => {
+                    if (source.kind !== "memory") return source;
+                    const replacement = new Map([
+                      ["memory.alice.blue-light", "memory.generated.actor.alice.starting-1"],
+                      ["memory.bob.supply-delay", "memory.generated.actor.bob.starting-1"],
+                    ]).get(source.id);
+                    return replacement ? { ...source, id: replacement } : source;
+                  }),
+                })),
+              },
+            }
         : value,
     },
   }));

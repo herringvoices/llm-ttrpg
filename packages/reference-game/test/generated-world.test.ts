@@ -220,6 +220,66 @@ describe("generated starting region", () => {
     }));
   });
 
+  it("expands compact NPC proposals into persistent actor state", async () => {
+    const outputs = startingRegionStageOutputs();
+    const runtime = new ScriptedModelRuntime([{
+      id: "compact-npcs",
+      match: { schemaId: "starting-region.npcs.v1" },
+      result: {
+        kind: "schema-invalid",
+        value: [{
+          name: "Alice",
+          summary: "Rowan's sibling, who noticed something strange after work.",
+          simulationReasons: ["family relationship", "supernatural witness"],
+          goals: ["Get Rowan home safely."],
+          relationshipToPlayer: {
+            dimensions: { trust: 0.8, concern: 0.7 },
+            salience: 0.9,
+            tags: ["family"],
+          },
+          memories: [{
+            summary: "Alice saw blue light behind the loading dock.",
+            salience: 0.9,
+            tags: ["witnessed", "supernatural"],
+          }],
+          mechanicallyRelevantConstraints: [{
+            summary: "Alice has sustained retail experience.",
+          }],
+        }],
+      },
+    }]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("npcs", {
+      request: startingRegionRequestFixture,
+      normalized: normalizedRegionConstraintsSchema.parse(outputs.normalize),
+      settlement: outputs.settlement,
+      locality: outputs.locality,
+      institutions: outputs.institutions,
+      playerContext: outputs["player-context"],
+    })).resolves.toEqual([
+      expect.objectContaining({
+        entity: expect.objectContaining({
+          id: "generated.actor.alice",
+          kind: "actor",
+          name: "Alice",
+          data: {},
+        }),
+        socialState: expect.objectContaining({
+          actorId: "generated.actor.alice",
+          goals: [expect.objectContaining({ description: "Get Rowan home safely." })],
+          relationships: [expect.objectContaining({
+            targetEntityId: "generated.actor.player",
+          })],
+          memories: [expect.objectContaining({
+            summary: "Alice saw blue light behind the loading dock.",
+          })],
+        }),
+        provenance: expect.objectContaining({ class: "generator-chosen" }),
+      }),
+    ]);
+  });
+
   it("accepts faithful source quotations despite model casing and whitespace normalization", () => {
     expect(sourceContainsQuotedText(
       "Most people work at the plant.\nI'm a local.",

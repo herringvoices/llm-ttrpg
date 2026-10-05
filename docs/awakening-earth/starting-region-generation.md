@@ -629,6 +629,16 @@ validating the authoritative `PlayerContextSeed`. A compact proposal must never 
 to the expanded-state validator: transport-shape errors are reported or normalized at the compact
 boundary rather than misreported as missing expanded fields.
 
+NPC generation uses the same compact-boundary pattern. The model proposes only a small cast's
+identity, narrative relevance, goals, relationship signals, salient memories, and genuinely
+mechanical constraints. The engine assigns stable IDs and deterministically constructs the
+persisted entity, actor-social-state, timestamps, constraint ownership, and provenance records.
+NPC generation receives only the accepted locality, institutions, normalized player material, and
+the concise player context it needs; it does not re-serialize the full accumulated working state.
+This stage has a bounded 2,048-token response and no automatic second model pass. A timeout or bad
+proposal therefore returns to the durable checkpoint at the NPC step instead of spending another
+long attempt or discarding the already accepted world.
+
 ### Deterministic reference campaign
 
 Maintain one known-valid reference campaign fixture for deterministic integration tests.

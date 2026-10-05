@@ -451,6 +451,28 @@ export const persistentNpcSeedSchema = z.object({
 }).strict();
 export type PersistentNpcSeed = z.infer<typeof persistentNpcSeedSchema>;
 
+const npcModelProposalSchema = z.array(z.object({
+  name: z.string().optional(),
+  summary: z.string().optional(),
+  simulationReasons: z.array(z.string()).default([]),
+  goals: z.array(z.string()).default([]),
+  relationshipToPlayer: z.object({
+    dimensions: z.record(z.string(), z.number()).default({}),
+    salience: z.number().optional(),
+    tags: z.array(z.string()).default([]),
+  }).passthrough().optional(),
+  memories: z.array(z.object({
+    summary: z.string().optional(),
+    salience: z.number().optional(),
+    tags: z.array(z.string()).default([]),
+  }).passthrough()).default([]),
+  mechanicallyRelevantConstraints: z.array(z.object({
+    summary: z.string().optional(),
+  }).passthrough()).default([]),
+  awakenedLicenseBand: z.string().optional(),
+}).passthrough());
+type NpcModelProposal = z.infer<typeof npcModelProposalSchema>;
+
 export const threatEnvelopeSchema = z.object({
   challengeBand: z.enum([
     "Routine",
@@ -564,6 +586,22 @@ export interface StartingRegionProposalModel {
   ): Promise<unknown> | unknown;
 }
 
+function stableGeneratedSlug(value: string, fallback: string): string {
+  const slug = value.toLocaleLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return slug || fallback;
+}
+
+function compactStrings(values: readonly string[], maximum: number): string[] {
+  return [...new Set(values
+    .map((value) => value.trim().slice(0, 240))
+    .filter(Boolean))]
+    .slice(0, maximum);
+}
+
 function expandPlayerContextProposal(
   rawProposal: unknown,
   context: Readonly<StartingRegionWorkingState>,
@@ -603,18 +641,10 @@ function expandPlayerContextProposal(
         ? 52
         : 56,
   ]));
-  const stableSlug = (value: string, fallback: string) => {
-    const slug = value.toLocaleLowerCase()
-      .normalize("NFKD")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60);
-    return slug || fallback;
-  };
   const groundedSkillCandidates = proposal.mechanicalSignals.skills.slice(0, 4)
     .map((item) => ({
       skill: skillSchema.parse({
-        id: `skill.generated.${stableSlug(
+        id: `skill.generated.${stableGeneratedSlug(
           item.skill.id ?? item.skill.name ?? "experience",
           "experience",
         )}`,
@@ -646,7 +676,7 @@ function expandPlayerContextProposal(
     const basis = establishedFacts[0];
     groundedSkills = [{
       skill: skillSchema.parse({
-        id: `skill.generated.${stableSlug(basis?.category ?? "everyday-experience", "everyday-experience")}`,
+        id: `skill.generated.${stableGeneratedSlug(basis?.category ?? "everyday-experience", "everyday-experience")}`,
         name: basis
           ? `${basis.category.split("-").map((part) =>
               `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`
@@ -749,6 +779,120 @@ function expandPlayerContextProposal(
   });
 }
 
+function expandNpcProposals(
+  rawProposal: unknown,
+  context: Readonly<StartingRegionWorkingState>,
+): PersistentNpcSeed[] {
+  const parsed = npcModelProposalSchema.parse(rawProposal);
+  const proposals: NpcModelProposal = parsed.length > 0
+    ? parsed.slice(0, 5)
+    : [{
+        name: "Local Contact",
+        summary: "A local person connected to the player's starting situation.",
+        simulationReasons: ["starting-situation connection"],
+        goals: ["Respond to developments in the starting locality."],
+        memories: [],
+        mechanicallyRelevantConstraints: [],
+      }];
+  const usedIds = new Set<string>();
+  const licenseBands = new Set([
+    "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Silver",
+  ]);
+
+  return proposals.map((proposal, index) => {
+    const name = proposal.name?.trim().slice(0, 120) || `Local Contact ${index + 1}`;
+    const baseSlug = stableGeneratedSlug(name, `local-contact-${index + 1}`);
+    let entityId = `generated.actor.${baseSlug}`;
+    if (usedIds.has(entityId)) entityId = `${entityId}-${index + 1}`;
+    usedIds.add(entityId);
+    const relationship = proposal.relationshipToPlayer;
+    const dimensions = Object.fromEntries(Object.entries(relationship?.dimensions ?? {})
+      .map(([key, value]) => [
+        stableGeneratedSlug(key, "connection"),
+        Math.max(-1, Math.min(1, value)),
+      ])
+      .slice(0, 8));
+    const relationshipTags = compactStrings(relationship?.tags ?? [], 6)
+      .map((tag) => stableGeneratedSlug(tag, "connection"));
+    const goals = compactStrings(proposal.goals, 4);
+    const simulationReasons = compactStrings(proposal.simulationReasons, 4);
+    const memories = proposal.memories
+      .map((memory) => ({
+        summary: memory.summary?.trim().slice(0, 240) ?? "",
+        salience: Math.max(0, Math.min(1, memory.salience ?? 0.6)),
+        tags: compactStrings(memory.tags, 6)
+          .map((tag) => stableGeneratedSlug(tag, "memory")),
+      }))
+      .filter((memory) => memory.summary)
+      .slice(0, 3);
+
+    return persistentNpcSeedSchema.parse({
+      entity: {
+        id: entityId,
+        kind: "actor",
+        name,
+        summary: proposal.summary?.trim().slice(0, 320) ||
+          `${name} is connected to the player's starting situation.`,
+        data: {},
+      },
+      simulationReasons: simulationReasons.length > 0
+        ? simulationReasons
+        : ["relevant to the player's starting situation"],
+      socialState: {
+        actorId: entityId,
+        goals: (goals.length > 0
+          ? goals
+          : ["Respond to developments in the starting locality."]
+        ).map((description, goalIndex) => ({
+          id: `goal.${entityId}.starting-${goalIndex + 1}`,
+          description,
+          priority: Math.max(0.5, 0.8 - goalIndex * 0.1),
+          status: "active",
+          relatedEntityIds: [],
+          createdAt: context.request.startTime,
+        })),
+        relationships: relationship
+          ? [{
+              id: `relationship.${entityId}.player`,
+              targetEntityId: context.playerContext?.entity.id ?? "generated.actor.player",
+              dimensions,
+              salience: Math.max(0, Math.min(1, relationship.salience ?? 0.6)),
+              tags: relationshipTags,
+              lastUpdatedAt: context.request.startTime,
+            }]
+          : [],
+        memories: memories.map((memory, memoryIndex) => ({
+          id: `memory.${entityId}.starting-${memoryIndex + 1}`,
+          summary: memory.summary,
+          formedAt: context.request.startTime,
+          salience: memory.salience,
+          relatedEntityIds: [],
+          sourceEventIds: [],
+          tags: memory.tags,
+        })),
+        commitments: [],
+      },
+      mechanicallyRelevantConstraints: proposal.mechanicallyRelevantConstraints
+        .map((constraint) => constraint.summary?.trim().slice(0, 240) ?? "")
+        .filter(Boolean)
+        .slice(0, 4)
+        .map((summary, constraintIndex) => ({
+          id: `constraint.${entityId}.starting-${constraintIndex + 1}`,
+          summary,
+          sourceId: entityId,
+        })),
+      ...(proposal.awakenedLicenseBand && licenseBands.has(proposal.awakenedLicenseBand)
+        ? { awakenedLicenseBand: proposal.awakenedLicenseBand }
+        : {}),
+      provenance: {
+        class: "generator-chosen",
+        sourceIds: ["setting.awakening-earth"],
+        rationale: "The NPC expands the generated starting situation without changing player-established facts.",
+      },
+    });
+  });
+}
+
 const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> = {
   normalize: normalizedRegionConstraintsSchema,
   region: regionalFrameSchema,
@@ -756,14 +900,14 @@ const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> =
   institutions: z.array(institutionSeedSchema),
   locality: startingLocalitySchema,
   "player-context": playerContextModelProposalSchema,
-  npcs: z.array(persistentNpcSeedSchema),
+  npcs: npcModelProposalSchema,
   pressures: pressureKnowledgeProcessSchema,
   "opening-situation": openingSituationSchema,
 };
 
 function startingRegionStageMaxOutputTokens(stageId: string): number {
-  if (stageId === "player-context") return 2_048;
-  return ["npcs", "pressures"].includes(stageId) ? 6_144 : 4_096;
+  if (["player-context", "npcs"].includes(stageId)) return 2_048;
+  return stageId === "pressures" ? 6_144 : 4_096;
 }
 
 const STARTING_REGION_MODEL_TIMEOUT_MS = 20 * 60 * 1_000;
@@ -787,6 +931,19 @@ export function createStartingRegionProposalModel(
           locality: context.locality,
           institutions: context.institutions,
         }
+      : stageId === "npcs"
+        ? {
+            request: context.request,
+            player: context.normalized?.player,
+            settlement: context.settlement,
+            locality: context.locality,
+            institutions: context.institutions,
+            playerContext: context.playerContext && {
+              entity: context.playerContext.entity,
+              currentObligations: context.playerContext.currentObligations,
+              ordinaryPressures: context.playerContext.ordinaryPressures,
+            },
+          }
       : context;
     const result = await modelRuntime.generate({
       prompt: {
@@ -807,6 +964,13 @@ export function createStartingRegionProposalModel(
                 "Provide one to four concise grounded skills in mechanicalSignals.skills. Do not emit stress, progression, statuses, powers, mana, or boilerplate attribute evidence; the engine supplies those mundane defaults.",
                 "Do not emit goals, relationships, memories, commitments, or other social-state boilerplate; the engine derives initial goals from the normalized player setup.",
                 "Use unique IDs, concise strings, and only location/institution references present in the provided context.",
+              ]
+            : []),
+          ...(stageId === "npcs"
+            ? [
+                "Return a small cast of one to four concise, distinctive NPC proposals that connect to established people, places, institutions, obligations, or pressures.",
+                "For each NPC provide only identity, narrative relevance, goals, an optional relationship to the player, a few salient memories, and genuinely mechanical constraints.",
+                "Do not emit entity IDs, actor social-state boilerplate, timestamps, provenance, commitments, or empty scaffolding; the engine expands and validates those deterministically.",
               ]
             : []),
           ...(context.request.allowGeneratedDetails
@@ -838,12 +1002,14 @@ export function createStartingRegionProposalModel(
         result.error.kind === "invalid-output" &&
         result.error.candidate !== undefined
       ) {
-        if (stageId === "player-context") {
+        if (stageId === "player-context" || stageId === "npcs") {
           try {
-            return expandPlayerContextProposal(result.error.candidate, context);
+            return stageId === "player-context"
+              ? expandPlayerContextProposal(result.error.candidate, context)
+              : expandNpcProposals(result.error.candidate, context);
           } catch (error) {
             throw new Error(
-              `Starting-region player-context compact output could not be normalized: ${
+              `Starting-region ${stageId} compact output could not be normalized: ${
                 error instanceof Error ? error.message : String(error)
               }`,
             );
@@ -858,9 +1024,13 @@ export function createStartingRegionProposalModel(
         `Starting-region ${stageId} model failure: ${result.error.message}${diagnostic}`,
       );
     }
-    return stageId === "player-context"
-      ? expandPlayerContextProposal(result.output.value, context)
-      : result.output.value;
+    if (stageId === "player-context") {
+      return expandPlayerContextProposal(result.output.value, context);
+    }
+    if (stageId === "npcs") {
+      return expandNpcProposals(result.output.value, context);
+    }
+    return result.output.value;
   };
   return {
     propose(stageId, context) {
@@ -1114,7 +1284,7 @@ function makeStage(
 ): GenerationStage<StartingRegionWorkingState, unknown> {
   return {
     id,
-    ...(id === "player-context" ? { maxRepairPasses: 0 } : {}),
+    ...(["player-context", "npcs"].includes(id) ? { maxRepairPasses: 0 } : {}),
     candidateSchema: schema,
     generate: (state) => model.propose(id, state),
     validate: (candidate, state) => stageIssues(id, candidate, state),
