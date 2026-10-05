@@ -330,7 +330,9 @@ describe("Awakening Earth reference-game integration", () => {
       context,
       generated.seed.creatures[0]!.threatEnvelope!,
     );
-    const model = new ScriptedModelRuntime(compactProposalFor(proposal));
+    const compactProposal = compactProposalFor(proposal);
+    compactProposal.creature.entityRef = "local.missing-creature";
+    const model = new ScriptedModelRuntime(compactProposal);
     const requested = await requestOpeningIncidentProposal({
       modelRuntime: model,
       context,

@@ -106,7 +106,7 @@ const openingIncidentModelProposalSchema = z.object({
     observedCondition: z.string().optional(),
   }).passthrough(),
   creature: z.object({
-    entityRef: z.string(),
+    entityRef: z.string().optional(),
     observedTraits: z.array(z.string()).default([]),
   }).passthrough(),
   publicResponse: z.object({
@@ -148,14 +148,26 @@ function expandOpeningIncidentProposal(
     }
     return ref;
   };
-  const creatureRef = requireRef(compact.creature.entityRef, "creature");
-  const creatureId = context.diagnostics.localReferences[creatureRef]!;
-  const creature = campaign.content.entities.find((entity) => entity.id === creatureId);
-  if (!creature) {
+  const eligibleCreatures = context.situation.scene.flatMap((item) => {
+    const entityId = context.diagnostics.localReferences[item.localRef];
+    const entity = entityId
+      ? campaign.content.entities.find((candidate) => candidate.id === entityId)
+      : undefined;
+    return entity && threatEnvelopeSchema.safeParse(entity.data.threatEnvelope).success
+      ? [{ ref: item.localRef, entity }]
+      : [];
+  });
+  const selectedCreature = compact.creature.entityRef
+    ? eligibleCreatures.find((candidate) => candidate.ref === compact.creature.entityRef)
+    : undefined;
+  const creatureSelection = selectedCreature ?? eligibleCreatures[0];
+  if (!creatureSelection) {
     throw new OpeningIncidentValidationError(
-      `Compact incident creature ${creatureId} is not canonical campaign content`,
+      "Opening incident requires one canonical scene creature with an authoritative threat envelope",
     );
   }
+  const creatureRef = creatureSelection.ref;
+  const creature = creatureSelection.entity;
   const threatEnvelope = threatEnvelopeSchema.parse(creature.data.threatEnvelope);
   const storedTraits = Array.isArray(creature.data.observedTraits)
     ? creature.data.observedTraits.filter((value): value is string =>
@@ -293,7 +305,7 @@ export async function requestOpeningIncidentProposal(
         "Propose one grounded Awakening Earth opening incident as structured data.",
         "Use only opaque local references present in the supplied context for existing entities.",
         "The opening brief is non-authoritative guidance, not an event that has already happened.",
-        "Return only concise creative choices: incident framing, existing local refs, an ordinary contact object, observed condition, creature traits, and public-response wording.",
+        "Return only concise creative choices: incident framing, existing local refs, an ordinary contact object, observed condition, creature traits, and public-response wording. The engine selects the canonical creature if you omit or misidentify its ref.",
         "Do not emit IDs, threat mechanics, facts, timestamps, response timings, or other persistence boilerplate; the engine derives and validates those deterministically.",
         "Include a Gate fixture only when the opening brief actually calls for one.",
       ],
@@ -341,7 +353,15 @@ export async function requestOpeningIncidentProposal(
       "Opening-incident model returned non-structured output",
     );
   }
-  return expandOpeningIncidentProposal(result.output.value, context, campaign);
+  try {
+    return expandOpeningIncidentProposal(result.output.value, context, campaign);
+  } catch (error) {
+    throw new OpeningIncidentValidationError(
+      `Opening-incident compact output could not be normalized: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 const incidentRealizedPayloadSchema = z.object({

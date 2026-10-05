@@ -646,6 +646,12 @@ whose pressure/process `scopeId` values used the generation schema identifiers
 accepted `scope.<generated-entity-id>` references before auditing and final validation. Arbitrary
 unknown scope references still fail validation rather than being silently repaired.
 
+Resume also handles one bounded legacy omission from the accepted pressure stage: if the seed has
+no near-term creature with a durable threat envelope, the engine appends one minimal canonical
+creature grounded in the accepted supernatural pressure. It preserves every accepted stage and
+does not ask the model to regenerate the world. This compatibility repair is deliberately narrow;
+it does not reinterpret or rewrite existing creatures, pressures, or story material.
+
 Pressure generation also crosses a compact model boundary. The model chooses the three required
 pressure categories, their developing situations, a small creature set, readable supernatural
 capabilities/tells/counterplay, and any useful initial beliefs. The engine assigns stable IDs,
@@ -673,10 +679,12 @@ invent a wider subculture, supporting cast, or institution merely to mirror ever
 Opening-incident realization uses a final compact model boundary. The model receives a reduced
 scene list and chooses only concise incident framing, authorized local references, an ordinary
 contact object, an observable condition, creature presentation, and public-response wording. The
-engine deterministically assigns committed IDs, canonical observed facts, report time, response
-timings, and optional Gate record IDs, and copies the creature's authoritative threat envelope
-from accepted campaign content. The model never has to reproduce mechanics or persistence
-boilerplate, so the compact response is capped at 1,024 tokens.
+engine deterministically selects an eligible canonical scene creature, assigns committed IDs,
+canonical observed facts, report time, response timings, and optional Gate record IDs, and copies
+the creature's authoritative threat envelope from accepted campaign content. A missing or
+mistaken model creature reference therefore cannot substitute another entity or manufacture
+mechanics. The model never has to reproduce mechanics or persistence boilerplate, so the compact
+response is capped at 1,024 tokens.
 
 ### Deterministic reference campaign
 

@@ -17,6 +17,7 @@ import {
   ATTRIBUTE_IDS,
   createStartingRegionProposalModel,
   densifyGeneratedEntity,
+  ensureOpeningCreature,
   generateStartingRegion,
   normalizedRegionConstraintsSchema,
   promoteObservedPerson,
@@ -555,6 +556,24 @@ describe("generated starting region", () => {
     expect(game.worldSimulationRegistry.listScopes()).toHaveLength(3);
     expect(game.campaign.generationRecord?.acceptedStageOutputs)
       .toHaveProperty("opening-situation");
+  });
+
+  it("minimally repairs an accepted legacy seed that has no opening creature", async () => {
+    const { result } = await generatedGame(new DeterministicStartingRegionModel());
+    const legacySeed = { ...result.seed, creatures: [] };
+
+    const repaired = ensureOpeningCreature(legacySeed);
+
+    expect(repaired.creatures).toHaveLength(1);
+    expect(repaired.creatures[0]).toEqual(expect.objectContaining({
+      nearTermPlayerFacing: true,
+      provenance: expect.objectContaining({
+        sourceIds: expect.arrayContaining(["generated.pressure.tracks"]),
+      }),
+      threatEnvelope: expect.objectContaining({ challengeBand: "Hard" }),
+    }));
+    expect(repaired.pressures).toStrictEqual(legacySeed.pressures);
+    expect(ensureOpeningCreature(repaired)).toBe(repaired);
   });
 
   it("asks only material follow-ups and enforces the bounded repair ceiling", async () => {

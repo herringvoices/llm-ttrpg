@@ -15,6 +15,7 @@ import {
 import {
   compileStartingRegionCampaign,
   createStartingRegionProposalModel,
+  ensureOpeningCreature,
   generateStartingRegion,
   openingBriefFromCampaign,
   openingIncidentProposalSchema,
@@ -529,6 +530,19 @@ export function createDesktopApplication(
       let completed = stored.generated_json
         ? completedStartingRegionSchema.parse(JSON.parse(stored.generated_json))
         : undefined;
+      if (completed) {
+        const normalizedSeed = ensureOpeningCreature(completed.seed);
+        if (normalizedSeed !== completed.seed) {
+          completed = completedStartingRegionSchema.parse({
+            ...completed,
+            seed: normalizedSeed,
+          });
+          await database.execute(
+            "UPDATE campaign_generation_drafts SET generated_json = ?, updated_at = ? WHERE id = ?",
+            [JSON.stringify(completed), now(), draftId],
+          );
+        }
+      }
       let baseCampaign: ReturnType<typeof compileStartingRegionCampaign>;
       if (!completed) {
         const proposalModel = createStartingRegionProposalModel(options.modelRuntime);

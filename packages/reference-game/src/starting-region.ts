@@ -1706,6 +1706,79 @@ export const startingRegionSeedSchema = z.object({
   openingSituation: openingSituationSchema,
 }).strict();
 
+/**
+ * Repairs the narrow legacy case where an accepted pressure stage produced no
+ * usable near-term creature. Opening-incident generation needs one canonical
+ * creature whose mechanics already belong to campaign content; it must not ask
+ * the model to invent that authoritative record later.
+ */
+export function ensureOpeningCreature(
+  seed: StartingRegionSeed,
+): StartingRegionSeed {
+  if (seed.creatures.some((creature) =>
+    creature.nearTermPlayerFacing && creature.threatEnvelope
+  )) {
+    return seed;
+  }
+
+  const pressure = seed.pressures.find((item) => item.category === "supernatural") ??
+    seed.pressures[0];
+  if (!pressure) {
+    throw new Error(
+      "Starting region cannot supply an opening creature because it has no developing pressures",
+    );
+  }
+  const existingIds = entityIds(seed);
+  const baseId = "generated.creature.opening-anomaly";
+  let entityId = baseId;
+  let suffix = 2;
+  while (existingIds.has(entityId)) entityId = `${baseId}-${suffix++}`;
+
+  const creature = creatureSeedSchema.parse({
+    entity: {
+      id: entityId,
+      kind: "creature",
+      name: "Emergent Magical Creature",
+      summary: `A newly emerged magical creature manifests the developing pressure: ${pressure.summary}`,
+      data: {},
+    },
+    origin: "spontaneous-magical-generation",
+    morphology: "an unfamiliar animal-like form with one visible magical alteration",
+    behavior: "cautious and reactive rather than indiscriminately aggressive",
+    corePrinciple: "expresses one consistent, observable magical effect",
+    observedTraits: [
+      "an unfamiliar animal-like silhouette",
+      "a localized magical anomaly that intensifies before it acts",
+    ],
+    nearTermPlayerFacing: true,
+    threatEnvelope: {
+      challengeBand: "Hard",
+      overallThreat: "Dangerous but observable, avoidable, and vulnerable to informed counterplay.",
+      offensivePressure: 0.6,
+      survivability: 0.55,
+      mobilityReach: 0.7,
+      controlDenial: 0.45,
+      sensoryInformation: 0.55,
+      multiTargetPressure: 0.3,
+      resourcePressure: 0.5,
+      hardCounterRisks: [],
+      requiredSignatureCapabilities: ["one consistent localized magical effect"],
+      requiredTells: ["the surrounding anomaly intensifies before it acts"],
+      requiredCounterplay: ["recognize the tell and interrupt or avoid the effect"],
+      allowedGrowthRange: "May develop through simulation and survival, never hidden party scaling.",
+    },
+    provenance: {
+      class: "setting-derived",
+      sourceIds: [pressure.id, "setting.awakening-earth"],
+      rationale: "Minimal canonical creature required to realize the accepted supernatural pressure in near-term play.",
+    },
+  });
+  return startingRegionSeedSchema.parse({
+    ...seed,
+    creatures: [...seed.creatures, creature],
+  });
+}
+
 function graphConnected(locality: StartingLocality): boolean {
   const ids = locality.locations.map((location) => location.id);
   const visited = new Set<string>();
@@ -2657,7 +2730,8 @@ export async function generateStartingRegion(
     },
   });
   state = ensurePlayerRoutineAnchors(generated.state);
-  const seed = requireSeed(state);
+  const seed = ensureOpeningCreature(requireSeed(state));
+  state = mergeState(state, seed);
   const rawAudit = coherenceAuditSchema.parse(await model.audit(seed, state));
   const seenAuditIssues = new Set<string>();
   const audit = coherenceAuditSchema.parse({
