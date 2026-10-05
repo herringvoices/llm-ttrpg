@@ -148,8 +148,14 @@ export async function runGenerationPipeline<TState>(
       attemptHistory,
     }));
     if (!accepted) {
+      const details = issues.map((issue) => {
+        const path = issue.path.length > 0 ? ` at ${issue.path.join(".")}` : "";
+        return `${issue.message}${path}`;
+      }).join("; ");
       throw new GenerationStageError(
-        `Generation stage ${stage.id} failed after ${attempts} attempt(s)`,
+        `Generation stage ${stage.id} failed after ${attempts} attempt(s)${
+          details ? `: ${details}` : ""
+        }`,
         stage.id,
         issues,
       );

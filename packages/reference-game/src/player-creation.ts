@@ -48,7 +48,9 @@ export const playerEstablishedFactSchema = z.object({
     "other",
   ]),
   statement: z.string().trim().min(1),
-  sourceText: z.string().trim().min(1),
+  sourceText: z.string().trim().min(1).describe(
+    "An exact quotation from the player's description, not a JSON field name.",
+  ),
 }).strict();
 
 export const powerPreferenceSchema = z.object({
@@ -75,6 +77,18 @@ export type NormalizedPlayerSetup = z.infer<
   typeof normalizedPlayerSetupSchema
 >;
 
+function normalizeQuotedText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase();
+}
+
+export function sourceContainsQuotedText(source: string, quotation: string): boolean {
+  return normalizeQuotedText(source).includes(normalizeQuotedText(quotation));
+}
+
 export function validateNormalizedPlayerSetup(
   input: PlayerCreationInput,
   proposal: unknown,
@@ -82,7 +96,7 @@ export function validateNormalizedPlayerSetup(
   const parsedInput = playerCreationInputSchema.parse(input);
   const normalized = normalizedPlayerSetupSchema.parse(proposal);
   for (const fact of normalized.establishedFacts) {
-    if (!parsedInput.description.includes(fact.sourceText)) {
+    if (!sourceContainsQuotedText(parsedInput.description, fact.sourceText)) {
       throw new Error(
         `Player-established fact ${fact.id} cites text not present in the player's description`,
       );

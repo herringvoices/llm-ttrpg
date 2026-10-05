@@ -31,6 +31,7 @@ import {
   normalizedPlayerSetupSchema,
   openingSituationSchema,
   playerCreationInputSchema,
+  sourceContainsQuotedText,
   startingHumanGenerationIssues,
   startingHumanProposalSchema,
   validateNormalizedPlayerSetup,
@@ -297,7 +298,9 @@ export const normalizedRegionConstraintsSchema = z.object({
   explicitConstraints: z.array(z.object({
     id: stableIdSchema,
     statement: z.string().trim().min(1),
-    sourceText: z.string().trim().min(1),
+    sourceText: z.string().trim().min(1).describe(
+      "An exact quotation from locationDescription, not the name of that JSON field.",
+    ),
   }).strict()),
   realWorldAnchors: z.array(z.object({
     id: stableIdSchema,
@@ -550,6 +553,12 @@ export function createStartingRegionProposalModel(
           "Generate only grounded Awakening Earth campaign material for the requested stage.",
           "Preserve player-established facts verbatim and do not make unspecified details player-authored.",
           "Use stable lowercase dot- or dash-separated IDs and cite provenance for generated choices.",
+          ...(stageId === "normalize"
+            ? [
+                "For every explicitConstraints sourceText, copy an exact quotation from workingState.request.locationDescription; never write a field name such as locationDescription.",
+                "For every player establishedFacts sourceText, copy an exact quotation from workingState.request.player.description; never write a field name such as player.",
+              ]
+            : []),
           ...(context.request.allowGeneratedDetails
             ? [
                 "The player authorizes grounded generator-chosen details for anything they left unspecified.",
@@ -681,11 +690,15 @@ function stageIssues(
   if (stageId === "normalize") {
     const normalized = normalizedRegionConstraintsSchema.parse(candidate);
     for (const constraint of normalized.explicitConstraints) {
-      if (!state.request.locationDescription.includes(constraint.sourceText)) {
+      if (!sourceContainsQuotedText(
+        state.request.locationDescription,
+        constraint.sourceText,
+      )) {
         add(
           "generation.player-constraint-source",
           `Explicit constraint ${constraint.id} is not grounded in the player's location input.`,
           ["explicitConstraints"],
+          "Set sourceText to an exact quotation from request.locationDescription, not a field name or paraphrase.",
         );
       }
     }

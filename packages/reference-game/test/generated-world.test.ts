@@ -20,6 +20,7 @@ import {
   referenceGameDefinition,
   rulesActorStateSchema,
   rulesCreatureStateSchema,
+  sourceContainsQuotedText,
 } from "@llm-ttrpg/reference-game";
 import { createMigratedSqlitePersistence } from "../../../tests/support/sqlite.js";
 import {
@@ -168,6 +169,21 @@ function creatureMechanics(agility = 70) {
 }
 
 describe("generated starting region", () => {
+  it("accepts faithful source quotations despite model casing and whitespace normalization", () => {
+    expect(sourceContainsQuotedText(
+      "Most people work at the plant.\nI'm a local.",
+      "most people work at the plant",
+    )).toBe(true);
+    expect(sourceContainsQuotedText(
+      "Most people work at the plant.\nI'm a local.",
+      "Most   people work at the plant",
+    )).toBe(true);
+    expect(sourceContainsQuotedText(
+      "Most people work at the plant.",
+      "The plant employs everyone in town",
+    )).toBe(false);
+  });
+
   it("repairs only the invalid stage and compiles a validated playable campaign", async () => {
     const { result, model, definition } = await generatedGame();
     expect(model.calls).toContain("repair:locality");
