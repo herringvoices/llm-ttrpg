@@ -6,6 +6,7 @@ import {
   generationIssueSchema,
   generationStageDiagnosticSchema,
   loadGameDefinition,
+  renderContextForModel,
   type CampaignPlanDocument,
   type GameSession,
   type ModelRuntime,
@@ -415,6 +416,90 @@ export function createDesktopApplication(
     return rows[0];
   }
 
+  async function ensureOpeningNarration(
+    session: GameSession,
+    row: DesktopSessionRow,
+    descriptor: GeneratedPackageDescriptor,
+  ): Promise<DesktopSessionRow> {
+    const existing = z.array(transcriptEntrySchema).parse(
+      JSON.parse(row.transcript_json),
+    );
+    if (existing.length > 0) return row;
+
+    const proposal = descriptor.openingProposal;
+    const world = session.snapshot();
+    const player = world.entities.find((entity) => entity.id === row.player_actor_id);
+    const currentLocation = world.facts.find((fact) =>
+      fact.subjectId === row.player_actor_id && fact.predicate === "actor.current-location"
+    )?.value ?? player?.data.currentLocation;
+    const locationId = typeof currentLocation === "string" ? currentLocation : undefined;
+    const context = session.assembleContext({
+      role: "actor",
+      perspective: { kind: "actor", id: row.player_actor_id },
+      focalActorId: row.player_actor_id,
+      ...(locationId ? { locationId } : {}),
+      budget: { maxUnits: 30_000 },
+    });
+    const fallback = [
+      proposal.incident.name,
+      proposal.incident.summary,
+      ...proposal.incident.observedFacts
+        .filter((fact) => fact.visibility === "public")
+        .map((fact) => typeof fact.value === "string" ? fact.value : JSON.stringify(fact.value)),
+    ].map((part) => part.trim()).filter(Boolean).join("\n\n");
+    let narration = fallback;
+    if (options.modelRuntime) {
+      const result = await options.modelRuntime.generate({
+        prompt: {
+          instructions: [
+            `Open the campaign in second-person present tense. Style: ${referenceGameDefinition.presentation.narrationStyle}`,
+            "Narrate only what the player character can immediately perceive from the authorized context and canonical opening material.",
+            "Do not invent world changes, private knowledge, player actions, player speech, player thoughts, mechanics, or GM commentary.",
+            "Establish the place, the immediate supernatural tension, and concrete sensory details, then leave the player's response completely open.",
+            "Do not ask a meta-level question such as what the player wants to do.",
+            "Target 500-900 characters.",
+          ],
+          context: renderContextForModel(context),
+          input: JSON.stringify({
+            incident: {
+              name: proposal.incident.name,
+              summary: proposal.incident.summary,
+              observedFacts: proposal.incident.observedFacts.filter((fact) =>
+                fact.visibility === "public"
+              ),
+              contactObject: {
+                name: proposal.incident.contactObject.name,
+                summary: proposal.incident.contactObject.summary,
+              },
+            },
+            creatureObservedTraits: proposal.creature.observedTraits,
+            publicResponse: {
+              observedThreat: proposal.publicResponse.observedThreat,
+              status: "reported",
+            },
+          }),
+        },
+        output: { kind: "text" },
+        trace: { operation: "desktop.opening-narration.v1" },
+      }, {
+        timeoutMs: 5 * 60 * 1_000,
+        generation: { temperature: 0.4, maxOutputTokens: 512 },
+      });
+      if (result.ok && result.output.text.trim()) narration = result.output.text.trim();
+    }
+    const transcript = [transcriptEntrySchema.parse({
+      id: `transcript.${randomId().toLowerCase()}`,
+      speaker: "narrator",
+      text: narration,
+    })];
+    const transcriptJson = JSON.stringify(transcript);
+    await database.execute(
+      "UPDATE desktop_play_sessions SET transcript_json = ? WHERE world_id = ?",
+      [transcriptJson, session.worldId],
+    );
+    return { ...row, transcript_json: transcriptJson };
+  }
+
   async function wrap(
     session: GameSession,
     row: DesktopSessionRow,
@@ -669,7 +754,10 @@ export function createDesktopApplication(
         completed.seed,
         openingProposal.incident.id,
       ));
-      const wrapped = await wrap(session, (await sessionRow(session.worldId))!);
+      const row = await sessionRow(session.worldId);
+      if (!row) throw new Error(`Playable session metadata is missing for world ${session.worldId}`);
+      const narratedRow = await ensureOpeningNarration(session, row, descriptor);
+      const wrapped = await wrap(session, narratedRow);
       await database.execute("DELETE FROM campaign_generation_drafts WHERE id = ?", [draftId]);
       return { kind: "created", session: wrapped };
     } catch (error) {
@@ -784,7 +872,14 @@ export function createDesktopApplication(
           )
         : loadGameDefinition(referenceGameDefinition);
       const session = await createGameRuntime(dependencies(game)).openWorld(worldId);
-      return wrap(session, row);
+      const narratedRow = row.generated_package_json
+        ? await ensureOpeningNarration(
+            session,
+            row,
+            generatedPackageDescriptorSchema.parse(JSON.parse(row.generated_package_json)),
+          )
+        : row;
+      return wrap(session, narratedRow);
     },
   };
 }

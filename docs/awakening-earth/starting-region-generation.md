@@ -686,6 +686,14 @@ mistaken model creature reference therefore cannot substitute another entity or 
 mechanics. The model never has to reproduce mechanics or persistence boilerplate, so the compact
 response is capped at 1,024 tokens.
 
+After the playable world and initial campaign plan exist, the desktop requests one actor-visible
+opening narration from the canonical opening material and stores it as the first transcript entry.
+The narration may establish only immediately perceptible place, tension, and sensory detail; it
+cannot add world changes or choose the player's response. If presentation generation fails, a
+canonical incident-summary fallback still prevents an empty opening screen. When an older
+generated session has an empty transcript, the same presentation-only step runs once on reopen;
+the world, event history, plan, and accepted generation outputs are not replayed or regenerated.
+
 ### Deterministic reference campaign
 
 Maintain one known-valid reference campaign fixture for deterministic integration tests.

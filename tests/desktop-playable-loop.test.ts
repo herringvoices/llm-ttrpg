@@ -200,6 +200,14 @@ function generatedCampaignModel() {
         };
       },
     },
+    {
+      id: "opening-narration",
+      match: { operation: "desktop.opening-narration.v1", outputKind: "text" },
+      result: {
+        kind: "text",
+        text: "Blue frost crawls over the loading dock as a strange feline silhouette watches from between the pallets. The bat beside your hand is ordinary wood, but it is the nearest solid thing between you and the creature.",
+      },
+    },
   ]);
 }
 
@@ -434,6 +442,10 @@ describe("desktop playable session integration", () => {
     expect(play.view()).toEqual(expect.objectContaining({
       playerName: "Rowan",
       currentLocationName: expect.any(String),
+      transcript: [expect.objectContaining({
+        speaker: "narrator",
+        text: expect.stringContaining("Blue frost"),
+      })],
     }));
     expect((await play.engineSession().eventHistory()).some((event) =>
       event.type === "campaign.opening-incident-realized"
@@ -451,10 +463,23 @@ describe("desktop playable session integration", () => {
     expect((await play.engineSession().campaignPlan())?.threads).toHaveLength(3);
     await play.save("Generated save");
 
+    // A campaign created by an older desktop build receives its missing opening
+    // on first reopen, without rebuilding or replaying the world.
+    database.run(
+      "UPDATE desktop_play_sessions SET transcript_json = '[]' WHERE world_id = ?",
+      [play.view().worldId],
+    );
+    const compatibilityModel = generatedCampaignModel();
+
     const reopened = await createDesktopApplication(
       createSqlJsClient(database),
-      options,
+      { ...options, modelRuntime: compatibilityModel },
     ).openWorld(play.view().worldId);
+    expect(reopened.view().transcript).toEqual([
+      expect.objectContaining({ speaker: "narrator", text: expect.stringContaining("Blue frost") }),
+    ]);
+    expect(compatibilityModel.invocations.map((invocation) => invocation.operation))
+      .toContain("desktop.opening-narration.v1");
     expect(reopened.engineSession().snapshot()).toEqual(play.engineSession().snapshot());
     expect((await reopened.engineSession().campaignPlan())?.horizons.low.threadIds)
       .toEqual(["thread.near-term-choice"]);
