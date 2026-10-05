@@ -622,6 +622,13 @@ progression. Player-context does not launch an automatic model repair
 after an invalid response; it fails back to the saved draft so one bad response cannot silently
 consume another full attempt.
 
+The player-context model proposal is intentionally permissive at the transport boundary. The
+engine normalizes optional lists, filters unknown references/evidence, clamps skill values,
+deduplicates skills, and supplies an evidence-backed fallback skill before constructing and
+validating the authoritative `PlayerContextSeed`. A compact proposal must never be passed directly
+to the expanded-state validator: transport-shape errors are reported or normalized at the compact
+boundary rather than misreported as missing expanded fields.
+
 ### Deterministic reference campaign
 
 Maintain one known-valid reference campaign fixture for deterministic integration tests.

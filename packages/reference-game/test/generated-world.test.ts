@@ -18,6 +18,7 @@ import {
   createStartingRegionProposalModel,
   densifyGeneratedEntity,
   generateStartingRegion,
+  normalizedRegionConstraintsSchema,
   promoteObservedPerson,
   referenceGameDefinition,
   rulesActorStateSchema,
@@ -29,6 +30,7 @@ import {
   DeterministicStartingRegionModel,
   generatedStart,
   startingRegionRequestFixture,
+  startingRegionStageOutputs,
 } from "./starting-region-fixture.js";
 
 function attributes(value = 54, overrides: Record<string, number> = {}) {
@@ -171,18 +173,51 @@ function creatureMechanics(agility = 70) {
 }
 
 describe("generated starting region", () => {
-  it("forwards parsed schema-invalid JSON to the bounded stage repair pipeline", async () => {
+  it("forwards ordinary parsed schema-invalid JSON to the bounded stage repair pipeline", async () => {
     const candidate = { wrong: true };
     const runtime = new ScriptedModelRuntime([{
-      id: "invalid-player-context",
-      match: { schemaId: "starting-region.player-context.v1" },
+      id: "invalid-locality",
+      match: { schemaId: "starting-region.locality.v1" },
       result: { kind: "schema-invalid", value: candidate },
+    }]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("locality", {
+      request: startingRegionRequestFixture,
+    })).resolves.toEqual(candidate);
+  });
+
+  it("normalizes a partial compact player-context candidate before expanded validation", async () => {
+    const outputs = startingRegionStageOutputs();
+    const runtime = new ScriptedModelRuntime([{
+      id: "partial-player-context",
+      match: { schemaId: "starting-region.player-context.v1" },
+      result: {
+        kind: "schema-invalid",
+        value: {
+          entity: { name: "Rowan" },
+          mechanicalSignals: { attributeDirections: [], skills: [] },
+        },
+      },
     }]);
     const proposal = createStartingRegionProposalModel(runtime);
 
     await expect(proposal.propose("player-context", {
       request: startingRegionRequestFixture,
-    })).resolves.toEqual(candidate);
+      normalized: normalizedRegionConstraintsSchema.parse(outputs.normalize),
+      locality: outputs.locality,
+      institutions: outputs.institutions,
+    })).resolves.toEqual(expect.objectContaining({
+      entity: expect.objectContaining({
+        id: "generated.actor.player",
+        kind: "actor",
+        name: "Rowan",
+      }),
+      socialState: expect.objectContaining({ actorId: "generated.actor.player" }),
+      mechanics: expect.objectContaining({
+        mechanics: expect.objectContaining({ skills: [expect.any(Object)] }),
+      }),
+    }));
   });
 
   it("accepts faithful source quotations despite model casing and whitespace normalization", () => {

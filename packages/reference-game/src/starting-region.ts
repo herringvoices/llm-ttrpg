@@ -44,7 +44,6 @@ import {
 } from "./player-creation.js";
 import {
   ATTRIBUTE_IDS,
-  attributeIdSchema,
   skillSchema,
 } from "./ruleset/model.js";
 
@@ -404,34 +403,36 @@ export type PlayerContextSeed = z.infer<typeof playerContextSeedSchema>;
 
 const playerContextModelProposalSchema = z.object({
   entity: z.object({
-    id: stableIdSchema,
-    name: z.string().trim().min(1).max(120),
-    summary: z.string().trim().min(1).max(320),
-  }).strict(),
-  homeLocationId: stableIdSchema,
-  routineLocationIds: z.array(stableIdSchema).max(5),
-  accessEntityIds: z.array(stableIdSchema).max(8),
-  currentObligations: z.array(z.string().trim().min(1).max(240)).max(3),
-  ordinaryPressures: z.array(z.string().trim().min(1).max(240)).max(5),
+    id: z.string().optional(),
+    name: z.string().optional(),
+    summary: z.string().optional(),
+  }).passthrough().default({}),
+  homeLocationId: z.string().optional(),
+  routineLocationIds: z.array(z.string()).default([]),
+  accessEntityIds: z.array(z.string()).default([]),
+  currentObligations: z.array(z.string()).default([]),
+  ordinaryPressures: z.array(z.string()).default([]),
   mechanicalSignals: z.object({
     attributeDirections: z.array(z.object({
-      attributeId: attributeIdSchema,
-      direction: z.enum(["below-baseline", "above-baseline"]),
-      rationale: z.string().trim().min(1).max(240),
-      sourceFactIds: z.array(stableIdSchema).min(1).max(3),
-    }).strict()).max(8),
+      attributeId: z.string(),
+      direction: z.string(),
+      rationale: z.string().optional(),
+      sourceFactIds: z.array(z.string()).default([]),
+    }).passthrough()).default([]),
     skills: z.array(z.object({
-      skill: skillSchema.extend({
-        name: z.string().trim().min(1).max(120),
-        description: z.string().trim().min(1).max(240),
-        sp: z.number().finite().min(50).max(150),
-      }),
-      rationale: z.string().trim().min(1).max(240),
-      sourceFactIds: z.array(stableIdSchema).min(1).max(3),
-    }).strict()).min(1).max(4),
-  }).strict(),
-  provenance: provenanceSchema,
-}).strict();
+      skill: z.object({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        specificity: z.number().optional(),
+        sp: z.number().optional(),
+      }).passthrough().default({}),
+      rationale: z.string().optional(),
+      sourceFactIds: z.array(z.string()).default([]),
+    }).passthrough()).default([]),
+  }).passthrough().default({ attributeDirections: [], skills: [] }),
+  provenance: z.unknown().optional(),
+}).passthrough();
 type PlayerContextModelProposal = z.infer<typeof playerContextModelProposalSchema>;
 
 export const persistentNpcSeedSchema = z.object({
@@ -568,16 +569,30 @@ function expandPlayerContextProposal(
   context: Readonly<StartingRegionWorkingState>,
 ): PlayerContextSeed {
   const proposal = playerContextModelProposalSchema.parse(rawProposal);
-  const establishedFactIds = new Set(
-    context.normalized?.player.establishedFacts.map((fact) => fact.id) ?? [],
-  );
+  const establishedFacts = context.normalized?.player.establishedFacts ?? [];
+  const establishedFactIds = new Set([
+    "player.input",
+    ...establishedFacts.map((fact) => fact.id),
+  ]);
+  const attributeIds = new Set<string>(ATTRIBUTE_IDS);
   const directionByAttribute = new Map(
-    proposal.mechanicalSignals.attributeDirections
+    proposal.mechanicalSignals.attributeDirections.slice(0, 8)
       .map((signal) => ({
-        ...signal,
+        attributeId: signal.attributeId,
+        direction: signal.direction === "above-baseline"
+          ? "above-baseline" as const
+          : signal.direction === "below-baseline"
+            ? "below-baseline" as const
+            : undefined,
+        rationale: signal.rationale?.trim().slice(0, 240) ||
+          "The normalized player biography supports this departure from baseline.",
         sourceFactIds: signal.sourceFactIds.filter((id) => establishedFactIds.has(id)),
       }))
-      .filter((signal) => signal.sourceFactIds.length > 0)
+      .filter((signal) =>
+        attributeIds.has(signal.attributeId) &&
+        signal.direction !== undefined &&
+        signal.sourceFactIds.length > 0
+      )
       .map((signal) => [signal.attributeId, signal] as const),
   );
   const attributes = Object.fromEntries(ATTRIBUTE_IDS.map((attributeId) => [
@@ -588,15 +603,39 @@ function expandPlayerContextProposal(
         ? 52
         : 56,
   ]));
-  const groundedSkillCandidates = proposal.mechanicalSignals.skills
+  const stableSlug = (value: string, fallback: string) => {
+    const slug = value.toLocaleLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+    return slug || fallback;
+  };
+  const groundedSkillCandidates = proposal.mechanicalSignals.skills.slice(0, 4)
     .map((item) => ({
-      ...item,
+      skill: skillSchema.parse({
+        id: `skill.generated.${stableSlug(
+          item.skill.id ?? item.skill.name ?? "experience",
+          "experience",
+        )}`,
+        name: item.skill.name?.trim().slice(0, 120) || "Everyday Experience",
+        description: item.skill.description?.trim().slice(0, 240) ||
+          item.rationale?.trim().slice(0, 240) ||
+          "Practical experience established by the player's background.",
+        specificity: Number.isInteger(item.skill.specificity) &&
+            item.skill.specificity! >= 1 && item.skill.specificity! <= 5
+          ? item.skill.specificity
+          : 2,
+        sp: Math.min(150, Math.max(50, Math.round(item.skill.sp ?? 50))),
+      }),
+      rationale: item.rationale?.trim().slice(0, 240) ||
+        "The skill follows from an established player-background fact.",
       sourceFactIds: item.sourceFactIds.filter((id) => establishedFactIds.has(id)),
     }))
     .filter((item) => item.sourceFactIds.length > 0);
   const skillIds = new Set<string>();
   const skillNames = new Set<string>();
-  const groundedSkills = groundedSkillCandidates.filter((item) => {
+  let groundedSkills = groundedSkillCandidates.filter((item) => {
     const normalizedName = item.skill.name.trim().toLocaleLowerCase();
     if (skillIds.has(item.skill.id) || skillNames.has(normalizedName)) return false;
     skillIds.add(item.skill.id);
@@ -604,10 +643,25 @@ function expandPlayerContextProposal(
     return true;
   });
   if (groundedSkills.length === 0) {
-    throw new Error("Player-context generation did not ground any starting skill in an established player fact");
+    const basis = establishedFacts[0];
+    groundedSkills = [{
+      skill: skillSchema.parse({
+        id: `skill.generated.${stableSlug(basis?.category ?? "everyday-experience", "everyday-experience")}`,
+        name: basis
+          ? `${basis.category.split("-").map((part) =>
+              `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`
+            ).join(" ")} Experience`
+          : "Everyday Experience",
+        description: basis?.statement ?? context.request.player.description.slice(0, 240),
+        specificity: 2,
+        sp: 50,
+      }),
+      rationale: basis?.statement ?? "Grounded in the player's supplied setup description.",
+      sourceFactIds: [basis?.id ?? "player.input"],
+    }];
   }
   const localityIds = new Set(context.locality?.locations.map((location) => location.id) ?? []);
-  const homeLocationId = localityIds.has(proposal.homeLocationId)
+  const homeLocationId = proposal.homeLocationId && localityIds.has(proposal.homeLocationId)
     ? proposal.homeLocationId
     : context.locality?.locations[0]?.id;
   if (!homeLocationId) throw new Error("Player-context generation requires a starting locality");
@@ -620,10 +674,11 @@ function expandPlayerContextProposal(
 
   return playerContextSeedSchema.parse({
     entity: {
-      id: proposal.entity.id,
+      id: "generated.actor.player",
       kind: "actor",
-      name: proposal.entity.name,
-      summary: proposal.entity.summary,
+      name: proposal.entity.name?.trim().slice(0, 120) || "Player",
+      summary: proposal.entity.summary?.trim().slice(0, 320) ||
+        context.request.player.description.slice(0, 320),
       data: {},
     },
     homeLocationId,
@@ -633,13 +688,19 @@ function expandPlayerContextProposal(
     accessEntityIds: accessEntityIds.length > 0
       ? accessEntityIds
       : [homeLocationId],
-    currentObligations: proposal.currentObligations,
-    ordinaryPressures: proposal.ordinaryPressures,
+    currentObligations: proposal.currentObligations
+      .map((value) => value.trim().slice(0, 240))
+      .filter(Boolean)
+      .slice(0, 3),
+    ordinaryPressures: proposal.ordinaryPressures
+      .map((value) => value.trim().slice(0, 240))
+      .filter(Boolean)
+      .slice(0, 5),
     socialState: actorSocialStateSchema.parse({
-      actorId: proposal.entity.id,
+      actorId: "generated.actor.player",
       goals: (context.normalized?.player.currentWants ?? []).slice(0, 3).map(
         (description, index) => ({
-          id: `goal.${proposal.entity.id}.starting-${index + 1}`,
+          id: `goal.generated.actor.player.starting-${index + 1}`,
           description,
           priority: Math.max(0.5, 0.9 - index * 0.1),
           status: "active",
@@ -678,7 +739,13 @@ function expandPlayerContextProposal(
         sourceFactIds: item.sourceFactIds,
       })),
     },
-    provenance: proposal.provenance,
+    provenance: {
+      class: "generator-chosen",
+      sourceIds: establishedFacts.slice(0, 8).map((fact) => fact.id).length > 0
+        ? establishedFacts.slice(0, 8).map((fact) => fact.id)
+        : ["player.input"],
+      rationale: "Player-specific context expands the normalized setup without changing player-established facts.",
+    },
   });
 }
 
@@ -770,7 +837,20 @@ export function createStartingRegionProposalModel(
       if (
         result.error.kind === "invalid-output" &&
         result.error.candidate !== undefined
-      ) return result.error.candidate;
+      ) {
+        if (stageId === "player-context") {
+          try {
+            return expandPlayerContextProposal(result.error.candidate, context);
+          } catch (error) {
+            throw new Error(
+              `Starting-region player-context compact output could not be normalized: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
+        return result.error.candidate;
+      }
       const diagnostic = result.error.diagnostic
         ? `: ${result.error.diagnostic}`
         : "";
@@ -968,7 +1048,10 @@ function stageIssues(
       );
     }
     const allowedFactIds = new Set(
-      state.normalized?.player.establishedFacts.map((fact) => fact.id) ?? [],
+      [
+        "player.input",
+        ...(state.normalized?.player.establishedFacts.map((fact) => fact.id) ?? []),
+      ],
     );
     issues.push(...startingHumanGenerationIssues(player.mechanics, allowedFactIds));
   } else if (stageId === "npcs") {
