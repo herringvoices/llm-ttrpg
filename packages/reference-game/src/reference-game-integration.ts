@@ -7,7 +7,6 @@ import {
   fictionalDurationMs,
   fictionalInstant,
   jsonValueSchema,
-  renderContextForModel,
   stableIdSchema,
   type Campaign,
   type AuthoredEvent,
@@ -92,6 +91,177 @@ export type OpeningIncidentProposal = z.infer<
   typeof openingIncidentProposalSchema
 >;
 
+const openingIncidentModelProposalSchema = z.object({
+  incident: z.object({
+    name: z.string().optional(),
+    summary: z.string().optional(),
+    locationRef: z.string(),
+    involvedRefs: z.array(z.string()).default([]),
+    groundingRefs: z.array(z.string()).default([]),
+    contactObject: z.object({
+      name: z.string().optional(),
+      summary: z.string().optional(),
+      wielderRef: z.string(),
+    }).passthrough(),
+    observedCondition: z.string().optional(),
+  }).passthrough(),
+  creature: z.object({
+    entityRef: z.string(),
+    observedTraits: z.array(z.string()).default([]),
+  }).passthrough(),
+  publicResponse: z.object({
+    institutionName: z.string().optional(),
+    observedThreat: z.string().optional(),
+    responsibleDispatch: z.string().optional(),
+    responderAssignment: z.string().optional(),
+    finalStatus: z.string().optional(),
+  }).passthrough().default({}),
+  gateFixture: z.object({
+    gateName: z.string().optional(),
+    entranceRef: z.string(),
+    interiorName: z.string().optional(),
+    summary: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+function generatedSlug(value: string, fallback: string): string {
+  const slug = value.toLocaleLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return slug || fallback;
+}
+
+function expandOpeningIncidentProposal(
+  rawProposal: unknown,
+  context: ContextPackage,
+  campaign: Campaign,
+): OpeningIncidentProposal {
+  const compact = openingIncidentModelProposalSchema.parse(rawProposal);
+  const allowedRefs = new Set(context.situation.scene.map((item) => item.localRef));
+  const requireRef = (ref: string, label: string) => {
+    if (!allowedRefs.has(ref) || !context.diagnostics.localReferences[ref]) {
+      throw new OpeningIncidentValidationError(
+        `Compact incident ${label} references unauthorized local ref ${ref}`,
+      );
+    }
+    return ref;
+  };
+  const creatureRef = requireRef(compact.creature.entityRef, "creature");
+  const creatureId = context.diagnostics.localReferences[creatureRef]!;
+  const creature = campaign.content.entities.find((entity) => entity.id === creatureId);
+  if (!creature) {
+    throw new OpeningIncidentValidationError(
+      `Compact incident creature ${creatureId} is not canonical campaign content`,
+    );
+  }
+  const threatEnvelope = threatEnvelopeSchema.parse(creature.data.threatEnvelope);
+  const storedTraits = Array.isArray(creature.data.observedTraits)
+    ? creature.data.observedTraits.filter((value): value is string =>
+        typeof value === "string" && value.trim().length > 0
+      )
+    : [];
+  const observedTraits = [...new Set([
+    ...compact.creature.observedTraits.map((value) => value.trim()).filter(Boolean),
+    ...storedTraits,
+  ])].slice(0, 6);
+  const name = compact.incident.name?.trim().slice(0, 120) || "Opening Supernatural Incident";
+  const generatedNameSlug = generatedSlug(name, "opening-incident");
+  const slug = generatedNameSlug.endsWith("-incident")
+    ? generatedNameSlug.slice(0, -"-incident".length)
+    : generatedNameSlug;
+  const incidentId = `generated.incident.${slug}`;
+  const contactName = compact.incident.contactObject.name?.trim().slice(0, 120) ||
+    "Available Everyday Object";
+  const involvedRefs = [...new Set([
+    ...compact.incident.involvedRefs.map((ref) => requireRef(ref, "involved entity")),
+    creatureRef,
+    requireRef(compact.incident.contactObject.wielderRef, "contact-object wielder"),
+  ])];
+  const groundingRefs = [...new Set([
+    ...compact.incident.groundingRefs.map((ref) => requireRef(ref, "grounding entity")),
+    requireRef(compact.incident.locationRef, "location"),
+    creatureRef,
+  ])];
+  const finalStatus = ["contained", "resolved", "handed-off"].includes(
+      compact.publicResponse.finalStatus ?? "",
+    )
+    ? compact.publicResponse.finalStatus
+    : "contained";
+  const gateSlug = `${slug}-pocket`;
+
+  return openingIncidentProposalSchema.parse({
+    incident: {
+      id: incidentId,
+      name,
+      summary: compact.incident.summary?.trim().slice(0, 320) ||
+        "A grounded supernatural threat becomes immediately relevant to the player.",
+      locationRef: requireRef(compact.incident.locationRef, "location"),
+      involvedRefs,
+      groundingRefs,
+      contactObject: {
+        id: `generated.object.${slug}-contact`,
+        name: contactName,
+        summary: compact.incident.contactObject.summary?.trim().slice(0, 240) ||
+          `${contactName} is an ordinary object immediately available to the player.`,
+        wielderRef: requireRef(compact.incident.contactObject.wielderRef, "contact-object wielder"),
+      },
+      observedFacts: [{
+        id: `generated.fact.${slug}-observable-condition`,
+        predicate: "incident.observable-condition",
+        value: compact.incident.observedCondition?.trim().slice(0, 280) ||
+          "An observable supernatural disturbance is developing.",
+        visibility: "public",
+        tags: ["incident", "observation", "supernatural"],
+      }],
+    },
+    creature: {
+      entityRef: creatureRef,
+      deliberateNearTermPlayerFacing: true,
+      threatEnvelope,
+      observedTraits: observedTraits.length > 0
+        ? observedTraits
+        : ["an observable supernatural anomaly"],
+    },
+    publicResponse: {
+      institutionId: `generated.institution.${slug}-public-response`,
+      institutionName: compact.publicResponse.institutionName?.trim().slice(0, 160) ||
+        "Local Public Supernatural Response",
+      responseId: `generated.response.${slug}`,
+      observedThreat: compact.publicResponse.observedThreat?.trim().slice(0, 280) ||
+        "A supernatural creature is active near civilians.",
+      reportedAt: campaign.startTime,
+      responsibleDispatch: compact.publicResponse.responsibleDispatch?.trim().slice(0, 160) ||
+        "Local emergency dispatch",
+      responderAssignment: compact.publicResponse.responderAssignment?.trim().slice(0, 160) ||
+        "Available public supernatural-response personnel",
+      dispatchDelayMs: 2 * 60_000,
+      travelDurationMs: 8 * 60_000,
+      onSceneDurationMs: 10 * 60_000,
+      finalStatus,
+    },
+    ...(compact.gateFixture
+      ? {
+          gateFixture: {
+            gateId: `generated.spatial-anomaly.${gateSlug}`,
+            gateName: compact.gateFixture.gateName?.trim().slice(0, 160) ||
+              "Local Pocket Entrance",
+            entranceRef: requireRef(compact.gateFixture.entranceRef, "Gate entrance"),
+            interiorId: `generated.location.${gateSlug}`,
+            interiorName: compact.gateFixture.interiorName?.trim().slice(0, 160) ||
+              "Local Pocket Interior",
+            routeFactId: `generated.fact.${gateSlug}-route`,
+            stabilityFactId: `generated.fact.${gateSlug}-stability`,
+            scopeId: `scope.generated.${gateSlug}`,
+            summary: compact.gateFixture.summary?.trim().slice(0, 280) ||
+              "A small stable pocket environment connected to the incident location.",
+          },
+        }
+      : {}),
+  });
+}
+
 export class OpeningIncidentValidationError extends Error {
   override readonly name = "OpeningIncidentValidationError";
 }
@@ -99,6 +269,7 @@ export class OpeningIncidentValidationError extends Error {
 export interface RequestOpeningIncidentInput {
   readonly modelRuntime: ModelRuntime;
   readonly context: ContextPackage;
+  readonly campaign: Campaign;
   readonly openingBrief: JsonValue;
   readonly options?: ModelInvocationOptions;
 }
@@ -107,6 +278,7 @@ export async function requestOpeningIncidentProposal(
   input: RequestOpeningIncidentInput,
 ): Promise<OpeningIncidentProposal> {
   const context = contextPackageSchema.parse(input.context);
+  const campaign = input.campaign;
   if (
     !["orchestrator", "planner"].includes(context.bootstrap.role) ||
     context.bootstrap.perspective.kind !== "canonical"
@@ -121,20 +293,45 @@ export async function requestOpeningIncidentProposal(
         "Propose one grounded Awakening Earth opening incident as structured data.",
         "Use only opaque local references present in the supplied context for existing entities.",
         "The opening brief is non-authoritative guidance, not an event that has already happened.",
-        "Do not invent mechanics. Preserve the supplied creature threat envelope exactly.",
-        "Include only details required to commit and expose the incident.",
+        "Return only concise creative choices: incident framing, existing local refs, an ordinary contact object, observed condition, creature traits, and public-response wording.",
+        "Do not emit IDs, threat mechanics, facts, timestamps, response timings, or other persistence boilerplate; the engine derives and validates those deterministically.",
+        "Include a Gate fixture only when the opening brief actually calls for one.",
       ],
-      context: renderContextForModel(context),
+      context: JSON.stringify({
+        fictionalTime: context.situation.fictionalTime,
+        scene: context.situation.scene.map((item) => ({
+          localRef: item.localRef,
+          displayIdentity: item.displayIdentity,
+          category: item.category,
+          prominence: item.prominence,
+          ...(item.summary ? { summary: item.summary } : {}),
+          ...(item.coarseState !== undefined ? { coarseState: item.coarseState } : {}),
+        })),
+      }),
       input: `Protected opening brief: ${JSON.stringify(input.openingBrief)}`,
     },
     output: {
       kind: "structured",
-      schemaId: "awakening-earth.opening-incident-proposal",
-      schema: openingIncidentProposalSchema,
+      schemaId: "awakening-earth.opening-incident-compact-v1",
+      schema: openingIncidentModelProposalSchema,
     },
     trace: { operation: "reference-game.generate-opening-incident" },
   }, input.options);
   if (!result.ok) {
+    if (
+      result.error.kind === "invalid-output" &&
+      result.error.candidate !== undefined
+    ) {
+      try {
+        return expandOpeningIncidentProposal(result.error.candidate, context, campaign);
+      } catch (error) {
+        throw new OpeningIncidentValidationError(
+          `Opening-incident compact output could not be normalized: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
     throw new OpeningIncidentValidationError(
       `Opening-incident model generation failed: ${result.error.kind}: ${result.error.message}`,
     );
@@ -144,7 +341,7 @@ export async function requestOpeningIncidentProposal(
       "Opening-incident model returned non-structured output",
     );
   }
-  return openingIncidentProposalSchema.parse(result.output.value);
+  return expandOpeningIncidentProposal(result.output.value, context, campaign);
 }
 
 const incidentRealizedPayloadSchema = z.object({

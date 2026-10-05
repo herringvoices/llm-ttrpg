@@ -615,10 +615,11 @@ export function createDesktopApplication(
         openingProposal = await requestOpeningIncidentProposal({
           modelRuntime: options.modelRuntime,
           context: protectedContext,
+          campaign: baseCampaign,
           openingBrief: openingBriefFromCampaign(baseCampaign),
           options: {
             timeoutMs: 20 * 60 * 1_000,
-            generation: { temperature: 0, maxOutputTokens: 1_536 },
+            generation: { temperature: 0, maxOutputTokens: 1_024 },
           },
         });
         await database.execute(

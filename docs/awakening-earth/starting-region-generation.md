@@ -670,6 +670,14 @@ pass may add a single linked location for an explicit physical workplace that th
 locality omitted, and add that location to the player's routine and access lists. It does not
 invent a wider subculture, supporting cast, or institution merely to mirror every biography fact.
 
+Opening-incident realization uses a final compact model boundary. The model receives a reduced
+scene list and chooses only concise incident framing, authorized local references, an ordinary
+contact object, an observable condition, creature presentation, and public-response wording. The
+engine deterministically assigns committed IDs, canonical observed facts, report time, response
+timings, and optional Gate record IDs, and copies the creature's authoritative threat envelope
+from accepted campaign content. The model never has to reproduce mechanics or persistence
+boilerplate, so the compact response is capped at 1,024 tokens.
+
 ### Deterministic reference campaign
 
 Maintain one known-valid reference campaign fixture for deterministic integration tests.

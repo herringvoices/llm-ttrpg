@@ -181,6 +181,45 @@ function proposalFor(
   };
 }
 
+function compactProposalFor(proposal: OpeningIncidentProposal) {
+  return {
+    incident: {
+      name: proposal.incident.name,
+      summary: proposal.incident.summary,
+      locationRef: proposal.incident.locationRef,
+      involvedRefs: proposal.incident.involvedRefs,
+      groundingRefs: proposal.incident.groundingRefs,
+      contactObject: {
+        name: proposal.incident.contactObject.name,
+        summary: proposal.incident.contactObject.summary,
+        wielderRef: proposal.incident.contactObject.wielderRef,
+      },
+      observedCondition: String(proposal.incident.observedFacts[0]!.value),
+    },
+    creature: {
+      entityRef: proposal.creature.entityRef,
+      observedTraits: proposal.creature.observedTraits,
+    },
+    publicResponse: {
+      institutionName: proposal.publicResponse.institutionName,
+      observedThreat: proposal.publicResponse.observedThreat,
+      responsibleDispatch: proposal.publicResponse.responsibleDispatch,
+      responderAssignment: proposal.publicResponse.responderAssignment,
+      finalStatus: proposal.publicResponse.finalStatus,
+    },
+    ...(proposal.gateFixture
+      ? {
+          gateFixture: {
+            gateName: proposal.gateFixture.gateName,
+            entranceRef: proposal.gateFixture.entranceRef,
+            interiorName: proposal.gateFixture.interiorName,
+            summary: proposal.gateFixture.summary,
+          },
+        }
+      : {}),
+  };
+}
+
 function allAttributes(value: number) {
   return Object.fromEntries(ATTRIBUTE_IDS.map((id) => [id, value]));
 }
@@ -291,17 +330,31 @@ describe("Awakening Earth reference-game integration", () => {
       context,
       generated.seed.creatures[0]!.threatEnvelope!,
     );
-    const model = new ScriptedModelRuntime(proposal);
+    const model = new ScriptedModelRuntime(compactProposalFor(proposal));
     const requested = await requestOpeningIncidentProposal({
       modelRuntime: model,
       context,
+      campaign: generated.campaign,
       openingBrief: openingBriefFromCampaign(generated.campaign),
     });
-    expect(requested).toEqual(proposal);
+    expect(requested).toEqual(expect.objectContaining({
+      incident: expect.objectContaining({
+        name: proposal.incident.name,
+        locationRef: proposal.incident.locationRef,
+      }),
+      creature: expect.objectContaining({
+        entityRef: proposal.creature.entityRef,
+        threatEnvelope: proposal.creature.threatEnvelope,
+      }),
+      publicResponse: expect.objectContaining({
+        reportedAt: generated.campaign.startTime,
+        finalStatus: proposal.publicResponse.finalStatus,
+      }),
+    }));
     expect(model.requests).toHaveLength(1);
     expect(model.requests[0]?.output.kind).toBe("structured");
 
-    const retcon = structuredClone(proposal);
+    const retcon = structuredClone(requested);
     retcon.creature.threatEnvelope.challengeBand = "Routine";
     expect(() => realizeOpeningIncidentCampaign({
       campaign: generated.campaign,

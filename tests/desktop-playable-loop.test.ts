@@ -147,10 +147,10 @@ function generatedCampaignModel() {
     },
     {
       id: "opening-incident",
-      match: { schemaId: "awakening-earth.opening-incident-proposal" },
+      match: { schemaId: "awakening-earth.opening-incident-compact-v1" },
       result: (request: ModelRequest<unknown>) => {
         const rendered = JSON.parse(request.prompt.context!);
-        const scene = rendered.situation.scene as Array<{
+        const scene = rendered.scene as Array<{
           localRef: string;
           displayIdentity: string;
         }>;
@@ -169,7 +169,6 @@ function generatedCampaignModel() {
           kind: "structured" as const,
           value: {
             incident: {
-              id: "generated.incident.desktop-opening",
               name: "Desktop Opening Incident",
               summary: "A grounded supernatural threat emerges at the generated grocery.",
               locationRef: refForName(location.name),
@@ -180,53 +179,21 @@ function generatedCampaignModel() {
               ],
               groundingRefs: [refForName(location.name), refForName(creature.entity.name)],
               contactObject: {
-                id: "generated.object.desktop-bat",
                 name: "Loading Dock Bat",
                 summary: "An ordinary wooden bat available at the loading dock.",
                 wielderRef: refForName(player.name),
               },
-              observedFacts: [{
-                id: "generated.fact.desktop-frost",
-                predicate: "incident.observable-condition",
-                value: "blue frost spreads across the loading dock",
-                visibility: "public",
-                tags: ["incident", "frost"],
-              }],
+              observedCondition: "blue frost spreads across the loading dock",
             },
             creature: {
               entityRef: refForName(creature.entity.name),
-              deliberateNearTermPlayerFacing: true,
-              threatEnvelope: {
-                challengeBand: "Hard",
-                overallThreat: creature.threatEnvelope!.overallThreat,
-                offensivePressure: 0.6,
-                survivability: 0.55,
-                mobilityReach: 0.7,
-                controlDenial: 0.45,
-                sensoryInformation: 0.55,
-                multiTargetPressure: 0.3,
-                resourcePressure: 0.5,
-                hardCounterRisks: creature.threatEnvelope!.hardCounterRisks,
-                requiredSignatureCapabilities:
-                  creature.threatEnvelope!.requiredSignatureCapabilities,
-                requiredTells: creature.threatEnvelope!.requiredTells,
-                requiredCounterplay: creature.threatEnvelope!.requiredCounterplay,
-                allowedGrowthRange:
-                  "May develop through simulation and survival, never hidden party scaling.",
-              },
               observedTraits: creature.observedTraits,
             },
             publicResponse: {
-              institutionId: "generated.institution.desktop-response",
               institutionName: "Desktop Public Supernatural Response",
-              responseId: "generated.response.desktop-opening",
               observedThreat: "A magical predator is active near the loading dock.",
-              reportedAt: generatedStart,
               responsibleDispatch: "Municipal dispatch",
               responderAssignment: "Supernatural-response unit 2",
-              dispatchDelayMs: 120_000,
-              travelDurationMs: 480_000,
-              onSceneDurationMs: 600_000,
               finalStatus: "contained",
             },
           },
