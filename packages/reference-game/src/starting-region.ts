@@ -536,6 +536,10 @@ const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> =
   "opening-situation": openingSituationSchema,
 };
 
+function startingRegionStageMaxOutputTokens(stageId: string): number {
+  return ["player-context", "npcs", "pressures"].includes(stageId) ? 6_144 : 4_096;
+}
+
 /** Adapts the provider-neutral model runtime to the staged region generator. */
 export function createStartingRegionProposalModel(
   modelRuntime: ModelRuntime,
@@ -553,10 +557,17 @@ export function createStartingRegionProposalModel(
           "Generate only grounded Awakening Earth campaign material for the requested stage.",
           "Preserve player-established facts verbatim and do not make unspecified details player-authored.",
           "Use stable lowercase dot- or dash-separated IDs and cite provenance for generated choices.",
+          "Use concise strings and the smallest arrays that satisfy the requested contract.",
           ...(stageId === "normalize"
             ? [
                 "For every explicitConstraints sourceText, copy an exact quotation from workingState.request.locationDescription; never write a field name such as locationDescription.",
                 "For every player establishedFacts sourceText, copy an exact quotation from workingState.request.player.description; never write a field name such as player.",
+              ]
+            : []),
+          ...(stageId === "player-context"
+            ? [
+                "Keep player-context compact: exactly one short attributeEvidence entry per attribute and no more than six grounded skills with matching skillEvidence.",
+                "The mundane starting player has no statuses, powers, or skill-use evidence. Use at most three goals, two relationships, three memories, three commitments, and five entries in any other open-ended list.",
               ]
             : []),
           ...(context.request.allowGeneratedDetails
@@ -576,6 +587,11 @@ export function createStartingRegionProposalModel(
         schema,
       },
       trace: { operation: "starting-region-generation", invocationId: `starting-region.${stageId}.${repair ? "repair" : "generate"}` },
+    }, {
+      generation: {
+        temperature: 0,
+        maxOutputTokens: startingRegionStageMaxOutputTokens(stageId),
+      },
     });
     if (!result.ok) throw new Error(`Starting-region ${stageId} model failure: ${result.error.message}`);
     return result.output.value;
@@ -599,7 +615,7 @@ export function createStartingRegionProposalModel(
         },
         output: { kind: "structured", schemaId: "starting-region.coherence-audit.v1", schema: coherenceAuditSchema },
         trace: { operation: "starting-region-generation", invocationId: "starting-region.coherence-audit" },
-      });
+      }, { generation: { temperature: 0, maxOutputTokens: 4_096 } });
       if (!result.ok) throw new Error(`Starting-region audit model failure: ${result.error.message}`);
       return result.output.value;
     },

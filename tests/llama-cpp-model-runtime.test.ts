@@ -12,6 +12,8 @@ describe("bundled llama.cpp model runtime", () => {
         model: "fixture-model",
         stream: false,
         reasoning_effort: "none",
+        temperature: 0,
+        max_tokens: 6144,
         response_format: {
           type: "json_object",
         },
@@ -41,7 +43,7 @@ describe("bundled llama.cpp model runtime", () => {
         schemaId: "fixture-choice",
         schema: z.object({ choice: z.literal("investigate") }).strict(),
       },
-    });
+    }, { generation: { temperature: 0, maxOutputTokens: 6_144 } });
 
     expect(result).toEqual(expect.objectContaining({
       ok: true,
@@ -74,6 +76,38 @@ describe("bundled llama.cpp model runtime", () => {
       ok: false,
       error: expect.objectContaining({ kind: "runtime-unavailable" }),
       metadata: expect.objectContaining({ runtimeId: "llama.cpp" }),
+    }));
+  });
+
+  it("identifies JSON truncated by the output-token ceiling", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      model: "fixture-model",
+      choices: [{
+        message: { role: "assistant", content: '{"choice":' },
+        finish_reason: "length",
+      }],
+      usage: { prompt_tokens: 12, completion_tokens: 4096 },
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    const runtime = new LlamaCppModelRuntime({
+      baseUrl: "http://127.0.0.1:8080",
+      apiKey: "secret",
+      model: "fixture-model",
+    });
+    const result = await runtime.generate({
+      prompt: { instructions: [], input: "Choose." },
+      output: {
+        kind: "structured",
+        schemaId: "fixture-choice",
+        schema: z.object({ choice: z.string() }).strict(),
+      },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      error: expect.objectContaining({
+        kind: "invalid-output",
+        message: "The model reached its output token limit before completing the requested JSON",
+      }),
     }));
   });
 });

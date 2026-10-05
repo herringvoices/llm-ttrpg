@@ -38,6 +38,7 @@ export interface OllamaChatResponse {
   readonly model?: string;
   readonly message: { readonly role: string; readonly content: string };
   readonly done?: boolean;
+  readonly done_reason?: string;
   readonly prompt_eval_count?: number;
   readonly eval_count?: number;
 }
@@ -478,9 +479,12 @@ export class OllamaModelRuntime implements ModelRuntime {
       try {
         parsed = JSON.parse(response.message.content);
       } catch (error) {
+        const exhausted = response.done_reason === "length";
         const failure = this.failure(
           "invalid-output",
-          "The model returned malformed JSON",
+          exhausted
+            ? "The model reached its output token limit before completing the requested JSON"
+            : "The model returned malformed JSON",
           startedAt,
           request.trace,
           error instanceof Error ? error.message : String(error),

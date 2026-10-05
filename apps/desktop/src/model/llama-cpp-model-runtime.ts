@@ -10,6 +10,7 @@ interface OpenAiChatResponse {
   readonly model?: string;
   readonly choices?: readonly {
     readonly message?: { readonly role?: string; readonly content?: string | null };
+    readonly finish_reason?: string | null;
   }[];
   readonly usage?: {
     readonly prompt_tokens?: number;
@@ -37,6 +38,9 @@ function parseResponse(value: OpenAiChatResponse): OllamaChatResponse {
     ...(value.model ? { model: value.model } : {}),
     message: { role: "assistant", content },
     done: true,
+    ...(value.choices?.[0]?.finish_reason
+      ? { done_reason: value.choices[0].finish_reason }
+      : {}),
     ...(Number.isInteger(value.usage?.prompt_tokens) && value.usage!.prompt_tokens! >= 0
       ? { prompt_eval_count: value.usage!.prompt_tokens }
       : {}),
