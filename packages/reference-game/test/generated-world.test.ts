@@ -24,6 +24,7 @@ import {
   rulesActorStateSchema,
   rulesCreatureStateSchema,
   sourceContainsQuotedText,
+  startingRegionWorkingStateSchema,
 } from "@llm-ttrpg/reference-game";
 import { createMigratedSqlitePersistence } from "../../../tests/support/sqlite.js";
 import {
@@ -369,6 +370,59 @@ describe("generated starting region", () => {
         expect.objectContaining({ pressureId: expect.any(String) }),
       ]),
     }));
+  });
+
+  it("repairs legacy schema-name scope references when resuming an accepted region", async () => {
+    const outputs = startingRegionStageOutputs();
+    const model = new DeterministicStartingRegionModel();
+    const pressures = outputs.pressures.pressures.map((pressure) => ({
+      ...pressure,
+      scopeId: pressure.scopeId.includes(".region.")
+        ? "starting-region.region.v1"
+        : pressure.scopeId.includes(".settlement.")
+          ? "starting-region.settlement.v1"
+          : "starting-region.locality.v1",
+    }));
+    const processes = outputs.pressures.processes.map((process) => ({
+      ...process,
+      scopeId: process.scopeId.includes(".region.")
+        ? "starting-region.region.v1"
+        : process.scopeId.includes(".settlement.")
+          ? "starting-region.settlement.v1"
+          : "starting-region.locality.v1",
+    }));
+
+    const result = await generateStartingRegion(startingRegionRequestFixture, model, {
+      resumeState: startingRegionWorkingStateSchema.parse({
+        request: startingRegionRequestFixture,
+        normalized: outputs.normalize,
+        region: outputs.region,
+        settlement: outputs.settlement,
+        institutions: outputs.institutions,
+        locality: outputs.locality,
+        playerContext: outputs["player-context"],
+        npcs: outputs.npcs,
+        pressures,
+        creatures: outputs.pressures.creatures,
+        knowledge: outputs.pressures.knowledge,
+        processes,
+        openingSituation: outputs["opening-situation"],
+      }),
+    });
+
+    expect(result.kind).toBe("generated");
+    if (result.kind !== "generated") throw new Error("Expected resumed generation");
+    expect(result.seed.pressures.map((pressure) => pressure.scopeId)).toEqual([
+      "scope.generated.locality.riverside",
+      "scope.generated.settlement.haven",
+      "scope.generated.region.cascade",
+    ]);
+    expect(result.seed.processes.map((process) => process.scopeId)).toEqual([
+      "scope.generated.locality.riverside",
+      "scope.generated.settlement.haven",
+      "scope.generated.region.cascade",
+    ]);
+    expect(model.calls).toEqual(["audit"]);
   });
 
   it("accepts faithful source quotations despite model casing and whitespace normalization", () => {

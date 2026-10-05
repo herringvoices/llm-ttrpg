@@ -1,6 +1,6 @@
 [package]
 name = "llm-ttrpg-desktop"
-version = "0.1.12"
+version = "0.1.13"
 description = "Desktop host for the LLM TTRPG reference game"
 edition = "2021"
 

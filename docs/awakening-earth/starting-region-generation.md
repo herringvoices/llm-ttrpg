@@ -639,6 +639,13 @@ This stage has a bounded 1,536-token response and no automatic second model pass
 proposal therefore returns to the durable checkpoint at the NPC step instead of spending another
 long attempt or discarding the already accepted world.
 
+Draft resume includes a narrowly scoped compatibility normalization for early generated drafts
+whose pressure/process `scopeId` values used the generation schema identifiers
+(`starting-region.region.v1`, `starting-region.settlement.v1`, or
+`starting-region.locality.v1`). Those known legacy values are replaced with the corresponding
+accepted `scope.<generated-entity-id>` references before auditing and final validation. Arbitrary
+unknown scope references still fail validation rather than being silently repaired.
+
 Pressure generation also crosses a compact model boundary. The model chooses the three required
 pressure categories, their developing situations, a small creature set, readable supernatural
 capabilities/tells/counterplay, and any useful initial beliefs. The engine assigns stable IDs,

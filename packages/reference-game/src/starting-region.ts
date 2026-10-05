@@ -1559,6 +1559,38 @@ export interface StartingRegionGenerationOptions {
   ) => Promise<void> | void;
 }
 
+function repairLegacyGeneratedScopeReferences(
+  state: StartingRegionWorkingState,
+): StartingRegionWorkingState {
+  if (!state.region || !state.settlement || !state.locality || !state.pressures) {
+    return state;
+  }
+  const legacyScopes = new Map([
+    ["starting-region.region.v1", `scope.${state.region.id}`],
+    ["starting-region.settlement.v1", `scope.${state.settlement.id}`],
+    ["starting-region.locality.v1", `scope.${state.locality.id}`],
+  ]);
+  let changed = false;
+  const pressures = state.pressures.map((pressure) => {
+    const scopeId = legacyScopes.get(pressure.scopeId);
+    if (!scopeId) return pressure;
+    changed = true;
+    return pressureSeedSchema.parse({ ...pressure, scopeId });
+  });
+  const scopeByPressureId = new Map(pressures.map((pressure) => [
+    pressure.id,
+    pressure.scopeId,
+  ]));
+  const processes = state.processes?.map((process) => {
+    const scopeId = legacyScopes.get(process.scopeId) ??
+      scopeByPressureId.get(process.pressureId);
+    if (!scopeId || scopeId === process.scopeId) return process;
+    changed = true;
+    return activeProcessSeedSchema.parse({ ...process, scopeId });
+  });
+  return changed ? mergeState(state, { pressures, processes }) : state;
+}
+
 export interface StartingRegionSeed {
   readonly normalized: NormalizedRegionConstraints;
   readonly region: RegionalFrame;
@@ -2394,6 +2426,7 @@ export async function generateStartingRegion(
   if (JSON.stringify(state.request) !== JSON.stringify(request)) {
     throw new Error("Starting-region resume state does not match its request");
   }
+  state = repairLegacyGeneratedScopeReferences(state);
   let diagnostics = [...(options.previousDiagnostics ?? [])];
 
   if (!state.normalized) {
