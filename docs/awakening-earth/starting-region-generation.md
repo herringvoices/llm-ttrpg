@@ -601,6 +601,18 @@ Record enough information to reproduce and diagnose a generation attempt:
 
 LLM output itself is not assumed to be perfectly deterministic from a numeric seed alone.
 
+### Resumable desktop generation
+
+The desktop persists an in-progress campaign-generation draft before the first model call and
+checkpoints it after every accepted stage. The draft retains the stable campaign identity and
+control seed, normalized request, accepted stage outputs, diagnostics, outstanding follow-up
+questions, completed audit result, and completed opening-incident proposal. A model failure,
+process exit, or application upgrade therefore resumes at the first unfinished stage instead of
+regenerating accepted material. Follow-up questions are a durable pause in the same workflow;
+answering them invalidates normalization and its downstream stages because the authoritative
+setup input changed. The draft is removed only after the playable world and its initial campaign
+plan have been persisted successfully.
+
 ### Deterministic reference campaign
 
 Maintain one known-valid reference campaign fixture for deterministic integration tests.

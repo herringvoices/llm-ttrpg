@@ -76,7 +76,14 @@ export class GenerationStageError extends Error {
 export async function runGenerationPipeline<TState>(
   initialState: TState,
   stages: readonly GenerationStage<TState, unknown>[],
-  options: { readonly maxRepairPasses?: number } = {},
+  options: {
+    readonly maxRepairPasses?: number;
+    readonly onStageAccepted?: (checkpoint: {
+      readonly stageId: string;
+      readonly state: TState;
+      readonly diagnostic: GenerationStageDiagnostic;
+    }) => Promise<void> | void;
+  } = {},
 ): Promise<{
   readonly state: TState;
   readonly diagnostics: readonly GenerationStageDiagnostic[];
@@ -140,13 +147,14 @@ export async function runGenerationPipeline<TState>(
       );
     }
 
-    diagnostics.push(generationStageDiagnosticSchema.parse({
+    const diagnostic = generationStageDiagnosticSchema.parse({
       stageId: stage.id,
       attempts,
       issues,
       accepted,
       attemptHistory,
-    }));
+    });
+    diagnostics.push(diagnostic);
     if (!accepted) {
       const details = issues.map((issue) => {
         const path = issue.path.length > 0 ? ` at ${issue.path.join(".")}` : "";
@@ -161,6 +169,11 @@ export async function runGenerationPipeline<TState>(
       );
     }
     state = stage.accept(state, candidate);
+    await options.onStageAccepted?.({
+      stageId: stage.id,
+      state,
+      diagnostic,
+    });
   }
 
   return { state, diagnostics };

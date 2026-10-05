@@ -19,6 +19,16 @@ interface OpenAiChatResponse {
   readonly error?: { readonly message?: string };
 }
 
+interface OpenAiChatChunk {
+  readonly model?: string;
+  readonly choices?: readonly {
+    readonly delta?: { readonly content?: string | null };
+    readonly finish_reason?: string | null;
+  }[];
+  readonly usage?: OpenAiChatResponse["usage"];
+  readonly error?: { readonly message?: string };
+}
+
 export interface LlamaCppModelRuntimeConfig {
   readonly baseUrl: string;
   readonly apiKey: string;
@@ -50,6 +60,62 @@ function parseResponse(value: OpenAiChatResponse): OllamaChatResponse {
   };
 }
 
+async function collectStream(response: Response): Promise<OllamaChatResponse> {
+  if (!response.body) {
+    throw new OllamaTransportError("llama.cpp returned a streaming response with no body");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let model: string | undefined;
+  let finishReason: string | undefined;
+  let usage: OpenAiChatResponse["usage"];
+
+  const consumeLine = (rawLine: string) => {
+    const line = rawLine.trim();
+    if (!line || line.startsWith(":")) return;
+    const payload = line.startsWith("data:") ? line.slice(5).trim() : line;
+    if (!payload || payload === "[DONE]") return;
+    const chunk = JSON.parse(payload) as OpenAiChatChunk;
+    if (chunk.error?.message) {
+      throw new OllamaTransportError(
+        "llama.cpp rejected the streaming request",
+        undefined,
+        chunk.error.message,
+      );
+    }
+    if (chunk.model) model = chunk.model;
+    const choice = chunk.choices?.[0];
+    if (typeof choice?.delta?.content === "string") content += choice.delta.content;
+    if (choice?.finish_reason) finishReason = choice.finish_reason;
+    if (chunk.usage) usage = chunk.usage;
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) consumeLine(line);
+      if (done) break;
+    }
+    if (buffer.trim()) consumeLine(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+
+  return parseResponse({
+    ...(model ? { model } : {}),
+    choices: [{
+      message: { role: "assistant", content },
+      ...(finishReason ? { finish_reason: finishReason } : {}),
+    }],
+    ...(usage ? { usage } : {}),
+  });
+}
+
 export function createLlamaCppTransport(baseUrl: string, apiKey: string): OllamaTransport {
   const endpoint = `${baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
   return {
@@ -65,7 +131,10 @@ export function createLlamaCppTransport(baseUrl: string, apiKey: string): Ollama
           body: JSON.stringify({
             model: request.model,
             messages: request.messages,
-            stream: false,
+            // Keep long local generations alive at the HTTP layer. The transport
+            // still buffers all chunks and exposes one non-streaming semantic result.
+            stream: true,
+            stream_options: { include_usage: true },
             reasoning_effort: "none",
             chat_template_kwargs: { enable_thinking: false },
             ...(request.format
@@ -99,6 +168,8 @@ export function createLlamaCppTransport(baseUrl: string, apiKey: string): Ollama
           diagnostic || undefined,
         );
       }
+      const contentType = response.headers.get("content-type") ?? "";
+      if (contentType.includes("text/event-stream")) return collectStream(response);
       return parseResponse(await response.json() as OpenAiChatResponse);
     },
     async *streamChat() {

@@ -10,7 +10,8 @@ describe("bundled llama.cpp model runtime", () => {
       const body = JSON.parse(String(init?.body));
       expect(body).toMatchObject({
         model: "fixture-model",
-        stream: false,
+        stream: true,
+        stream_options: { include_usage: true },
         reasoning_effort: "none",
         temperature: 0,
         max_tokens: 6144,
@@ -59,6 +60,45 @@ describe("bundled llama.cpp model runtime", () => {
       streamingText: false,
       contextWindowTokens: 16_384,
     });
+  });
+
+  it("collects provider streaming chunks into one validated semantic result", async () => {
+    const events = [
+      'data: {"model":"fixture-model","choices":[{"delta":{"content":"{\\"choice\\":"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"\\"investigate\\"}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":4}}\n\n',
+      "data: [DONE]\n\n",
+    ];
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const event of events) controller.enqueue(new TextEncoder().encode(event));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    )));
+    const runtime = new LlamaCppModelRuntime({
+      baseUrl: "http://127.0.0.1:8080",
+      apiKey: "secret",
+      model: "fixture-model",
+    });
+
+    const result = await runtime.generate({
+      prompt: { instructions: [], input: "Choose." },
+      output: {
+        kind: "structured",
+        schemaId: "fixture-choice",
+        schema: z.object({ choice: z.literal("investigate") }).strict(),
+      },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      output: { kind: "structured", value: { choice: "investigate" } },
+      metadata: expect.objectContaining({
+        usage: { inputTokens: 12, outputTokens: 4 },
+      }),
+    }));
   });
 
   it("normalizes an unavailable bundled service without exposing provider objects", async () => {

@@ -55,6 +55,11 @@ The 5 GB model is deliberately not embedded in the NSIS setup executable: NSIS h
 
 The desktop application accepts an optional provider-neutral `ModelRuntime` dependency. It does not import Ollama types, and the headless game runtime remains independent of model transport.
 
+The bundled llama.cpp transport requests token streaming from the local HTTP server so long
+CPU-bound generations continuously carry data and are not mistaken for dead connections by the
+desktop webview. It buffers those chunks internally and exposes the same complete, non-streaming,
+Zod-validated semantic result to the application.
+
 ## Context boundary
 
 #10's deterministic serialized-character budget answers which authorized information is important enough to include. #15's provider token usage and optional context-window metadata answer whether a configured model can physically process that invocation. They remain separate. Provider token counts never feed back into context selection in this slice.

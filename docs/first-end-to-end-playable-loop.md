@@ -9,8 +9,8 @@
 - The desktop application generates a starting region through the provider-neutral structured model runtime, realizes the opening incident through #18, stores a bounded generated-package descriptor, and reconstructs the same runtime package when a persisted world is reopened.
 - The React shell provides campaign create/open, transcript, freeform input, location/time, narration preference, processing/error states, explicit save/return, a three-day catch-up affordance, and development-only diagnostics.
 - The application initializes #28's grounded three-horizon plan and runs a targeted lowest-horizon planner pass when deterministic assumption validation finds a contradiction. Plan context remains protected.
-- Migration `0008_playable_loop.sql` stores only non-authoritative application continuity: generated-package reconstruction data, narration preference, and the bounded transcript. Authoritative outcomes remain in ordinary engine persistence.
-- `tests/desktop-playable-loop.test.ts` covers generated create/open, opening realization, action execution, planner invalidation, save/reopen, three-day catch-up, model-unavailable recovery, and narration retry without duplicate execution.
+- Migration `0008_playable_loop.sql` stores only non-authoritative application continuity: generated-package reconstruction data, narration preference, and the bounded transcript. Migration `0009_campaign_generation_drafts.sql` adds durable, stage-checkpointed setup drafts so generation failures, restarts, upgrades, and follow-up questions resume without discarding accepted work. Authoritative outcomes remain in ordinary engine persistence.
+- `tests/desktop-playable-loop.test.ts` covers generated create/open, resumable generation and question pauses, opening realization, action execution, planner invalidation, save/reopen, three-day catch-up, model-unavailable recovery, and narration retry without duplicate execution.
 
 ## Goal
 

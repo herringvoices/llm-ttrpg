@@ -4,6 +4,7 @@ import {
   createGameRuntime,
   createInMemoryPersistence,
   generationIssueSchema,
+  generationStageDiagnosticSchema,
   loadGameDefinition,
   type CampaignPlanDocument,
   type GameSession,
@@ -23,8 +24,10 @@ import {
   requestOpeningIncidentProposal,
   startingRegionRequestSchema,
   startingRegionSeedSchema,
+  startingRegionWorkingStateSchema,
   type StartingRegionRequest,
   type StartingRegionSeed,
+  type StartingRegionWorkingState,
 } from "@llm-ttrpg/reference-game";
 import { openApplicationDatabase } from "./database.js";
 import {
@@ -66,7 +69,24 @@ export interface CampaignCreationProgress {
 
 export type CampaignCreationResult =
   | { readonly kind: "created"; readonly session: DesktopPlaySession }
-  | { readonly kind: "needs-input"; readonly questions: readonly CampaignFollowUpQuestion[] };
+  | {
+      readonly kind: "needs-input";
+      readonly draftId: string;
+      readonly questions: readonly CampaignFollowUpQuestion[];
+    };
+
+export type CampaignGenerationDraftStatus = "generating" | "needs-input" | "failed";
+
+export interface CampaignGenerationDraft {
+  readonly id: string;
+  readonly name: string;
+  readonly input: CreateCampaignInput;
+  readonly status: CampaignGenerationDraftStatus;
+  readonly questions: readonly CampaignFollowUpQuestion[];
+  readonly lastCompletedStageId?: string;
+  readonly errorMessage?: string;
+  readonly updatedAt: string;
+}
 
 export interface CampaignCreationOptions {
   readonly onProgress?: (progress: CampaignCreationProgress) => void;
@@ -77,6 +97,17 @@ export interface DesktopApplication {
   createWorld(input: CreateCampaignInput | string): Promise<DesktopPlaySession>;
   createCampaign(
     input: CreateCampaignInput,
+    options?: CampaignCreationOptions,
+  ): Promise<CampaignCreationResult>;
+  listCampaignDrafts(): Promise<readonly CampaignGenerationDraft[]>;
+  resumeCampaign(
+    draftId: string,
+    options?: CampaignCreationOptions,
+  ): Promise<CampaignCreationResult>;
+  answerCampaignQuestions(
+    draftId: string,
+    answers: readonly CampaignFollowUpAnswer[],
+    allowGeneratedDetails: boolean,
     options?: CampaignCreationOptions,
   ): Promise<CampaignCreationResult>;
   listWorlds(): Promise<readonly WorldMetadata[]>;
@@ -96,6 +127,31 @@ const generationDiagnosticSchema = z.object({
   issues: z.array(generationIssueSchema),
   accepted: z.boolean(),
 });
+
+const campaignFollowUpQuestionSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  materialImpact: z.string().min(1),
+  scope: z.enum(["region", "player"]),
+}).strict();
+
+const campaignFollowUpAnswerSchema = campaignFollowUpQuestionSchema.extend({
+  answer: z.string(),
+}).strict();
+
+const createCampaignInputSchema = z.object({
+  name: z.string(),
+  locationDescription: z.string(),
+  playerDescription: z.string(),
+  powerGuidance: z.string().optional(),
+  allowGeneratedDetails: z.boolean().optional(),
+  followUpAnswers: z.array(campaignFollowUpAnswerSchema).optional(),
+}).strict();
+
+const completedStartingRegionSchema = z.object({
+  seed: startingRegionSeedSchema,
+  diagnostics: z.array(generationStageDiagnosticSchema),
+}).strict();
 
 const generatedPackageDescriptorSchema = z.object({
   request: startingRegionRequestSchema,
@@ -151,6 +207,23 @@ interface DesktopSessionRow {
   locality_scope_id: string | null;
   narration_preference: NarrationPreference;
   transcript_json: string;
+}
+
+interface CampaignGenerationDraftRow {
+  id: string;
+  name: string;
+  input_json: string;
+  request_json: string;
+  state_json: string;
+  diagnostics_json: string;
+  generated_json: string | null;
+  opening_proposal_json: string | null;
+  status: CampaignGenerationDraftStatus;
+  questions_json: string | null;
+  last_completed_stage_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 function createIdGenerator(randomId: () => string) {
@@ -358,13 +431,80 @@ export function createDesktopApplication(
     );
   }
 
-  async function createGeneratedCampaign(
-    inputValue: CreateCampaignInput,
+  async function draftRow(draftId: string): Promise<CampaignGenerationDraftRow | undefined> {
+    const rows = await database.select<CampaignGenerationDraftRow[]>(
+      "SELECT * FROM campaign_generation_drafts WHERE id = ?",
+      [draftId],
+    );
+    return rows[0];
+  }
+
+  function draftSummary(row: CampaignGenerationDraftRow): CampaignGenerationDraft {
+    return {
+      id: row.id,
+      name: row.name,
+      input: createCampaignInputSchema.parse(JSON.parse(row.input_json)),
+      status: row.status,
+      questions: row.questions_json
+        ? z.array(campaignFollowUpQuestionSchema).parse(JSON.parse(row.questions_json))
+        : [],
+      ...(row.last_completed_stage_id
+        ? { lastCompletedStageId: row.last_completed_stage_id }
+        : {}),
+      ...(row.error_message ? { errorMessage: row.error_message } : {}),
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function normalizeCampaignInput(inputValue: CreateCampaignInput): CreateCampaignInput {
+    return createCampaignInputSchema.parse({
+      name: inputValue.name.trim() || "Untitled campaign",
+      locationDescription: inputValue.locationDescription.trim(),
+      playerDescription: inputValue.playerDescription.trim(),
+      allowGeneratedDetails: inputValue.allowGeneratedDetails ?? false,
+      ...(inputValue.powerGuidance?.trim()
+        ? { powerGuidance: inputValue.powerGuidance.trim() }
+        : {}),
+      ...(inputValue.followUpAnswers
+        ? { followUpAnswers: inputValue.followUpAnswers }
+        : {}),
+    });
+  }
+
+  function requestForInput(
+    input: CreateCampaignInput,
+    stable?: StartingRegionRequest,
+  ): StartingRegionRequest {
+    return startingRegionRequestSchema.parse({
+      locationDescription: addFollowUpAnswers(
+        input.locationDescription,
+        input.followUpAnswers,
+        "region",
+      ),
+      player: {
+        description: addFollowUpAnswers(
+          input.playerDescription,
+          input.followUpAnswers,
+          "player",
+        ),
+        ...(input.powerGuidance ? { powerGuidance: input.powerGuidance } : {}),
+      },
+      startTime: stable?.startTime ?? now(),
+      campaignId: stable?.campaignId ?? `campaign.generated-${randomId().toLowerCase()}`,
+      controlSeed: stable?.controlSeed ?? nextSeed(),
+      allowGeneratedDetails: input.allowGeneratedDetails ?? false,
+    });
+  }
+
+  async function runCampaignDraft(
+    draftId: string,
     creationOptions: CampaignCreationOptions = {},
   ): Promise<CampaignCreationResult> {
     if (!options.modelRuntime) {
       throw new Error("A configured local model is required to generate a new campaign");
     }
+    const stored = await draftRow(draftId);
+    if (!stored) throw new Error(`Campaign generation draft ${draftId} does not exist`);
     const report = (stageId: string, refining = false) => {
       const current = campaignGenerationStageIndex.get(stageId);
       const stage = campaignGenerationStages.find(([id]) => id === stageId);
@@ -377,99 +517,176 @@ export function createDesktopApplication(
         refining,
       });
     };
-    const input = {
-      name: inputValue.name.trim() || "Untitled campaign",
-      locationDescription: addFollowUpAnswers(
-        inputValue.locationDescription.trim(),
-        inputValue.followUpAnswers,
-        "region",
-      ),
-      playerDescription: addFollowUpAnswers(
-        inputValue.playerDescription.trim(),
-        inputValue.followUpAnswers,
-        "player",
-      ),
-      allowGeneratedDetails: inputValue.allowGeneratedDetails ?? false,
-      ...(inputValue.powerGuidance?.trim()
-        ? { powerGuidance: inputValue.powerGuidance.trim() }
-        : {}),
-    };
-    const request: StartingRegionRequest = startingRegionRequestSchema.parse({
-      locationDescription: input.locationDescription,
-      player: {
-        description: input.playerDescription,
-        ...(input.powerGuidance ? { powerGuidance: input.powerGuidance } : {}),
-      },
-      startTime: now(),
-      campaignId: `campaign.generated-${randomId().toLowerCase()}`,
-      controlSeed: nextSeed(),
-      allowGeneratedDetails: input.allowGeneratedDetails,
-    });
-    const proposalModel = createStartingRegionProposalModel(options.modelRuntime);
-    const generated = await generateStartingRegion(request, {
-      propose(stageId, context) {
-        report(stageId);
-        return proposalModel.propose(stageId, context);
-      },
-      repair(stageId, candidate, issues, context) {
-        report(stageId, true);
-        return proposalModel.repair(stageId, candidate, issues, context);
-      },
-      audit(seed, context) {
-        report("coherence-audit");
-        return proposalModel.audit(seed, context);
-      },
-    });
-    if (generated.kind === "needs-input") {
-      return { kind: "needs-input", questions: generated.questions };
-    }
-    const baseGame = loadGameDefinition({
-      ...referenceGameDefinition,
-      campaign: generated.campaign,
-    });
-    const temporary = await createGameRuntime(
-      dependencies(baseGame, createInMemoryPersistence()),
-    ).createWorld("Opening incident proposal context");
-    const protectedContext = temporary.assembleContext({
-      role: "orchestrator",
-      perspective: { kind: "canonical" },
-      budget: { maxUnits: 50_000 },
-    });
-    report("opening-incident");
-    const openingProposal = await requestOpeningIncidentProposal({
-      modelRuntime: options.modelRuntime,
-      context: protectedContext,
-      openingBrief: openingBriefFromCampaign(generated.campaign),
-    });
-    report("finalize");
-    const campaign = realizeOpeningIncidentCampaign({
-      campaign: generated.campaign,
-      setting: referenceGameDefinition.setting,
-      world: temporary.snapshot(),
-      context: protectedContext,
-      proposal: openingProposal,
-    });
-    const game = loadGameDefinition({ ...referenceGameDefinition, campaign });
-    const session = await createGameRuntime(dependencies(game)).createWorld(input.name);
-    const playerActorId = generated.seed.playerContext.entity.id;
-    const localityScopeId = `scope.${generated.seed.locality.id}`;
-    const descriptor = generatedPackageDescriptorSchema.parse({
-      request,
-      seed: generated.seed,
-      diagnostics: generated.diagnostics,
-      openingProposal,
-    });
+    const input = createCampaignInputSchema.parse(JSON.parse(stored.input_json));
+    const request = startingRegionRequestSchema.parse(JSON.parse(stored.request_json));
+
     await database.execute(
-      "INSERT INTO desktop_play_sessions(world_id, generated_package_json, player_actor_id, locality_scope_id, narration_preference, transcript_json) VALUES ($1, $2, $3, $4, 'standard', '[]')",
-      [session.worldId, JSON.stringify(descriptor), playerActorId, localityScopeId],
+      "UPDATE campaign_generation_drafts SET status = 'generating', error_message = NULL, updated_at = ? WHERE id = ?",
+      [now(), draftId],
     );
-    await session.initializeCampaignPlan(createInitialPlan(
-      session,
-      playerActorId,
-      generated.seed,
-      openingProposal.incident.id,
-    ));
-    return { kind: "created", session: await wrap(session, (await sessionRow(session.worldId))!) };
+
+    try {
+      let completed = stored.generated_json
+        ? completedStartingRegionSchema.parse(JSON.parse(stored.generated_json))
+        : undefined;
+      let baseCampaign: ReturnType<typeof compileStartingRegionCampaign>;
+      if (!completed) {
+        const proposalModel = createStartingRegionProposalModel(options.modelRuntime);
+        const previousDiagnostics = z.array(generationStageDiagnosticSchema).parse(
+          JSON.parse(stored.diagnostics_json),
+        );
+        const resumeState = startingRegionWorkingStateSchema.parse(
+          JSON.parse(stored.state_json),
+        ) as StartingRegionWorkingState;
+        const generated = await generateStartingRegion(request, {
+          propose(stageId, context) {
+            report(stageId);
+            return proposalModel.propose(stageId, context);
+          },
+          repair(stageId, candidate, issues, context) {
+            report(stageId, true);
+            return proposalModel.repair(stageId, candidate, issues, context);
+          },
+          audit(seed, context) {
+            report("coherence-audit");
+            return proposalModel.audit(seed, context);
+          },
+        }, {
+          resumeState,
+          previousDiagnostics,
+          async onCheckpoint(checkpoint) {
+            await database.execute(
+              "UPDATE campaign_generation_drafts SET state_json = ?, diagnostics_json = ?, last_completed_stage_id = ?, status = 'generating', questions_json = NULL, error_message = NULL, updated_at = ? WHERE id = ?",
+              [
+                JSON.stringify(checkpoint.state),
+                JSON.stringify(checkpoint.diagnostics),
+                checkpoint.lastCompletedStageId,
+                now(),
+                draftId,
+              ],
+            );
+          },
+        });
+        if (generated.kind === "needs-input") {
+          await database.execute(
+            "UPDATE campaign_generation_drafts SET status = 'needs-input', questions_json = ?, error_message = NULL, updated_at = ? WHERE id = ?",
+            [JSON.stringify(generated.questions), now(), draftId],
+          );
+          return {
+            kind: "needs-input",
+            draftId,
+            questions: generated.questions,
+          };
+        }
+        completed = completedStartingRegionSchema.parse({
+          seed: generated.seed,
+          diagnostics: generated.diagnostics,
+        });
+        await database.execute(
+          "UPDATE campaign_generation_drafts SET generated_json = ?, last_completed_stage_id = 'coherence-audit', updated_at = ? WHERE id = ?",
+          [JSON.stringify(completed), now(), draftId],
+        );
+        baseCampaign = generated.campaign;
+      } else {
+        baseCampaign = compileStartingRegionCampaign(
+          request,
+          completed.seed,
+          completed.diagnostics,
+        );
+      }
+
+      const baseGame = loadGameDefinition({
+        ...referenceGameDefinition,
+        campaign: baseCampaign,
+      });
+      const temporary = await createGameRuntime(
+        dependencies(baseGame, createInMemoryPersistence()),
+      ).createWorld("Opening incident proposal context");
+      const protectedContext = temporary.assembleContext({
+        role: "orchestrator",
+        perspective: { kind: "canonical" },
+        budget: { maxUnits: 50_000 },
+      });
+      let openingProposal = stored.opening_proposal_json
+        ? openingIncidentProposalSchema.parse(JSON.parse(stored.opening_proposal_json))
+        : undefined;
+      if (!openingProposal) {
+        report("opening-incident");
+        openingProposal = await requestOpeningIncidentProposal({
+          modelRuntime: options.modelRuntime,
+          context: protectedContext,
+          openingBrief: openingBriefFromCampaign(baseCampaign),
+        });
+        await database.execute(
+          "UPDATE campaign_generation_drafts SET opening_proposal_json = ?, last_completed_stage_id = 'opening-incident', updated_at = ? WHERE id = ?",
+          [JSON.stringify(openingProposal), now(), draftId],
+        );
+      }
+      report("finalize");
+      const campaign = realizeOpeningIncidentCampaign({
+        campaign: baseCampaign,
+        setting: referenceGameDefinition.setting,
+        world: temporary.snapshot(),
+        context: protectedContext,
+        proposal: openingProposal,
+      });
+      const game = loadGameDefinition({ ...referenceGameDefinition, campaign });
+      const session = await createGameRuntime(dependencies(game)).createWorld(input.name);
+      const playerActorId = completed.seed.playerContext.entity.id;
+      const localityScopeId = `scope.${completed.seed.locality.id}`;
+      const descriptor = generatedPackageDescriptorSchema.parse({
+        request,
+        seed: completed.seed,
+        diagnostics: completed.diagnostics,
+        openingProposal,
+      });
+      await database.execute(
+        "INSERT INTO desktop_play_sessions(world_id, generated_package_json, player_actor_id, locality_scope_id, narration_preference, transcript_json) VALUES ($1, $2, $3, $4, 'standard', '[]')",
+        [session.worldId, JSON.stringify(descriptor), playerActorId, localityScopeId],
+      );
+      await session.initializeCampaignPlan(createInitialPlan(
+        session,
+        playerActorId,
+        completed.seed,
+        openingProposal.incident.id,
+      ));
+      const wrapped = await wrap(session, (await sessionRow(session.worldId))!);
+      await database.execute("DELETE FROM campaign_generation_drafts WHERE id = ?", [draftId]);
+      return { kind: "created", session: wrapped };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await database.execute(
+        "UPDATE campaign_generation_drafts SET status = 'failed', error_message = ?, updated_at = ? WHERE id = ?",
+        [message, now(), draftId],
+      );
+      throw error;
+    }
+  }
+
+  async function createGeneratedCampaign(
+    inputValue: CreateCampaignInput,
+    creationOptions: CampaignCreationOptions = {},
+  ): Promise<CampaignCreationResult> {
+    if (!options.modelRuntime) {
+      throw new Error("A configured local model is required to generate a new campaign");
+    }
+    const input = normalizeCampaignInput(inputValue);
+    const request = requestForInput(input);
+    const draftId = `draft.${randomId().toLowerCase()}`;
+    const timestamp = now();
+    await database.execute(
+      "INSERT INTO campaign_generation_drafts(id, name, input_json, request_json, state_json, diagnostics_json, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '[]', 'generating', ?, ?)",
+      [
+        draftId,
+        input.name,
+        JSON.stringify(input),
+        JSON.stringify(request),
+        JSON.stringify({ request }),
+        timestamp,
+        timestamp,
+      ],
+    );
+    return runCampaignDraft(draftId, creationOptions);
   }
 
   return {
@@ -477,7 +694,44 @@ export function createDesktopApplication(
     listWorlds() {
       return persistence.worlds.list();
     },
+    async listCampaignDrafts() {
+      const rows = await database.select<CampaignGenerationDraftRow[]>(
+        "SELECT * FROM campaign_generation_drafts ORDER BY updated_at DESC",
+      );
+      return rows.map(draftSummary);
+    },
     createCampaign: createGeneratedCampaign,
+    resumeCampaign(draftId, creationOptions) {
+      return runCampaignDraft(draftId, creationOptions);
+    },
+    async answerCampaignQuestions(
+      draftId,
+      answers,
+      allowGeneratedDetails,
+      creationOptions,
+    ) {
+      const stored = await draftRow(draftId);
+      if (!stored) throw new Error(`Campaign generation draft ${draftId} does not exist`);
+      const previousInput = createCampaignInputSchema.parse(JSON.parse(stored.input_json));
+      const previousRequest = startingRegionRequestSchema.parse(JSON.parse(stored.request_json));
+      const input = normalizeCampaignInput({
+        ...previousInput,
+        allowGeneratedDetails,
+        followUpAnswers: z.array(campaignFollowUpAnswerSchema).parse(answers),
+      });
+      const request = requestForInput(input, previousRequest);
+      await database.execute(
+        "UPDATE campaign_generation_drafts SET input_json = ?, request_json = ?, state_json = ?, diagnostics_json = '[]', generated_json = NULL, opening_proposal_json = NULL, status = 'generating', questions_json = NULL, last_completed_stage_id = NULL, error_message = NULL, updated_at = ? WHERE id = ?",
+        [
+          JSON.stringify(input),
+          JSON.stringify(request),
+          JSON.stringify({ request }),
+          now(),
+          draftId,
+        ],
+      );
+      return runCampaignDraft(draftId, creationOptions);
+    },
     async createWorld(inputValue) {
       if (typeof inputValue === "string") {
         const game = loadGameDefinition(referenceGameDefinition);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { WorldMetadata } from "@llm-ttrpg/engine";
 import type {
   CampaignCreationProgress,
-  CampaignFollowUpAnswer,
+  CampaignGenerationDraft,
   CampaignFollowUpQuestion,
   DesktopApplication,
 } from "./application.js";
@@ -10,6 +10,7 @@ import type { DesktopPlaySession, PlaySessionView } from "./play-session.js";
 
 export function App({ application }: { readonly application: DesktopApplication }) {
   const [worlds, setWorlds] = useState<readonly WorldMetadata[]>([]);
+  const [drafts, setDrafts] = useState<readonly CampaignGenerationDraft[]>([]);
   const [name, setName] = useState("New Awakening Earth campaign");
   const [location, setLocation] = useState("A fictional small town in the upper Midwest");
   const [player, setPlayer] = useState("I am an ordinary local adult with close community ties and a practical job.");
@@ -19,6 +20,7 @@ export function App({ application }: { readonly application: DesktopApplication 
   const [followUps, setFollowUps] = useState<readonly CampaignFollowUpQuestion[]>([]);
   const [followUpAnswers, setFollowUpAnswers] = useState<Record<string, string>>({});
   const [generateUnanswered, setGenerateUnanswered] = useState(true);
+  const [activeDraftId, setActiveDraftId] = useState<string>();
   const [generationProgress, setGenerationProgress] = useState<CampaignCreationProgress>();
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const [playSession, setPlaySession] = useState<DesktopPlaySession>();
@@ -27,9 +29,16 @@ export function App({ application }: { readonly application: DesktopApplication 
   const transcriptEnd = useRef<HTMLDivElement>(null);
 
   async function refresh() {
-    const loaded = await application.listWorlds();
+    const [loaded, savedDrafts] = await Promise.all([
+      application.listWorlds(),
+      application.listCampaignDrafts(),
+    ]);
     setWorlds(loaded);
-    setMessage(loaded.length === 0 ? "No campaigns yet." : `${loaded.length} campaign(s)`);
+    setDrafts(savedDrafts);
+    const campaignSummary = loaded.length === 0 ? "No campaigns yet." : `${loaded.length} campaign(s).`;
+    setMessage(savedDrafts.length === 0
+      ? campaignSummary
+      : `${campaignSummary} ${savedDrafts.length} setup draft(s) can be resumed.`);
   }
 
   useEffect(() => {
@@ -62,7 +71,33 @@ export function App({ application }: { readonly application: DesktopApplication 
     return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
   }
 
-  async function createWorld(answers: readonly CampaignFollowUpAnswer[] = []) {
+  function progressOptions() {
+    return {
+      onProgress(progress: CampaignCreationProgress) {
+        setGenerationProgress(progress);
+        setMessage(progress.label);
+      },
+    };
+  }
+
+  function acceptCreationResult(
+    result: Awaited<ReturnType<DesktopApplication["createCampaign"]>>,
+  ): boolean {
+    if (result.kind === "needs-input") {
+      setActiveDraftId(result.draftId);
+      setFollowUps(result.questions);
+      setFollowUpAnswers({});
+      setMessage("A few choices need your input before generation continues.");
+      return false;
+    }
+    setActiveDraftId(undefined);
+    setFollowUps([]);
+    setPlaySession(result.session);
+    setPlayView(result.session.view());
+    return true;
+  }
+
+  async function createWorld() {
     setCreating(true);
     setGenerationProgress(undefined);
     setMessage("Preparing campaign generation…");
@@ -71,25 +106,12 @@ export function App({ application }: { readonly application: DesktopApplication 
         name,
         locationDescription: location,
         playerDescription: player,
-        allowGeneratedDetails: followUps.length > 0 ? generateUnanswered : allowGeneratedDetails,
-        followUpAnswers: answers,
-      }, {
-        onProgress(progress) {
-          setGenerationProgress(progress);
-          setMessage(progress.label);
-        },
-      });
-      if (result.kind === "needs-input") {
-        setFollowUps(result.questions);
-        setFollowUpAnswers({});
-        setMessage("A few choices need your input before generation continues.");
-        return;
-      }
-      setFollowUps([]);
-      setPlaySession(result.session);
-      setPlayView(result.session.view());
-      await refresh();
+        allowGeneratedDetails,
+      }, progressOptions());
+      if (acceptCreationResult(result)) await refresh();
+      else setDrafts(await application.listCampaignDrafts());
     } catch (error) {
+      setDrafts(await application.listCampaignDrafts());
       setMessage(error instanceof Error ? error.message : "Unable to create campaign");
     } finally {
       setCreating(false);
@@ -126,7 +148,54 @@ export function App({ application }: { readonly application: DesktopApplication 
       ...question,
       answer: followUpAnswers[followUpKey(question)]?.trim() ?? "",
     })).filter((answer) => answer.answer.length > 0);
-    await createWorld(answers);
+    if (!activeDraftId) return;
+    setCreating(true);
+    setGenerationProgress(undefined);
+    setMessage("Continuing saved campaign setup...");
+    try {
+      const result = await application.answerCampaignQuestions(
+        activeDraftId,
+        answers,
+        generateUnanswered,
+        progressOptions(),
+      );
+      if (acceptCreationResult(result)) await refresh();
+      else setDrafts(await application.listCampaignDrafts());
+    } catch (error) {
+      setDrafts(await application.listCampaignDrafts());
+      setMessage(error instanceof Error ? error.message : "Unable to continue campaign setup");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function resumeDraft(draft: CampaignGenerationDraft) {
+    if (draft.status === "needs-input" && draft.questions.length > 0) {
+      setName(draft.input.name);
+      setLocation(draft.input.locationDescription);
+      setPlayer(draft.input.playerDescription);
+      setGenerateUnanswered(draft.input.allowGeneratedDetails ?? true);
+      setFollowUpAnswers(Object.fromEntries(
+        (draft.input.followUpAnswers ?? []).map((answer) => [followUpKey(answer), answer.answer]),
+      ));
+      setFollowUps(draft.questions);
+      setActiveDraftId(draft.id);
+      setMessage("Continue the saved setup questions below.");
+      return;
+    }
+    setCreating(true);
+    setGenerationProgress(undefined);
+    setMessage(`Resuming ${draft.name}...`);
+    try {
+      const result = await application.resumeCampaign(draft.id, progressOptions());
+      if (acceptCreationResult(result)) await refresh();
+      else setDrafts(await application.listCampaignDrafts());
+    } catch (error) {
+      setDrafts(await application.listCampaignDrafts());
+      setMessage(error instanceof Error ? error.message : "Unable to resume campaign setup");
+    } finally {
+      setCreating(false);
+    }
   }
 
   if (playSession && playView) {
@@ -280,7 +349,11 @@ export function App({ application }: { readonly application: DesktopApplication 
               type="button"
               className="secondary-button"
               disabled={creating}
-              onClick={() => { setFollowUps([]); setFollowUpAnswers({}); }}
+              onClick={() => {
+                setFollowUps([]);
+                setFollowUpAnswers({});
+                setActiveDraftId(undefined);
+              }}
             >
               Back
             </button>
@@ -304,6 +377,35 @@ export function App({ application }: { readonly application: DesktopApplication 
               <small>Elapsed {formatElapsed(generationElapsedSeconds)}</small>
             </div>
           )}
+        </section>
+      )}
+      {drafts.length > 0 && followUps.length === 0 && (
+        <section aria-labelledby="drafts-heading">
+          <h2 id="drafts-heading">Resume campaign setup</h2>
+          <p className="section-copy">
+            Accepted generation steps are saved. Resuming starts with the first unfinished step.
+          </p>
+          <ul className="world-list">
+            {drafts.map((draft) => (
+              <li key={draft.id}>
+                <div>
+                  <strong>{draft.name}</strong>
+                  <small>
+                    {draft.status === "needs-input"
+                      ? "Waiting for your answers"
+                      : draft.status === "failed"
+                        ? `Paused after an error${draft.lastCompletedStageId ? `; completed ${draft.lastCompletedStageId}` : ""}`
+                        : `Paused${draft.lastCompletedStageId ? ` after ${draft.lastCompletedStageId}` : " before the first step"}`}
+                  </small>
+                  {draft.errorMessage && <small className="draft-error">{draft.errorMessage}</small>}
+                  <small>Saved {new Date(draft.updatedAt).toLocaleString()}</small>
+                </div>
+                <button type="button" disabled={creating} onClick={() => void resumeDraft(draft)}>
+                  {draft.status === "needs-input" ? "Continue setup" : "Resume"}
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
       <section aria-labelledby="worlds-heading">

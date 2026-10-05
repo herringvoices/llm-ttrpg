@@ -19,6 +19,7 @@ import {
   type EventTypeDefinition,
   type GenerationIssue,
   type GenerationStage,
+  type GenerationStageDiagnostic,
   type JsonValue,
   type MechanicalRealization,
   type MutationProposal,
@@ -648,6 +649,36 @@ export interface StartingRegionWorkingState {
   readonly knowledge?: KnowledgeSeed;
   readonly processes?: readonly ActiveProcessSeed[];
   readonly openingSituation?: OpeningSituation;
+}
+
+export const startingRegionWorkingStateSchema = z.object({
+  request: startingRegionRequestSchema,
+  normalized: normalizedRegionConstraintsSchema.optional(),
+  region: regionalFrameSchema.optional(),
+  settlement: settlementSeedSchema.optional(),
+  institutions: z.array(institutionSeedSchema).optional(),
+  locality: startingLocalitySchema.optional(),
+  playerContext: playerContextSeedSchema.optional(),
+  npcs: z.array(persistentNpcSeedSchema).optional(),
+  pressures: z.array(pressureSeedSchema).optional(),
+  creatures: z.array(creatureSeedSchema).optional(),
+  knowledge: knowledgeSeedSchema.optional(),
+  processes: z.array(activeProcessSeedSchema).optional(),
+  openingSituation: openingSituationSchema.optional(),
+}).strict();
+
+export interface StartingRegionGenerationCheckpoint {
+  readonly lastCompletedStageId: string;
+  readonly state: StartingRegionWorkingState;
+  readonly diagnostics: readonly GenerationStageDiagnostic[];
+}
+
+export interface StartingRegionGenerationOptions {
+  readonly resumeState?: StartingRegionWorkingState;
+  readonly previousDiagnostics?: readonly GenerationStageDiagnostic[];
+  readonly onCheckpoint?: (
+    checkpoint: StartingRegionGenerationCheckpoint,
+  ) => Promise<void> | void;
 }
 
 export interface StartingRegionSeed {
@@ -1450,6 +1481,7 @@ function mergeState(
 export async function generateStartingRegion(
   rawRequest: unknown,
   model: StartingRegionProposalModel,
+  options: StartingRegionGenerationOptions = {},
 ): Promise<
   | {
       readonly kind: "needs-input";
@@ -1472,20 +1504,37 @@ export async function generateStartingRegion(
     }
 > {
   const request = startingRegionRequestSchema.parse(rawRequest);
-  let state: StartingRegionWorkingState = { request };
+  let state: StartingRegionWorkingState = options.resumeState
+    ? startingRegionWorkingStateSchema.parse(options.resumeState)
+    : { request };
+  if (JSON.stringify(state.request) !== JSON.stringify(request)) {
+    throw new Error("Starting-region resume state does not match its request");
+  }
+  let diagnostics = [...(options.previousDiagnostics ?? [])];
 
-  const normalization = await runGenerationPipeline(state, [
-    makeStage(
-      "normalize",
-      normalizedRegionConstraintsSchema,
-      (current, candidate) =>
-        mergeState(current, {
-          normalized: normalizedRegionConstraintsSchema.parse(candidate),
-        }),
-      model,
-    ),
-  ]);
-  state = normalization.state;
+  if (!state.normalized) {
+    const normalization = await runGenerationPipeline(state, [
+      makeStage(
+        "normalize",
+        normalizedRegionConstraintsSchema,
+        (current, candidate) =>
+          mergeState(current, {
+            normalized: normalizedRegionConstraintsSchema.parse(candidate),
+          }),
+        model,
+      ),
+    ], {
+      async onStageAccepted(checkpoint) {
+        diagnostics.push(checkpoint.diagnostic);
+        await options.onCheckpoint?.({
+          lastCompletedStageId: checkpoint.stageId,
+          state: checkpoint.state,
+          diagnostics,
+        });
+      },
+    });
+    state = normalization.state;
+  }
   const normalized = state.normalized!;
   const questions = [
     ...normalized.followUpQuestions.map((question) => ({ ...question, scope: "region" as const })),
@@ -1508,7 +1557,7 @@ export async function generateStartingRegion(
     });
   }
 
-  const stages: GenerationStage<StartingRegionWorkingState, unknown>[] = [
+  const allStages: GenerationStage<StartingRegionWorkingState, unknown>[] = [
     makeStage(
       "region",
       regionalFrameSchema,
@@ -1582,7 +1631,29 @@ export async function generateStartingRegion(
     ),
   ];
 
-  const generated = await runGenerationPipeline(state, stages);
+  const stages = allStages.filter((stage) => {
+    if (stage.id === "region") return !state.region;
+    if (stage.id === "settlement") return !state.settlement;
+    if (stage.id === "institutions") return !state.institutions;
+    if (stage.id === "locality") return !state.locality;
+    if (stage.id === "player-context") return !state.playerContext;
+    if (stage.id === "npcs") return !state.npcs;
+    if (stage.id === "pressures") {
+      return !state.pressures || !state.creatures || !state.knowledge || !state.processes;
+    }
+    if (stage.id === "opening-situation") return !state.openingSituation;
+    return true;
+  });
+  const generated = await runGenerationPipeline(state, stages, {
+    async onStageAccepted(checkpoint) {
+      diagnostics.push(checkpoint.diagnostic);
+      await options.onCheckpoint?.({
+        lastCompletedStageId: checkpoint.stageId,
+        state: checkpoint.state,
+        diagnostics,
+      });
+    },
+  });
   state = generated.state;
   let seed = requireSeed(state);
   let audit = coherenceAuditSchema.parse(await model.audit(seed, state));
@@ -1622,7 +1693,7 @@ export async function generateStartingRegion(
       audit.issues,
       state,
     );
-    const stage = stages.find((item) => item.id === stageId);
+    const stage = allStages.find((item) => item.id === stageId);
     if (!stage) break;
     const parsed = stage.candidateSchema.parse(repaired);
     const hard = stage.validate?.(parsed, state) ?? [];
@@ -1656,11 +1727,12 @@ export async function generateStartingRegion(
     issues: audit.issues,
     accepted: true,
   });
-  const diagnostics = [
-    ...normalization.diagnostics,
-    ...generated.diagnostics,
-    ...auditDiagnostics,
-  ];
+  diagnostics = [...diagnostics, ...auditDiagnostics];
+  await options.onCheckpoint?.({
+    lastCompletedStageId: "coherence-audit",
+    state,
+    diagnostics,
+  });
   const campaign = compileStartingRegionCampaign(request, seed, diagnostics);
   return {
     kind: "generated",

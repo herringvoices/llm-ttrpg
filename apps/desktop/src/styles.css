@@ -40,6 +40,8 @@ section > button { margin-top: 1rem; }
 .world-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; border-bottom: 1px solid #353b32; }
 .world-list div { display: grid; gap: .25rem; }
 .world-list small { color: #9d9b92; }
+.section-copy { color: #b8b8ae; line-height: 1.5; }
+.world-list .draft-error { max-width: 42rem; color: #e8a59b; }
 .play-shell { display: grid; grid-template-rows: auto minmax(18rem, 1fr) auto; height: 100vh; padding-block: 1rem; }
 .play-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .play-header p { margin: .25rem 0; color: #a9aa9e; }

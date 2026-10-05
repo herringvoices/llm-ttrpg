@@ -391,12 +391,14 @@ describe("desktop playable session integration", () => {
         },
       },
     }]);
-    const app = createDesktopApplication(createSqlJsClient(database), {
+    let id = 0;
+    const options = {
       modelRuntime: model,
       now: () => generatedStart,
-      randomId: () => "follow-up",
+      randomId: () => `follow-up-${++id}`,
       nextSeed: () => 42,
-    });
+    };
+    const app = createDesktopApplication(createSqlJsClient(database), options);
     const progress: string[] = [];
     const result = await app.createCampaign({
       name: "Follow-up campaign",
@@ -411,12 +413,105 @@ describe("desktop playable session integration", () => {
 
     expect(result).toEqual({
       kind: "needs-input",
+      draftId: "draft.follow-up-2",
       questions: [
         expect.objectContaining({ id: "question.town-name", scope: "region" }),
         expect.objectContaining({ id: "question.player-goal", scope: "player" }),
       ],
     });
     expect(progress).toEqual(["1/12:normalize"]);
+    const reopenedDrafts = await createDesktopApplication(
+      createSqlJsClient(database),
+      { modelRuntime: model },
+    ).listCampaignDrafts();
+    expect(reopenedDrafts).toEqual([
+      expect.objectContaining({
+        id: "draft.follow-up-2",
+        status: "needs-input",
+        lastCompletedStageId: "normalize",
+        questions: expect.arrayContaining([
+          expect.objectContaining({ id: "question.town-name" }),
+        ]),
+      }),
+    ]);
+
+    if (result.kind !== "needs-input") throw new Error("Expected setup questions");
+    const restarted = createDesktopApplication(createSqlJsClient(database), {
+      ...options,
+      modelRuntime: generatedCampaignModel(),
+    });
+    const continued = await restarted.answerCampaignQuestions(
+      result.draftId,
+      result.questions.map((question) => ({
+        ...question,
+        answer: question.scope === "region" ? "The town is called Bellwether." : "Protect my sibling.",
+      })),
+      true,
+    );
+    expect(continued.kind).toBe("created");
+    expect(await restarted.listCampaignDrafts()).toEqual([]);
+  });
+
+  it("resumes after a failed stage without regenerating accepted stages", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    const outputs = startingRegionStageOutputs();
+    const failingModel = new ScriptedModelRuntime([
+      {
+        id: "normalize",
+        match: { schemaId: "starting-region.normalize.v1" },
+        result: { kind: "structured", value: outputs.normalize },
+      },
+      {
+        id: "region",
+        match: { schemaId: "starting-region.region.v1" },
+        result: { kind: "structured", value: outputs.region },
+      },
+      {
+        id: "settlement-failure",
+        match: { schemaId: "starting-region.settlement.v1" },
+        result: {
+          kind: "failure",
+          failureKind: "runtime-unavailable",
+          message: "simulated local model stop",
+        },
+      },
+    ]);
+    let id = 0;
+    const shared = {
+      now: () => generatedStart,
+      randomId: () => `resume-${++id}`,
+      nextSeed: () => 77,
+    };
+    const firstApplication = createDesktopApplication(createSqlJsClient(database), {
+      ...shared,
+      modelRuntime: failingModel,
+    });
+    await expect(firstApplication.createCampaign({
+      name: "Resumable campaign",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      playerDescription: "Rowan works at a grocery store, rents an apartment, and wants to protect their sibling.",
+      allowGeneratedDetails: true,
+    })).rejects.toThrow("simulated local model stop");
+
+    const [draft] = await firstApplication.listCampaignDrafts();
+    expect(draft).toEqual(expect.objectContaining({
+      status: "failed",
+      lastCompletedStageId: "region",
+      errorMessage: expect.stringContaining("simulated local model stop"),
+    }));
+
+    const resumedModel = generatedCampaignModel();
+    const reopenedApplication = createDesktopApplication(createSqlJsClient(database), {
+      ...shared,
+      modelRuntime: resumedModel,
+    });
+    const result = await reopenedApplication.resumeCampaign(draft!.id);
+    expect(result.kind).toBe("created");
+    expect(resumedModel.invocations.map((invocation) => invocation.schemaId))
+      .not.toContain("starting-region.normalize.v1");
+    expect(resumedModel.invocations.map((invocation) => invocation.schemaId))
+      .not.toContain("starting-region.region.v1");
+    expect(await reopenedApplication.listCampaignDrafts()).toEqual([]);
   });
 
   it("creates, saves, closes, and reopens through the actual desktop application boundary", async () => {

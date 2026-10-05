@@ -202,7 +202,7 @@ async fn verified_model(app: &AppHandle) -> Result<PathBuf, String> {
     )?;
 
     let client = reqwest::Client::builder()
-        .user_agent("llm-ttrpg/0.1.5")
+        .user_agent("llm-ttrpg/0.1.6")
         .build()
         .map_err(|error| format!("Unable to initialize the model downloader: {error}"))?;
     let mut request = client.get(MODEL_URL);
@@ -539,6 +539,12 @@ fn migrations() -> Vec<Migration> {
             version: 8,
             description: "playable_loop",
             sql: include_str!("../migrations/0008_playable_loop.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 9,
+            description: "campaign_generation_drafts",
+            sql: include_str!("../migrations/0009_campaign_generation_drafts.sql"),
             kind: MigrationKind::Up,
         },
     ]
