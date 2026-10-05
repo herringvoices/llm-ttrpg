@@ -40,6 +40,7 @@ export type GenerationStageDiagnostic = z.infer<
 
 export interface GenerationStage<TState, TCandidate> {
   readonly id: string;
+  readonly maxRepairPasses?: number;
   readonly candidateSchema: z.ZodType<TCandidate>;
   readonly generate: (
     state: Readonly<TState>,
@@ -96,6 +97,10 @@ export async function runGenerationPipeline<TState>(
   const diagnostics: GenerationStageDiagnostic[] = [];
 
   for (const stage of stages) {
+    const stageMaxRepairPasses = stage.maxRepairPasses ?? maxRepairPasses;
+    if (!Number.isInteger(stageMaxRepairPasses) || stageMaxRepairPasses < 0) {
+      throw new Error(`Stage ${stage.id} maxRepairPasses must be a nonnegative integer`);
+    }
     let raw = await stage.generate(state, 1);
     let candidate: unknown;
     let issues: GenerationIssue[] = [];
@@ -107,7 +112,7 @@ export async function runGenerationPipeline<TState>(
       accepted: boolean;
     }> = [];
 
-    for (let attempt = 1; attempt <= 1 + maxRepairPasses; attempt += 1) {
+    for (let attempt = 1; attempt <= 1 + stageMaxRepairPasses; attempt += 1) {
       attempts = attempt;
       const parsed = stage.candidateSchema.safeParse(raw);
       if (parsed.success) {
@@ -138,7 +143,7 @@ export async function runGenerationPipeline<TState>(
         break;
       }
       attemptHistory.push({ attempt, issues: [...issues], accepted: false });
-      if (attempt > maxRepairPasses || !stage.repair) break;
+      if (attempt > stageMaxRepairPasses || !stage.repair) break;
       raw = await stage.repair(
         parsed.success ? parsed.data : raw,
         issues,

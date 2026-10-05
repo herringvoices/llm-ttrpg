@@ -613,6 +613,14 @@ answering them invalidates normalization and its downstream stages because the a
 setup input changed. The draft is removed only after the playable world and its initial campaign
 plan have been persisted successfully.
 
+Every starting-region model attempt has a twenty-minute wall-clock ceiling. The comparatively
+large player-context stage asks the model only for concise narrative/social context, grounded
+skill signals, and evidenced departures from baseline Attributes. The engine deterministically
+fills the repetitive mundane mechanics, complete baseline Attribute evidence, empty stress and
+status state, and Level 0 progression. Player-context does not launch an automatic model repair
+after an invalid response; it fails back to the saved draft so one bad response cannot silently
+consume another full attempt.
+
 ### Deterministic reference campaign
 
 Maintain one known-valid reference campaign fixture for deterministic integration tests.

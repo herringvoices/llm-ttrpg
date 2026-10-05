@@ -23,7 +23,43 @@ function generatedCampaignModel() {
   const stageSteps = Object.entries(outputs).map(([stageId, value]) => ({
     id: `generate-${stageId}`,
     match: { schemaId: `starting-region.${stageId}.v1` },
-    result: { kind: "structured" as const, value },
+    result: {
+      kind: "structured" as const,
+      value: stageId === "player-context"
+        ? (() => {
+            const player = outputs["player-context"];
+            return {
+              entity: {
+                id: player.entity.id,
+                name: player.entity.name,
+                summary: player.entity.summary,
+              },
+              homeLocationId: player.homeLocationId,
+              routineLocationIds: player.routineLocationIds,
+              accessEntityIds: player.accessEntityIds,
+              currentObligations: player.currentObligations,
+              ordinaryPressures: player.ordinaryPressures,
+              socialState: player.socialState,
+              mechanicalSignals: {
+                attributeDirections: player.mechanics.attributeEvidence.filter((item) =>
+                  item.direction !== "near-baseline"
+                ),
+                skills: player.mechanics.mechanics.skills.map((skill) => {
+                  const evidence = player.mechanics.skillEvidence.find((item) =>
+                    item.skillId === skill.id
+                  )!;
+                  return {
+                    skill,
+                    rationale: evidence.rationale,
+                    sourceFactIds: evidence.sourceFactIds,
+                  };
+                }),
+              },
+              provenance: player.provenance,
+            };
+          })()
+        : value,
+    },
   }));
   return new ScriptedModelRuntime([
     ...stageSteps,

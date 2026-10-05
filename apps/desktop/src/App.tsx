@@ -311,7 +311,7 @@ export function App({ application }: { readonly application: DesktopApplication 
               </div>
               <progress value={generationProgress.current} max={generationProgress.total} />
               <small>
-                Elapsed {formatElapsed(generationElapsedSeconds)} · Local generation can take several minutes per step.
+                Elapsed {formatElapsed(generationElapsedSeconds)} · Each model attempt stops after 20 minutes; accepted steps are saved.
               </small>
             </div>
           )}
@@ -374,7 +374,7 @@ export function App({ application }: { readonly application: DesktopApplication 
                 <span>Step {generationProgress.current} of {generationProgress.total}</span>
               </div>
               <progress value={generationProgress.current} max={generationProgress.total} />
-              <small>Elapsed {formatElapsed(generationElapsedSeconds)}</small>
+              <small>Elapsed {formatElapsed(generationElapsedSeconds)} · Each model attempt stops after 20 minutes.</small>
             </div>
           )}
         </section>

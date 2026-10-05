@@ -1,10 +1,14 @@
 import {
   actorSocialStateSchema,
+  actorCommitmentSchema,
+  actorGoalSchema,
   assertNoRetconJsonExtension,
   beliefSchema,
   canonicalFactSchema,
   emptyContentBundle,
+  directedRelationshipSchema,
   entitySchema,
+  episodicMemorySchema,
   fictionalDurationMs,
   fictionalInstant,
   generationIssueSchema,
@@ -35,12 +39,18 @@ import {
   sourceContainsQuotedText,
   startingHumanGenerationIssues,
   startingHumanProposalSchema,
+  createEmptyMundanePlayerMechanics,
   validateNormalizedPlayerSetup,
   type NormalizedPlayerSetup,
   type OpeningSituation,
   type PlayerCreationInput,
   type StartingHumanProposal,
 } from "./player-creation.js";
+import {
+  ATTRIBUTE_IDS,
+  attributeIdSchema,
+  skillSchema,
+} from "./ruleset/model.js";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -396,6 +406,47 @@ export const playerContextSeedSchema = z.object({
 }).strict();
 export type PlayerContextSeed = z.infer<typeof playerContextSeedSchema>;
 
+const compactPlayerSocialStateSchema = z.object({
+  actorId: stableIdSchema,
+  goals: z.array(actorGoalSchema).max(3),
+  relationships: z.array(directedRelationshipSchema).max(2),
+  memories: z.array(episodicMemorySchema).max(3),
+  commitments: z.array(actorCommitmentSchema).max(3),
+}).strict();
+
+const playerContextModelProposalSchema = z.object({
+  entity: z.object({
+    id: stableIdSchema,
+    name: z.string().trim().min(1).max(120),
+    summary: z.string().trim().min(1).max(320),
+  }).strict(),
+  homeLocationId: stableIdSchema,
+  routineLocationIds: z.array(stableIdSchema).max(5),
+  accessEntityIds: z.array(stableIdSchema).max(8),
+  currentObligations: z.array(z.string().trim().min(1).max(240)).max(3),
+  ordinaryPressures: z.array(z.string().trim().min(1).max(240)).max(5),
+  socialState: compactPlayerSocialStateSchema,
+  mechanicalSignals: z.object({
+    attributeDirections: z.array(z.object({
+      attributeId: attributeIdSchema,
+      direction: z.enum(["below-baseline", "above-baseline"]),
+      rationale: z.string().trim().min(1).max(240),
+      sourceFactIds: z.array(stableIdSchema).min(1).max(3),
+    }).strict()).max(8),
+    skills: z.array(z.object({
+      skill: skillSchema.extend({
+        name: z.string().trim().min(1).max(120),
+        description: z.string().trim().min(1).max(240),
+        sp: z.number().finite().min(50).max(150),
+      }),
+      rationale: z.string().trim().min(1).max(240),
+      sourceFactIds: z.array(stableIdSchema).min(1).max(3),
+    }).strict()).min(1).max(4),
+  }).strict(),
+  provenance: provenanceSchema,
+}).strict();
+type PlayerContextModelProposal = z.infer<typeof playerContextModelProposalSchema>;
+
 export const persistentNpcSeedSchema = z.object({
   entity: entitySchema,
   simulationReasons: z.array(z.string().trim().min(1)).min(1),
@@ -525,21 +576,143 @@ export interface StartingRegionProposalModel {
   ): Promise<unknown> | unknown;
 }
 
+function expandPlayerContextProposal(
+  rawProposal: unknown,
+  context: Readonly<StartingRegionWorkingState>,
+): PlayerContextSeed {
+  const uniqueById = <T extends { readonly id: string }>(values: readonly T[]): T[] => {
+    const seen = new Set<string>();
+    return values.filter((value) => {
+      if (seen.has(value.id)) return false;
+      seen.add(value.id);
+      return true;
+    });
+  };
+  const proposal = playerContextModelProposalSchema.parse(rawProposal);
+  const establishedFactIds = new Set(
+    context.normalized?.player.establishedFacts.map((fact) => fact.id) ?? [],
+  );
+  const directionByAttribute = new Map(
+    proposal.mechanicalSignals.attributeDirections
+      .map((signal) => ({
+        ...signal,
+        sourceFactIds: signal.sourceFactIds.filter((id) => establishedFactIds.has(id)),
+      }))
+      .filter((signal) => signal.sourceFactIds.length > 0)
+      .map((signal) => [signal.attributeId, signal] as const),
+  );
+  const attributes = Object.fromEntries(ATTRIBUTE_IDS.map((attributeId) => [
+    attributeId,
+    directionByAttribute.get(attributeId)?.direction === "above-baseline"
+      ? 60
+      : directionByAttribute.get(attributeId)?.direction === "below-baseline"
+        ? 52
+        : 56,
+  ]));
+  const groundedSkillCandidates = proposal.mechanicalSignals.skills
+    .map((item) => ({
+      ...item,
+      sourceFactIds: item.sourceFactIds.filter((id) => establishedFactIds.has(id)),
+    }))
+    .filter((item) => item.sourceFactIds.length > 0);
+  const skillIds = new Set<string>();
+  const skillNames = new Set<string>();
+  const groundedSkills = groundedSkillCandidates.filter((item) => {
+    const normalizedName = item.skill.name.trim().toLocaleLowerCase();
+    if (skillIds.has(item.skill.id) || skillNames.has(normalizedName)) return false;
+    skillIds.add(item.skill.id);
+    skillNames.add(normalizedName);
+    return true;
+  });
+  if (groundedSkills.length === 0) {
+    throw new Error("Player-context generation did not ground any starting skill in an established player fact");
+  }
+  const localityIds = new Set(context.locality?.locations.map((location) => location.id) ?? []);
+  const homeLocationId = localityIds.has(proposal.homeLocationId)
+    ? proposal.homeLocationId
+    : context.locality?.locations[0]?.id;
+  if (!homeLocationId) throw new Error("Player-context generation requires a starting locality");
+  const routineLocationIds = proposal.routineLocationIds.filter((id) => localityIds.has(id));
+  const availableEntityIds = new Set([
+    ...localityIds,
+    ...(context.institutions?.map((institution) => institution.entity.id) ?? []),
+  ]);
+  const accessEntityIds = proposal.accessEntityIds.filter((id) => availableEntityIds.has(id));
+
+  return playerContextSeedSchema.parse({
+    entity: {
+      id: proposal.entity.id,
+      kind: "actor",
+      name: proposal.entity.name,
+      summary: proposal.entity.summary,
+      data: {},
+    },
+    homeLocationId,
+    routineLocationIds: routineLocationIds.length > 0
+      ? routineLocationIds
+      : [homeLocationId],
+    accessEntityIds: accessEntityIds.length > 0
+      ? accessEntityIds
+      : [homeLocationId],
+    currentObligations: proposal.currentObligations,
+    ordinaryPressures: proposal.ordinaryPressures,
+    socialState: {
+      ...proposal.socialState,
+      actorId: proposal.entity.id,
+      goals: uniqueById(proposal.socialState.goals),
+      relationships: uniqueById(proposal.socialState.relationships),
+      memories: uniqueById(proposal.socialState.memories),
+      commitments: uniqueById(proposal.socialState.commitments),
+    },
+    mechanics: {
+      mechanics: createEmptyMundanePlayerMechanics(
+        attributes,
+        groundedSkills.map((item) => item.skill),
+      ),
+      attributeEvidence: ATTRIBUTE_IDS.map((attributeId) => {
+        const signal = directionByAttribute.get(attributeId);
+        return signal
+          ? {
+              attributeId,
+              direction: signal.direction,
+              rationale: signal.rationale,
+              sourceFactIds: signal.sourceFactIds,
+            }
+          : {
+              attributeId,
+              direction: "near-baseline" as const,
+              rationale: "No established biography fact moves this attribute from baseline.",
+              sourceFactIds: [],
+            };
+      }),
+      skillEvidence: groundedSkills.map((item) => ({
+        skillId: item.skill.id,
+        rationale: item.rationale,
+        sourceFactIds: item.sourceFactIds,
+      })),
+    },
+    provenance: proposal.provenance,
+  });
+}
+
 const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> = {
   normalize: normalizedRegionConstraintsSchema,
   region: regionalFrameSchema,
   settlement: settlementSeedSchema,
   institutions: z.array(institutionSeedSchema),
   locality: startingLocalitySchema,
-  "player-context": playerContextSeedSchema,
+  "player-context": playerContextModelProposalSchema,
   npcs: z.array(persistentNpcSeedSchema),
   pressures: pressureKnowledgeProcessSchema,
   "opening-situation": openingSituationSchema,
 };
 
 function startingRegionStageMaxOutputTokens(stageId: string): number {
-  return ["player-context", "npcs", "pressures"].includes(stageId) ? 6_144 : 4_096;
+  if (stageId === "player-context") return 1_536;
+  return ["npcs", "pressures"].includes(stageId) ? 6_144 : 4_096;
 }
+
+const STARTING_REGION_MODEL_TIMEOUT_MS = 20 * 60 * 1_000;
 
 /** Adapts the provider-neutral model runtime to the staged region generator. */
 export function createStartingRegionProposalModel(
@@ -552,6 +725,15 @@ export function createStartingRegionProposalModel(
   ): Promise<unknown> => {
     const schema = startingRegionStageSchemas[stageId];
     if (!schema) throw new Error(`Unknown starting-region stage ${stageId}`);
+    const authorizedWorkingState = stageId === "player-context"
+      ? {
+          request: context.request,
+          player: context.normalized?.player,
+          settlement: context.settlement,
+          locality: context.locality,
+          institutions: context.institutions,
+        }
+      : context;
     const result = await modelRuntime.generate({
       prompt: {
         instructions: [
@@ -567,8 +749,8 @@ export function createStartingRegionProposalModel(
             : []),
           ...(stageId === "player-context"
             ? [
-                "Keep player-context compact: exactly one short attributeEvidence entry per attribute and no more than six grounded skills with matching skillEvidence.",
-                "The mundane starting player has characterLevel 0, characterXp 0, skillPointsPerCharacterLevel 5, skillLearningRateMultiplier 1, and no statuses, powers, mana, or skill-use evidence.",
+                "Keep player-context compact. In mechanicalSignals.attributeDirections include only established-fact-supported departures from baseline; omitted attributes are filled deterministically at baseline.",
+                "Provide one to four concise grounded skills in mechanicalSignals.skills. Do not emit stress, progression, statuses, powers, mana, or boilerplate attribute evidence; the engine supplies those mundane defaults.",
                 "Use unique IDs and names. Every commitment must end after it starts. Use at most three goals, two relationships, three memories, three commitments, and five entries in any other open-ended list.",
               ]
             : []),
@@ -580,7 +762,7 @@ export function createStartingRegionProposalModel(
             : []),
           ...(repair ? ["Repair only the reported local validation problems; preserve unrelated accepted material."] : []),
         ],
-        context: JSON.stringify({ workingState: context, ...(repair ?? {}) }),
+        context: JSON.stringify({ workingState: authorizedWorkingState, ...(repair ?? {}) }),
         input: `${repair ? "Repair" : "Generate"} starting-region stage '${stageId}'.`,
       },
       output: {
@@ -590,6 +772,7 @@ export function createStartingRegionProposalModel(
       },
       trace: { operation: "starting-region-generation", invocationId: `starting-region.${stageId}.${repair ? "repair" : "generate"}` },
     }, {
+      timeoutMs: STARTING_REGION_MODEL_TIMEOUT_MS,
       generation: {
         temperature: 0,
         maxOutputTokens: startingRegionStageMaxOutputTokens(stageId),
@@ -607,7 +790,9 @@ export function createStartingRegionProposalModel(
         `Starting-region ${stageId} model failure: ${result.error.message}${diagnostic}`,
       );
     }
-    return result.output.value;
+    return stageId === "player-context"
+      ? expandPlayerContextProposal(result.output.value, context)
+      : result.output.value;
   };
   return {
     propose(stageId, context) {
@@ -628,7 +813,10 @@ export function createStartingRegionProposalModel(
         },
         output: { kind: "structured", schemaId: "starting-region.coherence-audit.v1", schema: coherenceAuditSchema },
         trace: { operation: "starting-region-generation", invocationId: "starting-region.coherence-audit" },
-      }, { generation: { temperature: 0, maxOutputTokens: 4_096 } });
+      }, {
+        timeoutMs: STARTING_REGION_MODEL_TIMEOUT_MS,
+        generation: { temperature: 0, maxOutputTokens: 4_096 },
+      });
       if (!result.ok) throw new Error(`Starting-region audit model failure: ${result.error.message}`);
       return result.output.value;
     },
@@ -855,6 +1043,7 @@ function makeStage(
 ): GenerationStage<StartingRegionWorkingState, unknown> {
   return {
     id,
+    ...(id === "player-context" ? { maxRepairPasses: 0 } : {}),
     candidateSchema: schema,
     generate: (state) => model.propose(id, state),
     validate: (candidate, state) => stageIssues(id, candidate, state),
