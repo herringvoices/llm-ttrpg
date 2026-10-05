@@ -708,7 +708,7 @@ const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> =
 };
 
 function startingRegionStageMaxOutputTokens(stageId: string): number {
-  if (stageId === "player-context") return 1_536;
+  if (stageId === "player-context") return 2_048;
   return ["npcs", "pressures"].includes(stageId) ? 6_144 : 4_096;
 }
 
