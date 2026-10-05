@@ -662,6 +662,14 @@ coherence audit similarly omits mundane mechanics and other irrelevant boilerpla
 most five material issues, and is capped at 1,024 tokens. These reductions preserve the design
 checks while avoiding minutes of prompt processing and unbounded verbose structured output.
 
+The model coherence audit is advisory. It may record warnings, but it cannot make a generated
+world invalid or autonomously rewrite an accepted stage; deterministic schemas and reference
+validation own that decision. Missing echoes of appearance, hobbies, online activity, or other
+biography color are not structural defects. Before the audit, a deterministic minimal-grounding
+pass may add a single linked location for an explicit physical workplace that the accepted
+locality omitted, and add that location to the player's routine and access lists. It does not
+invent a wider subculture, supporting cast, or institution merely to mirror every biography fact.
+
 ### Deterministic reference campaign
 
 Maintain one known-valid reference campaign fixture for deterministic integration tests.

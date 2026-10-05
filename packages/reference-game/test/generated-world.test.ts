@@ -425,6 +425,89 @@ describe("generated starting region", () => {
     expect(model.calls).toEqual(["audit"]);
   });
 
+  it("minimally grounds a physical workplace while keeping model audit opinions advisory", async () => {
+    const outputs = startingRegionStageOutputs();
+    const normalized = normalizedRegionConstraintsSchema.parse({
+      ...outputs.normalize,
+      player: {
+        ...outputs.normalize.player,
+        establishedFacts: [
+          ...outputs.normalize.player.establishedFacts,
+          {
+            id: "player.fact.clothing-work",
+            category: "work-school",
+            statement: "works part time at a local clothing store",
+            sourceText: "I work part time at a local clothing store.",
+          },
+          {
+            id: "player.fact.games",
+            category: "biography",
+            statement: "enjoys role-playing games",
+            sourceText: "I enjoy role-playing games.",
+          },
+        ],
+      },
+    });
+    let repairCalls = 0;
+    const model = {
+      propose() {
+        throw new Error("Accepted stages must not be regenerated");
+      },
+      repair() {
+        repairCalls += 1;
+        throw new Error("Advisory audit findings must not rewrite accepted stages");
+      },
+      audit() {
+        return {
+          issues: [{
+            code: "audit.biography.gaming-culture",
+            severity: "error" as const,
+            message: "The town does not contain a gaming culture for the player's hobby.",
+            path: ["locality"],
+            repairStageId: "player-context" as const,
+          }],
+        };
+      },
+    };
+
+    const result = await generateStartingRegion(startingRegionRequestFixture, model, {
+      resumeState: startingRegionWorkingStateSchema.parse({
+        request: startingRegionRequestFixture,
+        normalized,
+        region: outputs.region,
+        settlement: outputs.settlement,
+        institutions: outputs.institutions,
+        locality: outputs.locality,
+        playerContext: outputs["player-context"],
+        npcs: outputs.npcs,
+        pressures: outputs.pressures.pressures,
+        creatures: outputs.pressures.creatures,
+        knowledge: outputs.pressures.knowledge,
+        processes: outputs.pressures.processes,
+        openingSituation: outputs["opening-situation"],
+      }),
+    });
+
+    expect(result.kind).toBe("generated");
+    if (result.kind !== "generated") throw new Error("Expected resumed generation");
+    const clothingStore = result.seed.locality.locations.find((location) =>
+      location.name === "Local Clothing Store"
+    );
+    expect(clothingStore).toBeDefined();
+    expect(result.seed.playerContext.routineLocationIds).toContain(clothingStore!.id);
+    expect(result.seed.playerContext.accessEntityIds).toContain(clothingStore!.id);
+    expect(result.seed.locality.routes).toContainEqual(expect.objectContaining({
+      toId: clothingStore!.id,
+    }));
+    expect(result.seed.locality.locations.some((location) =>
+      /gaming|video game/i.test(`${location.name} ${location.summary}`)
+    )).toBe(false);
+    expect(result.audit.issues).toEqual([
+      expect.objectContaining({ severity: "warning" }),
+    ]);
+    expect(repairCalls).toBe(0);
+  });
+
   it("accepts faithful source quotations despite model casing and whitespace normalization", () => {
     expect(sourceContainsQuotedText(
       "Most people work at the plant.\nI'm a local.",

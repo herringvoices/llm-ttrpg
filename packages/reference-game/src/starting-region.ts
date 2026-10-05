@@ -1495,7 +1495,10 @@ export function createStartingRegionProposalModel(
         prompt: {
           instructions: [
             "Audit the generated starting region for contradictions, missing required foundations, and accidental retcons.",
-            "Return issues only; do not rewrite the region in this step.",
+            "Return advisory warnings only; deterministic validation, not this model audit, decides whether generation may complete.",
+            "Do not require every player biography fact, appearance detail, hobby, or online activity to be mirrored by a town location, institution, or NPC.",
+            "A cultural tendency toward superstition is compatible with low current supernatural activity and is not itself a contradiction.",
+            "Do not report multiple phrasings of the same concern. Do not rewrite the region in this step.",
             "Return no more than five material issues. Return an empty issues array when the compact seed is coherent.",
           ],
           context: JSON.stringify({ seed: auditView, request: context.request }),
@@ -1589,6 +1592,88 @@ function repairLegacyGeneratedScopeReferences(
     return activeProcessSeedSchema.parse({ ...process, scopeId });
   });
   return changed ? mergeState(state, { pressures, processes }) : state;
+}
+
+const playerWorkplaceAnchors = [
+  { pattern: /\b(?:clothing|apparel) (?:store|shop)\b/i, term: "clothing", name: "Local Clothing Store", slug: "clothing-store" },
+  { pattern: /\bgrocery (?:store|shop)\b/i, term: "grocery", name: "Local Grocery Store", slug: "grocery-store" },
+  { pattern: /\b(?:restaurant|cafe|coffee shop)\b/i, term: "restaurant", name: "Local Restaurant", slug: "restaurant" },
+  { pattern: /\b(?:factory|plant)\b/i, term: "plant", name: "Local Plant", slug: "plant" },
+  { pattern: /\b(?:clinic|hospital)\b/i, term: "clinic", name: "Local Clinic", slug: "clinic" },
+  { pattern: /\bwarehouse\b/i, term: "warehouse", name: "Local Warehouse", slug: "warehouse" },
+  { pattern: /\b(?:school|college|university)\b/i, term: "school", name: "Local School", slug: "school" },
+  { pattern: /\b(?:office|library|hotel|salon|garage|farm)\b/i, term: "work", name: "Local Workplace", slug: "workplace" },
+] as const;
+
+function ensurePlayerRoutineAnchors(
+  state: StartingRegionWorkingState,
+): StartingRegionWorkingState {
+  if (!state.normalized || !state.locality || !state.playerContext) return state;
+  let locality = state.locality;
+  let playerContext = state.playerContext;
+  const factText = state.normalized.player.establishedFacts.map((fact) => ({
+    fact,
+    text: `${fact.statement} ${fact.sourceText}`,
+  }));
+  const anchors = playerWorkplaceAnchors.flatMap((anchor) => {
+    const matched = factText.find(({ text }) => anchor.pattern.test(text));
+    return matched ? [{ ...anchor, fact: matched.fact }] : [];
+  }).slice(0, 2);
+
+  for (const anchor of anchors) {
+    const alreadyGrounded = locality.locations.some((location) =>
+      `${location.name} ${location.summary}`.toLocaleLowerCase().includes(anchor.term)
+    );
+    if (alreadyGrounded) continue;
+    const baseId = `${locality.id}.player-${anchor.slug}`;
+    const locationId = locality.locations.some((location) => location.id === baseId)
+      ? `${baseId}-2`
+      : baseId;
+    const location = entitySchema.parse({
+      id: locationId,
+      kind: "location",
+      name: anchor.name,
+      summary: `${anchor.name} grounds the player's established routine: ${anchor.fact.statement}.`,
+      data: {
+        "player-routine-anchor": true,
+        generationProvenance: {
+          class: "player-established",
+          sourceIds: [anchor.fact.id],
+          rationale: "Minimal location required to ground an explicit physical workplace.",
+        },
+      },
+    });
+    const routeFromId = locality.locations.some((item) =>
+        item.id === playerContext.homeLocationId
+      )
+      ? playerContext.homeLocationId
+      : locality.locations[0]!.id;
+    locality = startingLocalitySchema.parse({
+      ...locality,
+      locations: [...locality.locations, location],
+      routes: [...locality.routes, {
+        fromId: routeFromId,
+        toId: locationId,
+        summary: `An ordinary local route connects ${anchor.name} to the player's existing routine.`,
+      }],
+      ordinaryWeekCoverage: [
+        ...locality.ordinaryWeekCoverage,
+        `work at ${anchor.name}`,
+      ],
+    });
+    playerContext = playerContextSeedSchema.parse({
+      ...playerContext,
+      routineLocationIds: [...new Set([...playerContext.routineLocationIds, locationId])],
+      accessEntityIds: [...new Set([...playerContext.accessEntityIds, locationId])],
+      currentObligations: [...new Set([
+        ...playerContext.currentObligations,
+        `Work shifts at ${anchor.name}.`,
+      ])],
+    });
+  }
+  return locality === state.locality && playerContext === state.playerContext
+    ? state
+    : mergeState(state, { locality, playerContext });
 }
 
 export interface StartingRegionSeed {
@@ -2571,79 +2656,33 @@ export async function generateStartingRegion(
       });
     },
   });
-  state = generated.state;
-  let seed = requireSeed(state);
-  let audit = coherenceAuditSchema.parse(await model.audit(seed, state));
-  const auditDiagnostics: Array<{
-    stageId: string;
-    attempts: number;
-    issues: GenerationIssue[];
-    accepted: boolean;
-  }> = [];
-  let auditAttempt = 1;
-
-  while (audit.issues.some((issue) => issue.severity === "error") && auditAttempt <= 2) {
-    const repairable = audit.issues.find(
-      (issue) => issue.severity === "error" && issue.repairStageId,
-    );
-    if (!repairable?.repairStageId) break;
-    const stageId = repairable.repairStageId;
-    const candidate = stageId === "settlement"
-      ? state.settlement
-      : stageId === "institutions"
-        ? state.institutions
-        : stageId === "player-context"
-          ? state.playerContext
-        : stageId === "npcs"
-          ? state.npcs
-          : stageId === "opening-situation"
-            ? state.openingSituation
-          : {
-                pressures: state.pressures,
-                creatures: state.creatures,
-                knowledge: state.knowledge,
-                processes: state.processes,
-              };
-    const repaired = await model.repair(
-      stageId,
-      candidate,
-      audit.issues,
-      state,
-    );
-    const stage = allStages.find((item) => item.id === stageId);
-    if (!stage) break;
-    const parsed = stage.candidateSchema.parse(repaired);
-    const hard = stage.validate?.(parsed, state) ?? [];
-    if (hard.some((issue) => issue.severity === "error")) {
-      auditDiagnostics.push({
-        stageId: "coherence-audit",
-        attempts: auditAttempt,
-        issues: [...hard],
-        accepted: false,
-      });
-      break;
-    }
-    state = stage.accept(state, parsed);
-    seed = requireSeed(state);
-    auditAttempt += 1;
-    audit = coherenceAuditSchema.parse(await model.audit(seed, state));
-  }
+  state = ensurePlayerRoutineAnchors(generated.state);
+  const seed = requireSeed(state);
+  const rawAudit = coherenceAuditSchema.parse(await model.audit(seed, state));
+  const seenAuditIssues = new Set<string>();
+  const audit = coherenceAuditSchema.parse({
+    issues: rawAudit.issues.flatMap((issue) => {
+      const key = `${issue.code}|${JSON.stringify(issue.path)}|${issue.message
+        .toLocaleLowerCase().replace(/\s+/g, " ").trim()}`;
+      if (seenAuditIssues.has(key)) return [];
+      seenAuditIssues.add(key);
+      const { repairStageId: _repairStageId, ...advisoryIssue } = issue;
+      return [{ ...advisoryIssue, severity: "warning" as const }];
+    }),
+  });
 
   const hardIssues = validateStartingRegionSeed(seed);
-  const finalAuditErrors = audit.issues.filter((issue) => issue.severity === "error");
-  if (hardIssues.length > 0 || finalAuditErrors.length > 0) {
-    const messages = [...hardIssues, ...finalAuditErrors]
-      .map((issue) => issue.message)
-      .join(" ");
+  if (hardIssues.length > 0) {
+    const messages = hardIssues.map((issue) => issue.message).join(" ");
     throw new Error(`Starting region failed validation: ${messages}`);
   }
 
-  auditDiagnostics.push({
+  const auditDiagnostics = [{
     stageId: "coherence-audit",
-    attempts: auditAttempt,
+    attempts: 1,
     issues: audit.issues,
     accepted: true,
-  });
+  }];
   diagnostics = [...diagnostics, ...auditDiagnostics];
   await options.onCheckpoint?.({
     lastCompletedStageId: "coherence-audit",
