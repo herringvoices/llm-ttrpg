@@ -1,4 +1,5 @@
 import {
+  jsonValueSchema,
   type JsonValue,
   type ModelFailureKind,
   type ModelInvocationOptions,
@@ -195,6 +196,7 @@ export class ScriptedModelRuntime implements ModelRuntime {
     }
     if (stepResult.kind === "schema-invalid") {
       const parsed = request.output.schema.safeParse(stepResult.value);
+      const candidate = jsonValueSchema.safeParse(stepResult.value);
       this.invocations.push({
         ...base,
         result: "failure",
@@ -208,6 +210,7 @@ export class ScriptedModelRuntime implements ModelRuntime {
         error: {
           kind: "invalid-output",
           message: `Script step ${step.id} intentionally returned schema-invalid data`,
+          ...(candidate.success ? { candidate: candidate.data } : {}),
         },
         metadata,
       };
@@ -225,6 +228,7 @@ export class ScriptedModelRuntime implements ModelRuntime {
     }
     const parsed = request.output.schema.safeParse(stepResult.value);
     if (!parsed.success) {
+      const candidate = jsonValueSchema.safeParse(stepResult.value);
       this.invocations.push({
         ...base,
         result: "failure",
@@ -239,6 +243,7 @@ export class ScriptedModelRuntime implements ModelRuntime {
           kind: "invalid-output",
           message: `Script step ${step.id} failed the authoritative output schema`,
           diagnostic: parsed.error.message,
+          ...(candidate.success ? { candidate: candidate.data } : {}),
         },
         metadata,
       };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { ScriptedModelRuntime } from "@llm-ttrpg/harness";
 import {
   GenerationStageError,
   createGameRuntime,
@@ -14,6 +15,7 @@ import {
 } from "@llm-ttrpg/engine";
 import {
   ATTRIBUTE_IDS,
+  createStartingRegionProposalModel,
   densifyGeneratedEntity,
   generateStartingRegion,
   promoteObservedPerson,
@@ -169,6 +171,20 @@ function creatureMechanics(agility = 70) {
 }
 
 describe("generated starting region", () => {
+  it("forwards parsed schema-invalid JSON to the bounded stage repair pipeline", async () => {
+    const candidate = { wrong: true };
+    const runtime = new ScriptedModelRuntime([{
+      id: "invalid-player-context",
+      match: { schemaId: "starting-region.player-context.v1" },
+      result: { kind: "schema-invalid", value: candidate },
+    }]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("player-context", {
+      request: startingRegionRequestFixture,
+    })).resolves.toEqual(candidate);
+  });
+
   it("accepts faithful source quotations despite model casing and whitespace normalization", () => {
     expect(sourceContainsQuotedText(
       "Most people work at the plant.\nI'm a local.",

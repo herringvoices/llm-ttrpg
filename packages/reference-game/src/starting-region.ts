@@ -567,7 +567,8 @@ export function createStartingRegionProposalModel(
           ...(stageId === "player-context"
             ? [
                 "Keep player-context compact: exactly one short attributeEvidence entry per attribute and no more than six grounded skills with matching skillEvidence.",
-                "The mundane starting player has no statuses, powers, or skill-use evidence. Use at most three goals, two relationships, three memories, three commitments, and five entries in any other open-ended list.",
+                "The mundane starting player has characterLevel 0, characterXp 0, skillPointsPerCharacterLevel 5, skillLearningRateMultiplier 1, and no statuses, powers, mana, or skill-use evidence.",
+                "Use unique IDs and names. Every commitment must end after it starts. Use at most three goals, two relationships, three memories, three commitments, and five entries in any other open-ended list.",
               ]
             : []),
           ...(context.request.allowGeneratedDetails
@@ -593,7 +594,18 @@ export function createStartingRegionProposalModel(
         maxOutputTokens: startingRegionStageMaxOutputTokens(stageId),
       },
     });
-    if (!result.ok) throw new Error(`Starting-region ${stageId} model failure: ${result.error.message}`);
+    if (!result.ok) {
+      if (
+        result.error.kind === "invalid-output" &&
+        result.error.candidate !== undefined
+      ) return result.error.candidate;
+      const diagnostic = result.error.diagnostic
+        ? `: ${result.error.diagnostic}`
+        : "";
+      throw new Error(
+        `Starting-region ${stageId} model failure: ${result.error.message}${diagnostic}`,
+      );
+    }
     return result.output.value;
   };
   return {

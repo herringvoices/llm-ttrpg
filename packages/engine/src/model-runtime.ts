@@ -110,6 +110,8 @@ export interface ModelFailure {
     readonly kind: ModelFailureKind;
     readonly message: string;
     readonly diagnostic?: string;
+    /** Untrusted parsed JSON may be inspected or repaired, but is never a typed success. */
+    readonly candidate?: JsonValue;
   };
   readonly metadata: ModelResultMetadata;
 }

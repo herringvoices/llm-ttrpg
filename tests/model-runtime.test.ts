@@ -210,7 +210,10 @@ describe("Ollama model runtime", () => {
     const result = await runtime.generate(structuredRequest());
     expect(result).toEqual(expect.objectContaining({
       ok: false,
-      error: expect.objectContaining({ kind: "invalid-output" }),
+      error: expect.objectContaining({
+        kind: "invalid-output",
+        candidate: { toolId: 42, arguments: {} },
+      }),
     }));
     expect(calls).toBe(1);
     if (result.ok) throw new Error("Invalid structured output became usable");
@@ -229,6 +232,7 @@ describe("Ollama model runtime", () => {
       error: expect.objectContaining({ kind: "invalid-output" }),
     }));
     expect(result).not.toHaveProperty("output");
+    expect(result).not.toHaveProperty("error.candidate");
   });
 
   it("prevents malformed output from reaching an authoritative operation boundary", async () => {

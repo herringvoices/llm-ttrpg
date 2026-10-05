@@ -1,4 +1,5 @@
 import {
+  jsonValueSchema,
   modelTraceMetadataSchema,
   structuredOutputJsonSchema,
   validateModelInvocationOptions,
@@ -12,6 +13,7 @@ import {
   type ModelRuntime,
   type ModelRuntimeCapabilities,
   type ModelTextStreamEvent,
+  type JsonValue,
   type StructuredModelRequest,
   type StructuredModelResult,
   type TextModelRequest,
@@ -386,10 +388,16 @@ export class OllamaModelRuntime implements ModelRuntime {
     startedAt: number,
     trace: TextModelRequest["trace"],
     diagnostic?: string,
+    candidate?: JsonValue,
   ): ModelFailure {
     return {
       ok: false,
-      error: { kind, message, ...(diagnostic ? { diagnostic } : {}) },
+      error: {
+        kind,
+        message,
+        ...(diagnostic ? { diagnostic } : {}),
+        ...(candidate !== undefined ? { candidate } : {}),
+      },
       metadata: this.metadata(startedAt, trace),
     };
   }
@@ -500,6 +508,7 @@ export class OllamaModelRuntime implements ModelRuntime {
           startedAt,
           request.trace,
           validated.error.message,
+          jsonValueSchema.parse(parsed),
         );
         this.emit({ kind: "failed", outputKind, failure });
         return failure;
