@@ -280,6 +280,97 @@ describe("generated starting region", () => {
     ]);
   });
 
+  it("expands compact pressure proposals into authoritative linked records", async () => {
+    const outputs = startingRegionStageOutputs();
+    const runtime = new ScriptedModelRuntime([{
+      id: "compact-pressures",
+      match: { schemaId: "starting-region.pressures.v1" },
+      result: {
+        kind: "schema-invalid",
+        value: {
+          pressures: [{
+            category: "supernatural",
+            summary: "Blue frost appears by the river",
+            currentState: "Cold tracks are approaching the neighborhood.",
+            cause: "a newly emerged magical predator",
+            likelyTrajectory: "The creature reaches busier streets.",
+            actorEntityIds: ["generated.actor.alice", "missing.actor"],
+            scope: "region",
+            changeConditions: ["the tracks are investigated"],
+            visibility: "hidden",
+          }],
+          creatures: [{
+            name: "Frost Cat",
+            summary: "A territorial predator that steals heat.",
+            origin: "transformed-terrestrial-life",
+            morphology: "a panther-sized feline with crystalline whiskers",
+            behavior: "territorial and cautious",
+            corePrinciple: "steals heat from nearby surfaces",
+            observedTraits: ["blue frost", "large tracks"],
+            nearTermPlayerFacing: true,
+            threat: {
+              challengeBand: "Hard",
+              overallThreat: "Dangerous, readable, and avoidable.",
+              signatureCapabilities: ["heat theft"],
+              tells: ["its whiskers brighten before heat theft"],
+              counterplay: ["break line of sight or introduce heat"],
+            },
+          }],
+          beliefs: [{
+            holderActorId: "generated.actor.alice",
+            subjectRef: "Frost Cat",
+            proposition: "Something supernatural moved behind the loading dock.",
+            truthStatus: "true",
+            confidence: 0.8,
+          }],
+        },
+      },
+    }]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("pressures", {
+      request: startingRegionRequestFixture,
+      region: outputs.region,
+      settlement: outputs.settlement,
+      institutions: outputs.institutions,
+      locality: outputs.locality,
+      playerContext: outputs["player-context"],
+      npcs: outputs.npcs,
+    })).resolves.toEqual(expect.objectContaining({
+      pressures: expect.arrayContaining([
+        expect.objectContaining({ category: "ordinary" }),
+        expect.objectContaining({ category: "social-institutional" }),
+        expect.objectContaining({
+          category: "supernatural",
+          actorEntityIds: ["generated.actor.alice"],
+          scopeId: "scope.generated.region.cascade",
+        }),
+      ]),
+      creatures: [expect.objectContaining({
+        entity: expect.objectContaining({
+          id: "generated.creature.frost-cat",
+          name: "Frost Cat",
+        }),
+        threatEnvelope: expect.objectContaining({
+          challengeBand: "Hard",
+          requiredSignatureCapabilities: ["heat theft"],
+        }),
+      })],
+      knowledge: expect.objectContaining({
+        facts: expect.arrayContaining([
+          expect.objectContaining({ predicate: "pressure.current-state" }),
+        ]),
+        beliefs: [expect.objectContaining({
+          holder: { kind: "actor", id: "generated.actor.alice" },
+          subjectId: "generated.creature.frost-cat",
+        })],
+      }),
+      processes: expect.arrayContaining([
+        expect.objectContaining({ pressureId: expect.any(String) }),
+      ]),
+    }));
+  });
+
   it("accepts faithful source quotations despite model casing and whitespace normalization", () => {
     expect(sourceContainsQuotedText(
       "Most people work at the plant.\nI'm a local.",

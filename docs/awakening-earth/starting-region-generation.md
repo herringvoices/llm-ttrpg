@@ -635,9 +635,25 @@ mechanical constraints. The engine assigns stable IDs and deterministically cons
 persisted entity, actor-social-state, timestamps, constraint ownership, and provenance records.
 NPC generation receives only the accepted locality, institutions, normalized player material, and
 the concise player context it needs; it does not re-serialize the full accumulated working state.
-This stage has a bounded 2,048-token response and no automatic second model pass. A timeout or bad
+This stage has a bounded 1,536-token response and no automatic second model pass. A timeout or bad
 proposal therefore returns to the durable checkpoint at the NPC step instead of spending another
 long attempt or discarding the already accepted world.
+
+Pressure generation also crosses a compact model boundary. The model chooses the three required
+pressure categories, their developing situations, a small creature set, readable supernatural
+capabilities/tells/counterplay, and any useful initial beliefs. The engine assigns stable IDs,
+filters actor references, derives canonical pressure facts and active processes, supplies bounded
+numeric threat dimensions, and validates the authoritative linked records. It does not ask the
+model to serialize provenance, process boilerplate, or repetitive persistence structures.
+The compact pressure response is likewise capped at 1,536 tokens and does not automatically run a
+second full model attempt.
+
+The opening-situation stage receives a deliberately reduced view of accepted people, places,
+institutions, pressures, and creature cues rather than the complete accumulated generation state.
+Its output is a short non-authoritative opening brief capped at 1,024 tokens. The subsequent
+coherence audit similarly omits mundane mechanics and other irrelevant boilerplate, returns at
+most five material issues, and is capped at 1,024 tokens. These reductions preserve the design
+checks while avoiding minutes of prompt processing and unbounded verbose structured output.
 
 ### Deterministic reference campaign
 

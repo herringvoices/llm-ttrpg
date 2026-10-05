@@ -91,21 +91,49 @@ function generatedCampaignModel() {
             })
         : stageId === "pressures"
           ? {
-              ...outputs.pressures,
-              knowledge: {
-                ...outputs.pressures.knowledge,
-                beliefs: outputs.pressures.knowledge.beliefs.map((belief) => ({
-                  ...belief,
-                  sources: belief.sources.map((source) => {
-                    if (source.kind !== "memory") return source;
-                    const replacement = new Map([
-                      ["memory.alice.blue-light", "memory.generated.actor.alice.starting-1"],
-                      ["memory.bob.supply-delay", "memory.generated.actor.bob.starting-1"],
-                    ]).get(source.id);
-                    return replacement ? { ...source, id: replacement } : source;
-                  }),
-                })),
-              },
+              pressures: outputs.pressures.pressures.map((pressure) => ({
+                category: pressure.category,
+                summary: pressure.summary,
+                currentState: pressure.currentState,
+                cause: pressure.cause,
+                likelyTrajectory: pressure.likelyTrajectory,
+                actorEntityIds: pressure.actorEntityIds,
+                scope: pressure.scopeId.includes(".region.")
+                  ? "region"
+                  : pressure.scopeId.includes(".settlement.")
+                    ? "settlement"
+                    : "locality",
+                changeConditions: pressure.changeConditions,
+                visibility: pressure.category === "supernatural" ? "hidden" : "public",
+              })),
+              creatures: outputs.pressures.creatures.map((creature) => ({
+                name: creature.entity.name,
+                summary: creature.entity.summary,
+                origin: creature.origin,
+                morphology: creature.morphology,
+                behavior: creature.behavior,
+                corePrinciple: creature.corePrinciple,
+                observedTraits: creature.observedTraits,
+                nearTermPlayerFacing: creature.nearTermPlayerFacing,
+                threat: {
+                  challengeBand: creature.threatEnvelope?.challengeBand,
+                  overallThreat: creature.threatEnvelope?.overallThreat,
+                  hardCounterRisks: creature.threatEnvelope?.hardCounterRisks ?? [],
+                  signatureCapabilities:
+                    creature.threatEnvelope?.requiredSignatureCapabilities ?? [],
+                  tells: creature.threatEnvelope?.requiredTells ?? [],
+                  counterplay: creature.threatEnvelope?.requiredCounterplay ?? [],
+                },
+              })),
+              beliefs: outputs.pressures.knowledge.beliefs.map((belief) => ({
+                holderActorId: belief.holder.id,
+                subjectRef: outputs.pressures.creatures.find((creature) =>
+                  creature.entity.id === belief.subjectId
+                )?.entity.name ?? belief.subjectId,
+                proposition: belief.proposition,
+                truthStatus: belief.truthStatus,
+                confidence: belief.confidence,
+              })),
             }
         : value,
     },
@@ -168,7 +196,24 @@ function generatedCampaignModel() {
             creature: {
               entityRef: refForName(creature.entity.name),
               deliberateNearTermPlayerFacing: true,
-              threatEnvelope: creature.threatEnvelope,
+              threatEnvelope: {
+                challengeBand: "Hard",
+                overallThreat: creature.threatEnvelope!.overallThreat,
+                offensivePressure: 0.6,
+                survivability: 0.55,
+                mobilityReach: 0.7,
+                controlDenial: 0.45,
+                sensoryInformation: 0.55,
+                multiTargetPressure: 0.3,
+                resourcePressure: 0.5,
+                hardCounterRisks: creature.threatEnvelope!.hardCounterRisks,
+                requiredSignatureCapabilities:
+                  creature.threatEnvelope!.requiredSignatureCapabilities,
+                requiredTells: creature.threatEnvelope!.requiredTells,
+                requiredCounterplay: creature.threatEnvelope!.requiredCounterplay,
+                allowedGrowthRange:
+                  "May develop through simulation and survival, never hidden party scaling.",
+              },
               observedTraits: creature.observedTraits,
             },
             publicResponse: {

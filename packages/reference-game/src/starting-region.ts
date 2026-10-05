@@ -556,6 +556,51 @@ export const pressureKnowledgeProcessSchema = z.object({
   processes: z.array(activeProcessSeedSchema).min(2),
 }).strict();
 
+const pressureModelProposalSchema = z.object({
+  pressures: z.array(z.object({
+    category: z.string().optional(),
+    summary: z.string().optional(),
+    currentState: z.string().optional(),
+    cause: z.string().optional(),
+    likelyTrajectory: z.string().optional(),
+    actorEntityIds: z.array(z.string()).default([]),
+    scope: z.string().optional(),
+    changeConditions: z.array(z.string()).default([]),
+    visibility: z.string().optional(),
+  }).passthrough()).default([]),
+  creatures: z.array(z.object({
+    name: z.string().optional(),
+    summary: z.string().optional(),
+    origin: z.string().optional(),
+    morphology: z.string().optional(),
+    behavior: z.string().optional(),
+    corePrinciple: z.string().optional(),
+    observedTraits: z.array(z.string()).default([]),
+    nearTermPlayerFacing: z.boolean().optional(),
+    threat: z.object({
+      challengeBand: z.string().optional(),
+      overallThreat: z.string().optional(),
+      hardCounterRisks: z.array(z.string()).default([]),
+      signatureCapabilities: z.array(z.string()).default([]),
+      tells: z.array(z.string()).default([]),
+      counterplay: z.array(z.string()).default([]),
+    }).passthrough().default({
+      hardCounterRisks: [],
+      signatureCapabilities: [],
+      tells: [],
+      counterplay: [],
+    }),
+  }).passthrough()).default([]),
+  beliefs: z.array(z.object({
+    holderActorId: z.string().optional(),
+    subjectRef: z.string().optional(),
+    proposition: z.string().optional(),
+    truthStatus: z.string().optional(),
+    confidence: z.number().optional(),
+  }).passthrough()).default([]),
+}).passthrough();
+type PressureModelProposal = z.infer<typeof pressureModelProposalSchema>;
+
 export const coherenceAuditSchema = z.object({
   issues: z.array(generationIssueSchema.extend({
     repairStageId: z.enum([
@@ -893,6 +938,277 @@ function expandNpcProposals(
   });
 }
 
+function expandPressureProposal(
+  rawProposal: unknown,
+  context: Readonly<StartingRegionWorkingState>,
+): z.infer<typeof pressureKnowledgeProcessSchema> {
+  const proposal: PressureModelProposal = pressureModelProposalSchema.parse(rawProposal);
+  if (!context.region || !context.settlement || !context.locality || !context.playerContext) {
+    throw new Error("Pressure generation requires the accepted region, settlement, locality, and player context");
+  }
+  const categories = ["ordinary", "social-institutional", "supernatural"] as const;
+  type PressureCategory = typeof categories[number];
+  const isCategory = (value: string | undefined): value is PressureCategory =>
+    categories.includes(value as PressureCategory);
+  const fallbackByCategory: Readonly<Record<PressureCategory, PressureModelProposal["pressures"][number]>> = {
+    ordinary: {
+      category: "ordinary",
+      summary: context.playerContext.ordinaryPressures[0] ?? "Everyday obligations are accumulating",
+      currentState: "An ordinary obligation needs the player's attention.",
+      cause: "the player's established everyday circumstances",
+      likelyTrajectory: "The obligation becomes harder to ignore.",
+      actorEntityIds: [context.playerContext.entity.id],
+      scope: "locality",
+      changeConditions: ["the obligation is addressed", "circumstances materially change"],
+    },
+    "social-institutional": {
+      category: "social-institutional",
+      summary: "A local institution is under strain",
+      currentState: "A locally relevant institution has limited capacity for a developing problem.",
+      cause: "ordinary resource and coordination constraints",
+      likelyTrajectory: "Services become less reliable if the strain continues.",
+      actorEntityIds: [],
+      scope: "settlement",
+      changeConditions: ["resources arrive", "the institution adapts"],
+    },
+    supernatural: {
+      category: "supernatural",
+      summary: "A new supernatural danger is emerging",
+      currentState: "Subtle signs of a magical creature have appeared near the starting locality.",
+      cause: "the setting's recent supernatural emergence",
+      likelyTrajectory: "The signs become more immediate and easier to investigate.",
+      actorEntityIds: [],
+      scope: "region",
+      changeConditions: ["the source is investigated", "the creature changes territory"],
+      visibility: "hidden",
+    },
+  };
+  const selectedPressureProposals = categories.map((category) =>
+    proposal.pressures.find((candidate) => candidate.category === category) ??
+      fallbackByCategory[category]
+  );
+  const extraPressureProposals = proposal.pressures
+    .filter((candidate) => isCategory(candidate.category))
+    .filter((candidate) => !selectedPressureProposals.includes(candidate))
+    .slice(0, 2);
+  const actorIds = new Set([
+    context.playerContext.entity.id,
+    ...(context.npcs?.map((npc) => npc.entity.id) ?? []),
+  ]);
+  const scopeIdByName = {
+    region: `scope.${context.region.id}`,
+    settlement: `scope.${context.settlement.id}`,
+    locality: `scope.${context.locality.id}`,
+  } as const;
+  const usedPressureIds = new Set<string>();
+  const visibilityByPressure = new Map<string, "public" | "hidden">();
+  const pressures = [...selectedPressureProposals, ...extraPressureProposals].map(
+    (candidate, index) => {
+      const category = isCategory(candidate.category) ? candidate.category : categories[index % 3]!;
+      const summary = candidate.summary?.trim().slice(0, 160) ||
+        fallbackByCategory[category].summary!;
+      const baseId = `generated.pressure.${stableGeneratedSlug(summary, `${category}-${index + 1}`)}`;
+      const id = usedPressureIds.has(baseId) ? `${baseId}-${index + 1}` : baseId;
+      usedPressureIds.add(id);
+      visibilityByPressure.set(
+        id,
+        candidate.visibility === "hidden" ||
+            (candidate.visibility !== "public" && category === "supernatural")
+          ? "hidden"
+          : "public",
+      );
+      const requestedScope = candidate.scope?.trim().toLocaleLowerCase();
+      const defaultScope = category === "ordinary"
+        ? "locality"
+        : category === "social-institutional"
+          ? "settlement"
+          : "region";
+      const scopeKey = requestedScope === "region" || requestedScope === "settlement" ||
+          requestedScope === "locality"
+        ? requestedScope
+        : defaultScope;
+      const referencedActors = [...new Set(candidate.actorEntityIds.filter((actorId) =>
+        actorIds.has(actorId)
+      ))].slice(0, 4);
+      return pressureSeedSchema.parse({
+        id,
+        category,
+        summary,
+        currentState: candidate.currentState?.trim().slice(0, 240) ||
+          fallbackByCategory[category].currentState,
+        cause: candidate.cause?.trim().slice(0, 240) || fallbackByCategory[category].cause,
+        likelyTrajectory: candidate.likelyTrajectory?.trim().slice(0, 240) ||
+          fallbackByCategory[category].likelyTrajectory,
+        actorEntityIds: referencedActors.length > 0
+          ? referencedActors
+          : category === "ordinary" ? [context.playerContext!.entity.id] : [],
+        scopeId: scopeIdByName[scopeKey],
+        changeConditions: compactStrings(candidate.changeConditions, 4).length > 0
+          ? compactStrings(candidate.changeConditions, 4)
+          : fallbackByCategory[category].changeConditions,
+        provenance: {
+          class: category === "ordinary" ? "generator-chosen" : "setting-derived",
+          sourceIds: category === "ordinary" ? ["player.input"] : ["setting.awakening-earth"],
+          rationale: "Expanded from a compact pressure proposal against accepted campaign state.",
+        },
+      });
+    },
+  );
+
+  const creatureProposals = proposal.creatures.length > 0
+    ? proposal.creatures.slice(0, 3)
+    : [{
+        name: "Unfamiliar Magical Creature",
+        summary: "A newly emerged magical creature is affecting the starting locality.",
+        origin: "spontaneous-magical-generation",
+        morphology: "an animal-like form altered by visible magical traits",
+        behavior: "cautious and territorial rather than indiscriminately aggressive",
+        corePrinciple: "distorts a single physical property in its immediate surroundings",
+        observedTraits: ["unfamiliar tracks", "a localized physical anomaly"],
+        nearTermPlayerFacing: true,
+        threat: {
+          challengeBand: "Hard",
+          overallThreat: "Dangerous but observable, avoidable, and vulnerable to informed counterplay.",
+          hardCounterRisks: [],
+          signatureCapabilities: ["localized environmental distortion"],
+          tells: ["the surrounding anomaly intensifies before it acts"],
+          counterplay: ["use the visible tell to create distance or break its approach"],
+        },
+      }];
+  const challengeValues = {
+    Routine: 0.3,
+    Challenging: 0.45,
+    Hard: 0.6,
+    Severe: 0.75,
+    Overwhelming: 0.9,
+  } as const;
+  type ChallengeBand = keyof typeof challengeValues;
+  const isChallengeBand = (value: string | undefined): value is ChallengeBand =>
+    value !== undefined && Object.hasOwn(challengeValues, value);
+  const usedCreatureIds = new Set<string>();
+  const creatures = creatureProposals.map((candidate, index) => {
+    const name = candidate.name?.trim().slice(0, 120) || `Magical Creature ${index + 1}`;
+    const baseId = `generated.creature.${stableGeneratedSlug(name, `creature-${index + 1}`)}`;
+    const entityId = usedCreatureIds.has(baseId) ? `${baseId}-${index + 1}` : baseId;
+    usedCreatureIds.add(entityId);
+    const challengeBand = isChallengeBand(candidate.threat.challengeBand)
+      ? candidate.threat.challengeBand
+      : "Hard";
+    const baseThreat = challengeValues[challengeBand];
+    const boundedThreat = (value: number) => Math.round(
+      Math.max(0, Math.min(1, value)) * 100,
+    ) / 100;
+    const signatureCapabilities = compactStrings(candidate.threat.signatureCapabilities, 4);
+    const tells = compactStrings(candidate.threat.tells, 4);
+    const counterplay = compactStrings(candidate.threat.counterplay, 4);
+    return creatureSeedSchema.parse({
+      entity: {
+        id: entityId,
+        kind: "creature",
+        name,
+        summary: candidate.summary?.trim().slice(0, 280) ||
+          `${name} is a newly emerged magical creature near the starting locality.`,
+        data: {},
+      },
+      origin: candidate.origin === "transformed-terrestrial-life"
+        ? "transformed-terrestrial-life"
+        : "spontaneous-magical-generation",
+      morphology: candidate.morphology?.trim().slice(0, 240) || "an unfamiliar animal-like form",
+      behavior: candidate.behavior?.trim().slice(0, 240) || "cautious and territorial",
+      corePrinciple: candidate.corePrinciple?.trim().slice(0, 240) ||
+        "produces one consistent, observable magical effect",
+      observedTraits: compactStrings(candidate.observedTraits, 5).length > 0
+        ? compactStrings(candidate.observedTraits, 5)
+        : ["unfamiliar tracks", "a localized magical anomaly"],
+      nearTermPlayerFacing: candidate.nearTermPlayerFacing ?? index === 0,
+      threatEnvelope: {
+        challengeBand,
+        overallThreat: candidate.threat.overallThreat?.trim().slice(0, 240) ||
+          `${name} is dangerous but observable and avoidable with informed counterplay.`,
+        offensivePressure: baseThreat,
+        survivability: boundedThreat(Math.max(0.2, baseThreat - 0.05)),
+        mobilityReach: boundedThreat(baseThreat + 0.1),
+        controlDenial: boundedThreat(Math.max(0.1, baseThreat - 0.15)),
+        sensoryInformation: boundedThreat(Math.max(0.25, baseThreat - 0.05)),
+        multiTargetPressure: boundedThreat(Math.max(0.1, baseThreat - 0.3)),
+        resourcePressure: boundedThreat(Math.max(0.15, baseThreat - 0.1)),
+        hardCounterRisks: compactStrings(candidate.threat.hardCounterRisks, 3),
+        requiredSignatureCapabilities: signatureCapabilities.length > 0
+          ? signatureCapabilities
+          : ["one consistent magical effect"],
+        requiredTells: tells.length > 0 ? tells : ["an observable tell precedes its effect"],
+        requiredCounterplay: counterplay.length > 0
+          ? counterplay
+          : ["recognize the tell and interrupt or avoid the effect"],
+        allowedGrowthRange: "May develop through simulation and survival, never hidden party scaling.",
+      },
+      provenance: {
+        class: "setting-derived",
+        sourceIds: ["setting.awakening-earth"],
+        rationale: "Expanded from a compact creature proposal under Awakening Earth constraints.",
+      },
+    });
+  });
+
+  const facts = pressures.map((pressure, index) => canonicalFactSchema.parse({
+    id: `generated.fact.pressure-${index + 1}-state`,
+    subjectId: pressure.id,
+    predicate: "pressure.current-state",
+    value: pressure.currentState,
+    visibility: visibilityByPressure.get(pressure.id) ?? "public",
+    tags: ["pressure", pressure.category],
+  }));
+  const subjectIdsByRef = new Map<string, string>();
+  for (const item of [
+    ...pressures.map((pressure) => ({ id: pressure.id, name: pressure.summary })),
+    ...creatures.map((creature) => ({ id: creature.entity.id, name: creature.entity.name })),
+  ]) {
+    subjectIdsByRef.set(item.id, item.id);
+    subjectIdsByRef.set(item.name.trim().toLocaleLowerCase(), item.id);
+  }
+  const truthStatuses = new Set(["true", "incomplete", "uncertain", "false"]);
+  const beliefs = proposal.beliefs.flatMap((candidate, index) => {
+    const holderId = candidate.holderActorId && actorIds.has(candidate.holderActorId)
+      ? candidate.holderActorId
+      : undefined;
+    const subjectRef = candidate.subjectRef?.trim();
+    const subjectId = subjectRef
+      ? subjectIdsByRef.get(subjectRef) ?? subjectIdsByRef.get(subjectRef.toLocaleLowerCase())
+      : undefined;
+    const proposition = candidate.proposition?.trim().slice(0, 280);
+    if (!holderId || !subjectId || !proposition) return [];
+    return [beliefSchema.parse({
+      id: `generated.belief.starting-${index + 1}`,
+      holder: { kind: "actor", id: holderId },
+      subjectId,
+      proposition,
+      truthStatus: candidate.truthStatus && truthStatuses.has(candidate.truthStatus)
+        ? candidate.truthStatus
+        : "uncertain",
+      confidence: Math.max(0, Math.min(1, candidate.confidence ?? 0.6)),
+    })];
+  });
+  const changeByCategory: Readonly<Record<PressureCategory, number>> = {
+    ordinary: 1,
+    "social-institutional": 0.5,
+    supernatural: 0.25,
+  };
+  const processes = pressures.map((pressure, index) => activeProcessSeedSchema.parse({
+    id: `generated.process.pressure-${index + 1}`,
+    scopeId: pressure.scopeId,
+    pressureId: pressure.id,
+    changePerDay: changeByCategory[pressure.category],
+    summary: `${pressure.summary}: ${pressure.likelyTrajectory}`,
+  }));
+
+  return pressureKnowledgeProcessSchema.parse({
+    pressures,
+    creatures,
+    knowledge: { facts, beliefs },
+    processes,
+  });
+}
+
 const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> = {
   normalize: normalizedRegionConstraintsSchema,
   region: regionalFrameSchema,
@@ -901,13 +1217,15 @@ const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> =
   locality: startingLocalitySchema,
   "player-context": playerContextModelProposalSchema,
   npcs: npcModelProposalSchema,
-  pressures: pressureKnowledgeProcessSchema,
+  pressures: pressureModelProposalSchema,
   "opening-situation": openingSituationSchema,
 };
 
 function startingRegionStageMaxOutputTokens(stageId: string): number {
-  if (["player-context", "npcs"].includes(stageId)) return 2_048;
-  return stageId === "pressures" ? 6_144 : 4_096;
+  if (stageId === "opening-situation") return 1_024;
+  if (["npcs", "pressures"].includes(stageId)) return 1_536;
+  if (stageId === "player-context") return 2_048;
+  return 4_096;
 }
 
 const STARTING_REGION_MODEL_TIMEOUT_MS = 20 * 60 * 1_000;
@@ -944,6 +1262,87 @@ export function createStartingRegionProposalModel(
               ordinaryPressures: context.playerContext.ordinaryPressures,
             },
           }
+      : stageId === "pressures"
+        ? {
+            request: {
+              startTime: context.request.startTime,
+              allowGeneratedDetails: context.request.allowGeneratedDetails,
+            },
+            region: context.region && {
+              id: context.region.id,
+              name: context.region.name,
+              supernaturalPressureBaseline: context.region.supernaturalPressureBaseline,
+              gateHistory: context.region.gateHistory,
+            },
+            settlement: context.settlement && {
+              id: context.settlement.id,
+              name: context.settlement.name,
+              economy: context.settlement.economy,
+              institutionalCapacity: context.settlement.institutionalCapacity,
+              supernaturalHistory: context.settlement.supernaturalHistory,
+            },
+            institutions: context.institutions?.map((institution) => ({
+              entity: institution.entity,
+              goals: institution.goals,
+              constraints: institution.constraints,
+              currentPressures: institution.currentPressures,
+            })),
+            locality: context.locality && {
+              id: context.locality.id,
+              name: context.locality.name,
+              summary: context.locality.summary,
+              locations: context.locality.locations,
+            },
+            playerContext: context.playerContext && {
+              entity: context.playerContext.entity,
+              currentObligations: context.playerContext.currentObligations,
+              ordinaryPressures: context.playerContext.ordinaryPressures,
+            },
+            npcs: context.npcs?.map((npc) => ({
+              entity: npc.entity,
+              simulationReasons: npc.simulationReasons,
+              goals: npc.socialState.goals.map((goal) => goal.description),
+            })),
+          }
+      : stageId === "opening-situation"
+        ? {
+            request: { startTime: context.request.startTime },
+            settlement: context.settlement && {
+              id: context.settlement.id,
+              name: context.settlement.name,
+              supernaturalHistory: context.settlement.supernaturalHistory,
+              institutionalCapacity: context.settlement.institutionalCapacity,
+            },
+            locality: context.locality && {
+              id: context.locality.id,
+              name: context.locality.name,
+              summary: context.locality.summary,
+              locations: context.locality.locations,
+            },
+            institutions: context.institutions?.map((institution) => ({
+              entity: institution.entity,
+              capabilities: institution.capabilities,
+              constraints: institution.constraints,
+              currentPressures: institution.currentPressures,
+            })),
+            player: context.playerContext && {
+              entity: context.playerContext.entity,
+              currentObligations: context.playerContext.currentObligations,
+              ordinaryPressures: context.playerContext.ordinaryPressures,
+            },
+            npcs: context.npcs?.map((npc) => ({
+              entity: npc.entity,
+              simulationReasons: npc.simulationReasons,
+            })),
+            pressures: context.pressures,
+            creatures: context.creatures?.map((creature) => ({
+              entity: creature.entity,
+              behavior: creature.behavior,
+              corePrinciple: creature.corePrinciple,
+              observedTraits: creature.observedTraits,
+              nearTermPlayerFacing: creature.nearTermPlayerFacing,
+            })),
+          }
       : context;
     const result = await modelRuntime.generate({
       prompt: {
@@ -971,6 +1370,21 @@ export function createStartingRegionProposalModel(
                 "Return a small cast of one to four concise, distinctive NPC proposals that connect to established people, places, institutions, obligations, or pressures.",
                 "For each NPC provide only identity, narrative relevance, goals, an optional relationship to the player, a few salient memories, and genuinely mechanical constraints.",
                 "Do not emit entity IDs, actor social-state boilerplate, timestamps, provenance, commitments, or empty scaffolding; the engine expands and validates those deterministically.",
+              ]
+            : []),
+          ...(stageId === "pressures"
+            ? [
+                "Return exactly the compact creative decisions for three linked pressure categories: ordinary, social-institutional, and supernatural; add at most two extra pressures.",
+                "Return one to three concise magical creatures, including observable traits, one coherent magical principle, signature capabilities, tells, and counterplay. Do not emit numeric threat dimensions.",
+                "Use scope values region, settlement, or locality and only actorEntityIds present in the supplied context. Belief subjectRef may be an exact proposed pressure/creature name or ID.",
+                "Do not emit IDs, provenance, canonical facts, processes, timestamps, or persistence boilerplate; the engine derives and validates those deterministically.",
+              ]
+            : []),
+          ...(stageId === "opening-situation"
+            ? [
+                "Frame one concise, immediate opening situation from the accepted entities and pressures supplied here.",
+                "Use only existing entity IDs for ordinaryAnchorEntityIds. Offer social, investigative, and risky directions without requiring combat or a mandatory quest.",
+                "Do not restate the world, create mechanics, or narrate an outcome; return only the requested opening brief.",
               ]
             : []),
           ...(context.request.allowGeneratedDetails
@@ -1002,11 +1416,15 @@ export function createStartingRegionProposalModel(
         result.error.kind === "invalid-output" &&
         result.error.candidate !== undefined
       ) {
-        if (stageId === "player-context" || stageId === "npcs") {
+        if (["player-context", "npcs", "pressures"].includes(stageId)) {
           try {
-            return stageId === "player-context"
-              ? expandPlayerContextProposal(result.error.candidate, context)
-              : expandNpcProposals(result.error.candidate, context);
+            if (stageId === "player-context") {
+              return expandPlayerContextProposal(result.error.candidate, context);
+            }
+            if (stageId === "npcs") {
+              return expandNpcProposals(result.error.candidate, context);
+            }
+            return expandPressureProposal(result.error.candidate, context);
           } catch (error) {
             throw new Error(
               `Starting-region ${stageId} compact output could not be normalized: ${
@@ -1030,6 +1448,9 @@ export function createStartingRegionProposalModel(
     if (stageId === "npcs") {
       return expandNpcProposals(result.output.value, context);
     }
+    if (stageId === "pressures") {
+      return expandPressureProposal(result.output.value, context);
+    }
     return result.output.value;
   };
   return {
@@ -1040,20 +1461,51 @@ export function createStartingRegionProposalModel(
       return invoke(stageId, context, { candidate, issues });
     },
     async audit(seed, context) {
+      const auditView = {
+        normalizedConstraints: {
+          explicitConstraints: seed.normalized.explicitConstraints,
+          player: seed.normalized.player,
+        },
+        region: seed.region,
+        settlement: seed.settlement,
+        institutions: seed.institutions,
+        locality: seed.locality,
+        playerContext: {
+          entity: seed.playerContext.entity,
+          homeLocationId: seed.playerContext.homeLocationId,
+          routineLocationIds: seed.playerContext.routineLocationIds,
+          accessEntityIds: seed.playerContext.accessEntityIds,
+          currentObligations: seed.playerContext.currentObligations,
+          ordinaryPressures: seed.playerContext.ordinaryPressures,
+        },
+        npcs: seed.npcs.map((npc) => ({
+          entity: npc.entity,
+          simulationReasons: npc.simulationReasons,
+          goals: npc.socialState.goals,
+          relationships: npc.socialState.relationships,
+          memories: npc.socialState.memories,
+        })),
+        pressures: seed.pressures,
+        creatures: seed.creatures,
+        knowledge: seed.knowledge,
+        processes: seed.processes,
+        openingSituation: seed.openingSituation,
+      };
       const result = await modelRuntime.generate({
         prompt: {
           instructions: [
             "Audit the generated starting region for contradictions, missing required foundations, and accidental retcons.",
             "Return issues only; do not rewrite the region in this step.",
+            "Return no more than five material issues. Return an empty issues array when the compact seed is coherent.",
           ],
-          context: JSON.stringify({ seed, workingState: context }),
+          context: JSON.stringify({ seed: auditView, request: context.request }),
           input: "Audit the complete generated starting region.",
         },
         output: { kind: "structured", schemaId: "starting-region.coherence-audit.v1", schema: coherenceAuditSchema },
         trace: { operation: "starting-region-generation", invocationId: "starting-region.coherence-audit" },
       }, {
         timeoutMs: STARTING_REGION_MODEL_TIMEOUT_MS,
-        generation: { temperature: 0, maxOutputTokens: 4_096 },
+        generation: { temperature: 0, maxOutputTokens: 1_024 },
       });
       if (!result.ok) throw new Error(`Starting-region audit model failure: ${result.error.message}`);
       return result.output.value;
@@ -1284,7 +1736,9 @@ function makeStage(
 ): GenerationStage<StartingRegionWorkingState, unknown> {
   return {
     id,
-    ...(["player-context", "npcs"].includes(id) ? { maxRepairPasses: 0 } : {}),
+    ...(["player-context", "npcs", "pressures", "opening-situation"].includes(id)
+      ? { maxRepairPasses: 0 }
+      : {}),
     candidateSchema: schema,
     generate: (state) => model.propose(id, state),
     validate: (candidate, state) => stageIssues(id, candidate, state),

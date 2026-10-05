@@ -616,6 +616,10 @@ export function createDesktopApplication(
           modelRuntime: options.modelRuntime,
           context: protectedContext,
           openingBrief: openingBriefFromCampaign(baseCampaign),
+          options: {
+            timeoutMs: 20 * 60 * 1_000,
+            generation: { temperature: 0, maxOutputTokens: 1_536 },
+          },
         });
         await database.execute(
           "UPDATE campaign_generation_drafts SET opening_proposal_json = ?, last_completed_stage_id = 'opening-incident', updated_at = ? WHERE id = ?",
