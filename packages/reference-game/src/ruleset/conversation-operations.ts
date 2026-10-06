@@ -50,6 +50,7 @@ export const recordCommunicationOperation: RulesOperation<
       subsystem: { id: "social", label: "Social" },
       tags: ["communication", "testimony", "beliefs"],
     },
+    applicability: { actionModes: ["communication"] },
   },
   inputSchema: recordCommunicationInputSchema,
   outputSchema: recordCommunicationResultSchema,

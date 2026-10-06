@@ -47,6 +47,7 @@ export const resolveEffortFixtureOperation: RulesOperation<
       subsystem: { id: "actions", label: "Actions" },
       tags: ["fixture"],
     },
+    applicability: { actionModes: ["manipulation"] },
   },
   inputSchema: effortInputSchema,
   outputSchema: effortResultSchema,

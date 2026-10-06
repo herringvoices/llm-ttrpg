@@ -429,6 +429,7 @@ export const recoverStressOperation: RulesOperation<
       subsystem: { id: "recovery", label: "Recovery" },
       tags: ["stress", "healing", "rest"],
     },
+    applicability: { actionModes: ["recovery"] },
   },
   inputSchema: recoverStressInputSchema,
   outputSchema: recoverStressResultSchema,

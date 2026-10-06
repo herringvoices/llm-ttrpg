@@ -909,6 +909,9 @@ export const resolveActionOperation: ResolutionOperation<
       subsystem: { id: "actions", label: "Actions" },
       tags: ["performance", "resistance", "effect", "stress"],
     },
+    applicability: {
+      actionModes: ["interaction", "manipulation", "observation", "attack", "power-use"],
+    },
   },
   inputSchema: resolveActionInputSchema,
   preparedSchema: resolveActionInputSchema,

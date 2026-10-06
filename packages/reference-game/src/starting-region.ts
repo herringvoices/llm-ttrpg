@@ -46,6 +46,7 @@ import {
   ATTRIBUTE_IDS,
   skillSchema,
 } from "./ruleset/model.js";
+import { awakeningEarthModernBaseline } from "./setting/index.js";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -1348,6 +1349,8 @@ export function createStartingRegionProposalModel(
       prompt: {
         instructions: [
           "Generate only grounded Awakening Earth campaign material for the requested stage.",
+          awakeningEarthModernBaseline,
+          "Do not default to medieval or pseudo-medieval fantasy. Unless player-established facts explicitly support a historic or isolated exception, use contemporary roads, vehicles, utilities, communications, businesses, services, and public institutions; a town or rural setting is still modern.",
           "Preserve player-established facts verbatim and do not make unspecified details player-authored.",
           "Use stable lowercase dot- or dash-separated IDs and cite provenance for generated choices.",
           "Use concise strings and the smallest arrays that satisfy the requested contract.",
@@ -1355,6 +1358,7 @@ export function createStartingRegionProposalModel(
             ? [
                 "For every explicitConstraints sourceText, copy an exact quotation from workingState.request.locationDescription; never write a field name such as locationDescription.",
                 "For every player establishedFacts sourceText, copy an exact quotation from workingState.request.player.description; never write a field name such as player.",
+                "Do not place generator-chosen biography, personality, routine, or goal details in establishedFacts. Leave them unspecified; later stages may generate them when authorized.",
               ]
             : []),
           ...(stageId === "player-context"
@@ -1795,6 +1799,30 @@ function graphConnected(locality: StartingLocality): boolean {
   return ids.every((id) => visited.has(id));
 }
 
+const modernInfrastructurePattern =
+  /\b(?:asphalt|broadband|bus|buses|car|cars|cell(?:ular)?|clinic|delivery|electric(?:al|ity)?|grid|hospital|internet|interstate|modern|paved|pharmacy|rail|school bus|state route|supermarket|truck|trucks|utilities|utility)\b/i;
+
+function hasModernInfrastructureEvidence(value: unknown): boolean {
+  return modernInfrastructurePattern.test(JSON.stringify(value));
+}
+
+function normalizePlayerEstablishedFacts(
+  candidate: unknown,
+  state: Readonly<StartingRegionWorkingState>,
+): NormalizedRegionConstraints {
+  const normalized = normalizedRegionConstraintsSchema.parse(candidate);
+  if (!state.request.allowGeneratedDetails) return normalized;
+  return normalizedRegionConstraintsSchema.parse({
+    ...normalized,
+    player: {
+      ...normalized.player,
+      establishedFacts: normalized.player.establishedFacts.filter((fact) =>
+        sourceContainsQuotedText(state.request.player.description, fact.sourceText)
+      ),
+    },
+  });
+}
+
 function stageIssues(
   stageId: string,
   candidate: unknown,
@@ -1815,7 +1843,7 @@ function stageIssues(
   }));
 
   if (stageId === "normalize") {
-    const normalized = normalizedRegionConstraintsSchema.parse(candidate);
+    const normalized = normalizePlayerEstablishedFacts(candidate, state);
     for (const constraint of normalized.explicitConstraints) {
       if (!sourceContainsQuotedText(
         state.request.locationDescription,
@@ -1830,6 +1858,16 @@ function stageIssues(
       }
     }
     validateNormalizedPlayerSetup(state.request.player, normalized.player);
+  } else if (stageId === "settlement") {
+    const settlement = settlementSeedSchema.parse(candidate);
+    if (!hasModernInfrastructureEvidence(settlement)) {
+      add(
+        "generation.setting.modern-baseline",
+        "The settlement does not visibly preserve Awakening Earth's contemporary modern infrastructure.",
+        ["transportation"],
+        "Add concise evidence of ordinary present-day transport, utilities, communications, commerce, or public services. Rural or traditional does not mean preindustrial.",
+      );
+    }
   } else if (stageId === "locality") {
     const locality = startingLocalitySchema.parse(candidate);
     const ids = new Set(locality.locations.map((location) => location.id));
@@ -1848,6 +1886,14 @@ function stageIssues(
         "The detailed starting locality must be connected.",
         ["routes"],
         "Repair routes without regenerating unrelated locality content.",
+      );
+    }
+    if (!hasModernInfrastructureEvidence(locality)) {
+      add(
+        "generation.setting.modern-baseline",
+        "The starting locality does not visibly preserve Awakening Earth's contemporary modern infrastructure.",
+        ["locations"],
+        "Ground the locality in ordinary present-day roads, vehicles, utilities, communications, businesses, or public services without expanding it unnecessarily.",
       );
     }
   } else if (stageId === "player-context") {
@@ -2594,7 +2640,7 @@ export async function generateStartingRegion(
         normalizedRegionConstraintsSchema,
         (current, candidate) =>
           mergeState(current, {
-            normalized: normalizedRegionConstraintsSchema.parse(candidate),
+            normalized: normalizePlayerEstablishedFacts(candidate, current),
           }),
         model,
       ),

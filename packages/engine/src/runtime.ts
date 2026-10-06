@@ -1023,7 +1023,7 @@ function openSession(
             instructions: [
               "Interpret the player's declaration once. Do not plan an operation chain.",
               "Use only context-local scene references for targets. Assess current action pressure from 1 (low) to 9 (immediate).",
-              "If a material player choice is missing, request that choice instead of guessing.",
+              "Request a player choice only when materially different commitments cannot be reasonably inferred from the declaration, current location, or named target. A stated investigation at a known place is actionable: choose a reasonable first observation instead of asking which aspect to inspect.",
             ],
             context: renderContextForModel(context),
             input: request.declaration,
@@ -1079,6 +1079,10 @@ function openSession(
           actorId: request.actorId,
           declaration: request.declaration,
           interpretedIntent,
+          semanticAction: {
+            modes: decision.value.modes,
+            statedMeans: decision.value.statedMeans,
+          },
           executableIntent,
           status: "active",
           elapsedMs: 0,
@@ -1195,7 +1199,14 @@ function openSession(
 
       if (run.status === "stopped") return narrate(run);
 
-      const maxTurns = options.maxModelTurns ?? 24;
+      const maxTurns = options.maxModelTurns ?? (
+        run.semanticAction && dependencies.game.toolCatalog.listActionCandidates(
+          run.semanticAction.modes,
+          options.toolPolicy,
+        ).length > 0
+          ? 6
+          : 24
+      );
       for (let turn = 1; turn <= maxTurns; turn += 1) {
         const persistedWorld = await currentPersisted();
         if (!persistedWorld || persistedWorld.revision !== revision || run.lastWorldRevision !== revision) {
@@ -1222,6 +1233,20 @@ function openSession(
           ...orchestratorRequest,
           executableIntent: run.executableIntent,
         };
+        const candidates = run.semanticAction
+          ? dependencies.game.toolCatalog.listActionCandidates(
+              run.semanticAction.modes,
+              options.toolPolicy,
+            )
+          : [];
+        const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+        if (candidates.length) {
+          record("catalog", {
+            stage: "deterministic-candidate-selection",
+            modes: run.semanticAction!.modes,
+            candidateIds: [...candidateIds],
+          }, { worldRevision: revision });
+        }
         const context = assembleContext({
           game: dependencies.game,
           world: state,
@@ -1241,7 +1266,12 @@ function openSession(
           executionDecisionSchema,
           {
             instructions: [
-              "Choose exactly one next action: discover subsystems/tools, inspect a tool, invoke one tool, or stop.",
+              ...(candidates.length
+                ? [
+                    "Choose exactly one next action: invoke one supplied candidate or stop.",
+                    "You may not discover catalog entries, inspect tools, or choose a tool outside the supplied candidates.",
+                  ]
+                : ["Choose exactly one next action: discover subsystems/tools, inspect a tool, invoke one tool, or stop."]),
               "Do not produce an execution plan. Tool invocations must use context-local scene references; the engine injects the actor and bounded intent.",
               `The action has ${Math.max(0, run.executableIntent.authorizedHorizonMs - run.elapsedMs)}ms of authorized fictional time remaining.`,
             ],
@@ -1249,6 +1279,8 @@ function openSession(
             input: JSON.stringify({
               declaration: run.declaration,
               goal: run.executableIntent.goal,
+              semanticAction: run.semanticAction,
+              ...(candidates.length ? { candidates } : {}),
               elapsedMs: run.elapsedMs,
               committedReceipts: run.receipts.map((receipt) => {
                 const reverse = new Map(
@@ -1295,6 +1327,25 @@ function openSession(
           await dependencies.persistence.actionRuns.update(run);
           record("stop", { reason: decision.reason }, { worldRevision: revision });
           return narrate(run);
+        }
+
+        if (candidates.length && decision.kind !== "invoke-tool") {
+          record("rejection", {
+            reason: "candidate-selection-required",
+            decision: decision.kind,
+          }, { worldRevision: revision });
+          continue;
+        }
+        if (
+          candidates.length &&
+          decision.kind === "invoke-tool" &&
+          !candidateIds.has(decision.toolId)
+        ) {
+          record("rejection", {
+            reason: "tool-outside-candidate-set",
+            toolId: decision.toolId,
+          }, { worldRevision: revision });
+          continue;
         }
 
         let catalogContent: JsonValue | undefined;
@@ -1546,7 +1597,7 @@ function openSession(
         }
       }
 
-      run = actionRunSchema.parse({ ...run, status: "stopped", stopReason: "budget-exhausted" });
+      run = actionRunSchema.parse({ ...run, status: "stopped", stopReason: "model-turn-limit" });
       await dependencies.persistence.actionRuns.update(run);
       record("stop", { reason: "model-turn-limit", maxTurns }, { worldRevision: revision });
       return fail("turn-limit", `Player action exceeded ${maxTurns} model turns`, run);

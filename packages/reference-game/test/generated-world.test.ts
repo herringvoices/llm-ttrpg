@@ -15,6 +15,7 @@ import {
 } from "@llm-ttrpg/engine";
 import {
   ATTRIBUTE_IDS,
+  awakeningEarthModernBaseline,
   createStartingRegionProposalModel,
   densifyGeneratedEntity,
   ensureOpeningCreature,
@@ -175,6 +176,29 @@ function creatureMechanics(agility = 70) {
 }
 
 describe("generated starting region", () => {
+  it("anchors locality generation to contemporary Awakening Earth infrastructure", async () => {
+    const outputs = startingRegionStageOutputs();
+    const runtime = new ScriptedModelRuntime([{
+      id: "modern-locality",
+      match: {
+        schemaId: "starting-region.locality.v1",
+        predicate: (request) => {
+          expect(request.prompt.instructions).toEqual(expect.arrayContaining([
+            awakeningEarthModernBaseline,
+            "Do not default to medieval or pseudo-medieval fantasy. Unless player-established facts explicitly support a historic or isolated exception, use contemporary roads, vehicles, utilities, communications, businesses, services, and public institutions; a town or rural setting is still modern.",
+          ]));
+          return true;
+        },
+      },
+      result: { kind: "structured", value: outputs.locality },
+    }]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("locality", {
+      request: startingRegionRequestFixture,
+    })).resolves.toEqual(outputs.locality);
+  });
+
   it("forwards ordinary parsed schema-invalid JSON to the bounded stage repair pipeline", async () => {
     const candidate = { wrong: true };
     const runtime = new ScriptedModelRuntime([{
@@ -524,6 +548,36 @@ describe("generated starting region", () => {
     )).toBe(false);
   });
 
+  it("discards invented player facts when generated details are authorized", async () => {
+    const outputs = startingRegionStageOutputs();
+    const model = new DeterministicStartingRegionModel();
+    model.proposals.normalize = {
+      ...outputs.normalize,
+      player: {
+        ...outputs.normalize.player,
+        establishedFacts: [
+          ...outputs.normalize.player.establishedFacts,
+          {
+            id: "player-description-1",
+            category: "biography",
+            statement: "The player has a hobby the generator invented.",
+            sourceText: "an invented quotation",
+          },
+        ],
+      },
+    };
+
+    const result = await generateStartingRegion(
+      { ...startingRegionRequestFixture, allowGeneratedDetails: true },
+      model,
+    );
+
+    expect(result.kind).toBe("generated");
+    if (result.kind !== "generated") throw new Error("Expected generated region");
+    expect(result.seed.normalized.player.establishedFacts)
+      .not.toContainEqual(expect.objectContaining({ id: "player-description-1" }));
+  });
+
   it("repairs only the invalid stage and compiles a validated playable campaign", async () => {
     const { result, model, definition } = await generatedGame();
     expect(model.calls).toContain("repair:locality");
@@ -556,6 +610,38 @@ describe("generated starting region", () => {
     expect(game.worldSimulationRegistry.listScopes()).toHaveLength(3);
     expect(game.campaign.generationRecord?.acceptedStageOutputs)
       .toHaveProperty("opening-situation");
+  });
+
+  it("repairs a settlement that drifts into generic preindustrial rural fantasy", async () => {
+    const outputs = startingRegionStageOutputs();
+    const base = new DeterministicStartingRegionModel();
+    const model = {
+      propose(stageId: string, context: Parameters<typeof base.propose>[1]) {
+        const candidate = base.propose(stageId, context);
+        if (stageId !== "settlement") return candidate;
+        return {
+          ...outputs.settlement,
+          economy: ["subsistence farming"],
+          districts: [{
+            id: "district.market-square",
+            name: "Market Square",
+            summary: "A traditional square surrounded by self-sufficient farmsteads.",
+          }],
+          transportation: ["dirt paths and a small boat landing"],
+          institutionalCapacity: "limited local authority",
+          traits: ["traditional", "isolated"],
+        };
+      },
+      repair: base.repair.bind(base),
+      audit: base.audit.bind(base),
+    };
+
+    const result = await generateStartingRegion(startingRegionRequestFixture, model);
+
+    expect(result.kind).toBe("generated");
+    expect(base.calls).toContain("repair:settlement");
+    if (result.kind !== "generated") throw new Error("Expected generated region");
+    expect(result.seed.settlement.transportation).toContain("interstate");
   });
 
   it("minimally repairs an accepted legacy seed that has no opening creature", async () => {

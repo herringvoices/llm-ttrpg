@@ -12,6 +12,7 @@ import { jsonValueSchema } from "./json.js";
 import { mutationProposalSchema } from "./operations.js";
 import { randomnessTraceSchema } from "./randomness.js";
 import { resolutionPathSchema } from "./resolution.js";
+import { semanticActionModeSchema, semanticActionSchema } from "./semantic-action.js";
 import { fictionalDurationMsSchema } from "./time.js";
 
 export const intentInterpretationDecisionSchema = z.discriminatedUnion("kind", [
@@ -19,6 +20,8 @@ export const intentInterpretationDecisionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("interpreted"),
     goal: z.string().trim().min(1),
     targetRefs: z.array(stableIdSchema),
+    modes: z.array(semanticActionModeSchema).min(1).default(["other"]),
+    statedMeans: z.array(z.string().trim().min(1)).max(8).default([]),
     requestedHorizonMs: fictionalDurationMsSchema,
     pressureLevel: actionPressureLevelSchema,
   }).strict(),
@@ -78,6 +81,7 @@ export const actionRunSchema = z.object({
   actorId: stableIdSchema,
   declaration: z.string().trim().min(1),
   interpretedIntent: interpretedIntentSchema,
+  semanticAction: semanticActionSchema.optional(),
   executableIntent: executableIntentSchema,
   status: z.enum(["active", "stopped"]),
   elapsedMs: fictionalDurationMsSchema,

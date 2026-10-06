@@ -20,11 +20,15 @@ use tokio::{
 };
 
 const DATABASE_URL: &str = "sqlite:llm-ttrpg.db";
-const MODEL_NAME: &str = "Qwen3-8B-Q4_K_M.gguf";
-const MODEL_ID: &str = "llm-ttrpg-qwen3-8b";
-const MODEL_SIZE: u64 = 5_027_783_488;
-const MODEL_SHA256: &str = "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785";
-const MODEL_URL: &str = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/6a569868d07d3bd59e8b97fb001bf8c0b254bb20/Qwen3-8B-Q4_K_M.gguf?download=true";
+const MODEL_NAME: &str = "Qwen3.5-9B-Q4_K_M.gguf";
+const MODEL_ID: &str = "llm-ttrpg-qwen3.5-9b";
+const MODEL_SIZE: u64 = 5_680_522_464;
+const MODEL_SHA256: &str = "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8";
+const MODEL_URL: &str = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q4_K_M.gguf?download=true";
+const LEGACY_MODEL_NAME: &str = "Qwen3-8B-Q4_K_M.gguf";
+const STANDARD_MODEL_TIER_ID: &str = "standard";
+const STANDARD_MODEL_CONTEXT_WINDOW_TOKENS: u32 = 16_384;
+const STANDARD_MODEL_RECOMMENDED_MEMORY_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +45,40 @@ struct LocalModelConnection {
     endpoint: String,
     api_key: String,
     model: String,
+    model_tier: String,
+    context_window_tokens: u32,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalModelTier {
+    id: String,
+    label: String,
+    availability: String,
+    recommended_memory_bytes: u64,
+    model_id: Option<String>,
+    context_window_tokens: Option<u32>,
+}
+
+fn local_model_tiers() -> Vec<LocalModelTier> {
+    vec![
+        LocalModelTier {
+            id: STANDARD_MODEL_TIER_ID.to_owned(),
+            label: "Standard".to_owned(),
+            availability: "installed-default".to_owned(),
+            recommended_memory_bytes: STANDARD_MODEL_RECOMMENDED_MEMORY_BYTES,
+            model_id: Some(MODEL_ID.to_owned()),
+            context_window_tokens: Some(STANDARD_MODEL_CONTEXT_WINDOW_TOKENS),
+        },
+        LocalModelTier {
+            id: "enhanced".to_owned(),
+            label: "Enhanced".to_owned(),
+            availability: "future-download".to_owned(),
+            recommended_memory_bytes: 32 * 1024 * 1024 * 1024,
+            model_id: None,
+            context_window_tokens: None,
+        },
+    ]
 }
 
 struct LocalModelProcess {
@@ -83,6 +121,44 @@ fn model_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
         directory.join(format!("{MODEL_NAME}.part")),
         directory.join(format!("{MODEL_NAME}.sha256")),
     ))
+}
+
+fn legacy_model_paths(directory: &Path) -> [PathBuf; 3] {
+    [
+        directory.join(LEGACY_MODEL_NAME),
+        directory.join(format!("{LEGACY_MODEL_NAME}.part")),
+        directory.join(format!("{LEGACY_MODEL_NAME}.sha256")),
+    ]
+}
+
+async fn remove_legacy_model(app: &AppHandle) {
+    let Ok((model_path, _, _)) = model_paths(app) else {
+        return;
+    };
+    let Some(directory) = model_path.parent() else {
+        return;
+    };
+    for path in legacy_model_paths(directory) {
+        match fs::remove_file(&path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_cleanup_targets_only_the_previous_model_artifacts() {
+        let paths = legacy_model_paths(Path::new("models"));
+        assert_eq!(paths[0], PathBuf::from("models").join("Qwen3-8B-Q4_K_M.gguf"));
+        assert_eq!(paths[1], PathBuf::from("models").join("Qwen3-8B-Q4_K_M.gguf.part"));
+        assert_eq!(paths[2], PathBuf::from("models").join("Qwen3-8B-Q4_K_M.gguf.sha256"));
+        assert!(paths.iter().all(|path| path.file_name() != Some(MODEL_NAME.as_ref())));
+    }
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -197,12 +273,12 @@ async fn verified_model(app: &AppHandle) -> Result<PathBuf, String> {
     emit_progress(
         app,
         "downloading",
-        "Installing the included Qwen3 8B local model (about 5 GB)...",
+        "Installing the included Qwen3.5 9B local model (about 5.7 GB)...",
         existing,
     )?;
 
     let client = reqwest::Client::builder()
-        .user_agent("llm-ttrpg/0.1.17")
+        .user_agent("llm-ttrpg/0.1.18")
         .build()
         .map_err(|error| format!("Unable to initialize the model downloader: {error}"))?;
     let mut request = client.get(MODEL_URL);
@@ -247,7 +323,7 @@ async fn verified_model(app: &AppHandle) -> Result<PathBuf, String> {
             emit_progress(
                 app,
                 "downloading",
-                "Installing the included Qwen3 8B local model (about 5 GB)...",
+                "Installing the included Qwen3.5 9B local model (about 5.7 GB)...",
                 downloaded.min(MODEL_SIZE),
             )?;
             last_reported = downloaded;
@@ -425,6 +501,8 @@ async fn start_model(
         endpoint: endpoint.clone(),
         api_key: api_key.clone(),
         model: MODEL_ID.to_owned(),
+        model_tier: STANDARD_MODEL_TIER_ID.to_owned(),
+        context_window_tokens: STANDARD_MODEL_CONTEXT_WINDOW_TOKENS,
     };
     state
         .process
@@ -488,7 +566,13 @@ async fn ensure_local_model(
 ) -> Result<LocalModelConnection, String> {
     let _setup = state.setup.lock().await;
     let model_path = verified_model(&app).await?;
+    remove_legacy_model(&app).await;
     start_model(&app, &state, &model_path).await
+}
+
+#[tauri::command]
+fn available_local_model_tiers() -> Vec<LocalModelTier> {
+    local_model_tiers()
 }
 
 fn migrations() -> Vec<Migration> {
@@ -554,7 +638,10 @@ fn migrations() -> Vec<Migration> {
 pub fn run() {
     let application = tauri::Builder::default()
         .manage(LocalModelState::default())
-        .invoke_handler(tauri::generate_handler![ensure_local_model])
+        .invoke_handler(tauri::generate_handler![
+            ensure_local_model,
+            available_local_model_tiers,
+        ])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(DATABASE_URL, migrations())

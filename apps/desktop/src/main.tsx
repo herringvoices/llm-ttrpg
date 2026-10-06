@@ -12,6 +12,8 @@ interface LocalModelConnection {
   readonly endpoint: string;
   readonly apiKey: string;
   readonly model: string;
+  readonly modelTier: "standard" | "enhanced";
+  readonly contextWindowTokens: number;
 }
 
 interface LocalModelProgress {
@@ -42,7 +44,7 @@ function renderSetup(progress: LocalModelProgress): void {
           <small>{formatBytes(progress.downloadedBytes)} of {formatBytes(progress.totalBytes)} · interrupted downloads resume automatically</small>
         </>
       )}
-      <p className="setup-note">The model runs only on this computer. The first setup needs an internet connection and roughly 5.1 GB of free disk space.</p>
+      <p className="setup-note">The model runs only on this computer. The first setup needs an internet connection and roughly 5.7 GB of free disk space.</p>
     </main>,
   );
 }
@@ -57,14 +59,14 @@ async function bundledRuntime(): Promise<LlamaCppModelRuntime> {
       phase: "starting",
       message: "Checking the bundled local model...",
       downloadedBytes: 0,
-      totalBytes: 5_027_783_488,
+      totalBytes: 5_680_522_464,
     });
     const connection = await invoke<LocalModelConnection>("ensure_local_model");
     return new LlamaCppModelRuntime({
       baseUrl: connection.endpoint,
       apiKey: connection.apiKey,
       model: connection.model,
-      contextWindowTokens: 16_384,
+      contextWindowTokens: connection.contextWindowTokens,
     });
   } finally {
     unlisten?.();

@@ -132,6 +132,7 @@ describe("action pressure contracts", () => {
       "goal-achieved",
       "goal-impossible",
       "material-circumstance-change",
+      "model-turn-limit",
       "pressure-reassessment-required",
       "player-decision-required",
     ]);

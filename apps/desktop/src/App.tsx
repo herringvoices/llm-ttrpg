@@ -23,6 +23,7 @@ export function App({ application }: { readonly application: DesktopApplication 
   const [activeDraftId, setActiveDraftId] = useState<string>();
   const [generationProgress, setGenerationProgress] = useState<CampaignCreationProgress>();
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
+  const [openingWorldId, setOpeningWorldId] = useState<string>();
   const [playSession, setPlaySession] = useState<DesktopPlaySession>();
   const [playView, setPlayView] = useState<PlaySessionView>();
   const [declaration, setDeclaration] = useState("");
@@ -119,13 +120,20 @@ export function App({ application }: { readonly application: DesktopApplication 
   }
 
   async function openWorld(worldId: string) {
+    if (openingWorldId) return;
+    setOpeningWorldId(worldId);
     setMessage("Opening campaign…");
     try {
       const session = await application.openWorld(worldId);
       setPlaySession(session);
       setPlayView(session.view());
+      const pending = session.prepareOpening();
+      setPlayView(session.view());
+      setPlayView(await pending);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to open campaign");
+    } finally {
+      setOpeningWorldId(undefined);
     }
   }
 
@@ -229,7 +237,11 @@ export function App({ application }: { readonly application: DesktopApplication 
 
         <section className="transcript" aria-live="polite" aria-label="Game transcript">
           {playView.transcript.length === 0 && (
-            <p className="empty-copy">The world is ready. Describe what you do or say.</p>
+            <p className="empty-copy">
+              {playView.preparingOpening
+                ? "Preparing your opening scene…"
+                : "The world is ready. Describe what you do or say."}
+            </p>
           )}
           {playView.transcript.map((entry) => (
             <article className={`transcript-entry ${entry.speaker}`} key={entry.id}>
@@ -256,7 +268,9 @@ export function App({ application }: { readonly application: DesktopApplication 
             }}
           />
           <button disabled={playView.busy || !declaration.trim()} onClick={() => void submitTurn()}>
-            {playView.busy ? "Resolving…" : "Continue"}
+            {playView.preparingOpening
+              ? "Preparing opening…"
+              : playView.busy ? "Resolving…" : "Continue"}
           </button>
         </section>
 
@@ -415,7 +429,13 @@ export function App({ application }: { readonly application: DesktopApplication 
             {worlds.map((world) => (
               <li key={world.id}>
                 <div><strong>{world.name}</strong><small>Updated {new Date(world.updatedAt).toLocaleString()}</small></div>
-                <button type="button" onClick={() => void openWorld(world.id)}>Open</button>
+                <button
+                  type="button"
+                  disabled={Boolean(openingWorldId)}
+                  onClick={() => void openWorld(world.id)}
+                >
+                  {openingWorldId === world.id ? "Opening…" : "Open"}
+                </button>
               </li>
             ))}
           </ul>

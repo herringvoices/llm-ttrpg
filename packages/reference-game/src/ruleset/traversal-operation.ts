@@ -54,6 +54,7 @@ export const traverseRouteOperation: RulesOperation<
       subsystem: { id: "actions", label: "Actions" },
       tags: ["movement", "route", "world-state"],
     },
+    applicability: { actionModes: ["movement"] },
   },
   inputSchema: traverseRouteInputSchema,
   outputSchema: traverseRouteResultSchema,

@@ -20,6 +20,7 @@ export * from "./events.js";
 export * from "./operations.js";
 export * from "./randomness.js";
 export * from "./resolution.js";
+export * from "./semantic-action.js";
 export * from "./persistence.js";
 export * from "./in-memory-persistence.js";
 export * from "./retrieval.js";

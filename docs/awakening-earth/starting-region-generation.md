@@ -23,6 +23,13 @@ The game interprets those preferences, generates a coherent campaign seed under 
 
 The result should feel locally specific without requiring the project to pre-author or pre-simulate an entire city, county, or country.
 
+Awakening Earth's contemporary modern baseline is a hard setting constraint, not a stylistic
+suggestion. Rural, remote, poor, or traditional communities still have ordinary present-day
+roads, vehicles, utilities, communications, businesses, schools, medicine, emergency services,
+media, and government unless player-established material says otherwise. Settlement and locality
+validation requires visible modern-infrastructure evidence so a model cannot silently substitute
+generic medieval-fantasy shorthand such as ubiquitous dirt paths or a preindustrial market town.
+
 ## Core Principles
 
 ### Generate once, then treat it as real
@@ -691,8 +698,9 @@ opening narration from the canonical opening material and stores it as the first
 The narration may establish only immediately perceptible place, tension, and sensory detail; it
 cannot add world changes or choose the player's response. If presentation generation fails, a
 canonical incident-summary fallback still prevents an empty opening screen. When an older
-generated session has an empty transcript, the same presentation-only step runs once on reopen;
-the world, event history, plan, and accepted generation outputs are not replayed or regenerated.
+generated session has an empty transcript, reopening enters the play view immediately, displays
+an explicit opening-narration working state, and runs the same presentation-only step once. The
+world, event history, plan, and accepted generation outputs are not replayed or regenerated.
 
 ### Deterministic reference campaign
 

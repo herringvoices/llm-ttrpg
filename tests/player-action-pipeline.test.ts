@@ -85,6 +85,73 @@ const request = {
 } as const;
 
 describe("player action execution pipeline", () => {
+  it("uses deterministic candidates without catalog discovery", async () => {
+    const { runtime } = makeRuntime();
+    const session = await runtime.createWorld("Bounded candidate selection");
+    const model = new QueueModelRuntime([
+      {
+        kind: "interpreted",
+        goal: "test the current position",
+        targetRefs: [],
+        modes: ["manipulation"],
+        statedMeans: ["my hands"],
+        requestedHorizonMs: 60_000,
+        pressureLevel: 6,
+      },
+      {
+        kind: "invoke-tool",
+        toolId: "test.actions.resolve-effort",
+        arguments: { base: 8, modifier: 2, difficulty: 9, durationMs: 1_000 },
+      },
+      { kind: "stop", reason: "goal-achieved" },
+      "Amelia tests her footing and finds it holds.",
+    ]);
+
+    const result = await session.performPlayerAction(request, { modelRuntime: model });
+
+    expect(result.kind).toBe("resolved");
+    expect(result.trace.entries.some((entry) =>
+      entry.phase === "catalog" &&
+      typeof entry.detail === "object" &&
+      entry.detail !== null &&
+      !Array.isArray(entry.detail) &&
+      entry.detail.stage === "deterministic-candidate-selection",
+    )).toBe(true);
+    expect(model.requests).toHaveLength(4);
+    expect(model.requests.some((entry) => entry.prompt.instructions.some((instruction) =>
+      instruction.includes("discover subsystems/tools"),
+    ))).toBe(false);
+  });
+
+  it("records a model-turn limit without misreporting fictional-time exhaustion", async () => {
+    const { runtime } = makeRuntime();
+    const session = await runtime.createWorld("Model turn limit");
+    const result = await session.performPlayerAction(
+      { ...request, actionId: "action.turn-limit" },
+      {
+        modelRuntime: new QueueModelRuntime([
+          {
+            kind: "interpreted",
+            goal: "inspect the current situation",
+            targetRefs: [],
+            requestedHorizonMs: 60_000,
+            pressureLevel: 6,
+          },
+          { kind: "discover-subsystems", domainId: "test" },
+        ]),
+        maxModelTurns: 1,
+      },
+    );
+
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") throw new Error("Expected turn-limit failure");
+    expect(result.failure.kind).toBe("turn-limit");
+    expect(result.run).toEqual(expect.objectContaining({
+      elapsedMs: 0,
+      stopReason: "model-turn-limit",
+    }));
+  });
+
   it("interprets once, commits operations with receipts, stops, narrates, and resumes idempotently", async () => {
     const { runtime, persistence } = makeRuntime();
     const session = await runtime.createWorld("Action pipeline");

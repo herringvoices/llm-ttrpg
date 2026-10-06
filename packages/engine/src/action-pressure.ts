@@ -82,6 +82,7 @@ export const intentStopReasonSchema = z.enum([
   "goal-achieved",
   "goal-impossible",
   "material-circumstance-change",
+  "model-turn-limit",
   "pressure-reassessment-required",
   "player-decision-required",
 ]);

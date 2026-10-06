@@ -60,6 +60,7 @@ export interface PlaySessionView {
   readonly narrationPreference: NarrationPreference;
   readonly transcript: readonly TranscriptEntry[];
   readonly busy: boolean;
+  readonly preparingOpening: boolean;
   readonly error?: string;
   readonly diagnostics?: TurnDiagnostics;
 }
@@ -76,6 +77,15 @@ const turnRouteSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("action") }).strict(),
   z.object({ kind: z.literal("conversation"), recipientRefs: z.array(z.string().min(1)).min(1) }).strict(),
 ]);
+
+const ROUTING_CONTEXT_BUDGET_UNITS = 8_000;
+const ACTION_CONTEXT_BUDGET_UNITS = 12_000;
+const ACTION_MAX_MODEL_TURNS = 24;
+
+function mayBeConversation(declaration: string): boolean {
+  return /["“”]|\b(answer|ask|call|greet|reply|say|speak|talk|tell|text|whisper|yell)\b/i
+    .test(declaration);
+}
 
 function nowMs(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
@@ -110,6 +120,7 @@ export class DesktopPlaySession {
   private preference: NarrationPreference;
   private workingConversation?: ConversationWorkingState;
   private active = false;
+  private preparingOpening = false;
   private lastError?: string;
   private lastDiagnostics?: TurnDiagnostics;
   private lastActionRequest?: {
@@ -118,6 +129,10 @@ export class DesktopPlaySession {
     readonly declaration: string;
     readonly locationId?: string;
     readonly budget: { readonly maxUnits: number };
+  };
+  private pendingActionClarification?: {
+    readonly declaration: string;
+    readonly question: string;
   };
 
   constructor(
@@ -130,6 +145,7 @@ export class DesktopPlaySession {
       readonly narrationPreference?: NarrationPreference;
     } = {},
     private readonly presentationPersistence?: PlaySessionPersistence,
+    private readonly openingNarration?: () => Promise<TranscriptEntry>,
   ) {
     this.transcriptEntries = [...(initial.transcript ?? [])];
     this.preference = initial.narrationPreference ?? "standard";
@@ -157,6 +173,7 @@ export class DesktopPlaySession {
       narrationPreference: this.preference,
       transcript: [...this.transcriptEntries],
       busy: this.active,
+      preparingOpening: this.preparingOpening,
       ...(this.lastError ? { error: this.lastError } : {}),
       ...(this.lastDiagnostics ? { diagnostics: this.lastDiagnostics } : {}),
     };
@@ -184,6 +201,24 @@ export class DesktopPlaySession {
     return this.modelRuntime;
   }
 
+  async prepareOpening(): Promise<PlaySessionView> {
+    if (this.transcriptEntries.length > 0 || !this.openingNarration) return this.view();
+    if (this.active) throw new Error("The play session is already busy");
+    this.active = true;
+    this.preparingOpening = true;
+    this.lastError = undefined;
+    try {
+      const entry = await this.openingNarration();
+      if (this.transcriptEntries.length === 0) this.transcriptEntries.push(entry);
+    } catch (error) {
+      this.lastError = errorMessage(error);
+    } finally {
+      this.preparingOpening = false;
+      this.active = false;
+    }
+    return this.view();
+  }
+
   private async routeDeclaration(declaration: string) {
     const model = this.requireModel();
     const context = this.session.assembleContext({
@@ -192,7 +227,7 @@ export class DesktopPlaySession {
       focalActorId: this.playerActorId,
       ...(this.view().currentLocationId ? { locationId: this.view().currentLocationId } : {}),
       declaration,
-      budget: { maxUnits: 20_000 },
+      budget: { maxUnits: ROUTING_CONTEXT_BUDGET_UNITS },
     });
     const result = await model.generate({
       prompt: {
@@ -254,25 +289,33 @@ export class DesktopPlaySession {
   }
 
   async performTurn(rawDeclaration: string): Promise<PlaySessionView> {
-    const declaration = rawDeclaration.trim();
-    if (!declaration) return this.view();
+    const submittedDeclaration = rawDeclaration.trim();
+    if (!submittedDeclaration) return this.view();
     if (this.active) throw new Error("A player turn is already running");
     this.active = true;
     this.lastError = undefined;
+    const pendingClarification = this.pendingActionClarification;
+    this.pendingActionClarification = undefined;
+    const declaration = pendingClarification
+      ? `${pendingClarification.declaration}\n\nPlayer clarification in response to "${pendingClarification.question}": ${submittedDeclaration}`
+      : submittedDeclaration;
     const beforeBasis = this.session.planningBasis();
     const before = this.session.snapshot();
     const historyBefore = await this.session.eventHistory();
     const startedAt = nowMs();
     let routeKind: "action" | "conversation" = "action";
     try {
-      const { route, context } = await this.routeDeclaration(declaration);
+      const routed = !pendingClarification && mayBeConversation(declaration)
+        ? await this.routeDeclaration(declaration)
+        : undefined;
+      const route = routed?.route ?? { kind: "action" as const };
       routeKind = route.kind;
-      this.add("player", declaration);
+      this.add("player", submittedDeclaration);
       let actionTrace: JsonValue | undefined;
       let narrationStatus: "complete" | "failed" = "complete";
       if (route.kind === "conversation") {
         const recipientIds = route.recipientRefs
-          .map((ref) => context.diagnostics.localReferences[ref])
+          .map((ref) => routed!.context.diagnostics.localReferences[ref])
           .filter((id): id is string => Boolean(id && id !== this.playerActorId));
         if (recipientIds.length === 0) throw new Error("No authorized conversation recipient was available");
         const player = before.entities.find((entity) => entity.id === this.playerActorId);
@@ -319,14 +362,21 @@ export class DesktopPlaySession {
           actorId: this.playerActorId,
           declaration,
           ...(this.view().currentLocationId ? { locationId: this.view().currentLocationId } : {}),
-          budget: { maxUnits: 50_000 },
+          budget: { maxUnits: ACTION_CONTEXT_BUDGET_UNITS },
         };
         this.lastActionRequest = actionRequest;
         const result = await this.session.performPlayerAction(actionRequest, {
           modelRuntime: this.requireModel(),
+          maxModelTurns: ACTION_MAX_MODEL_TURNS,
         });
         actionTrace = asJson(result.trace);
-        if (result.kind === "needs-player-input") this.add("system", result.question);
+        if (result.kind === "needs-player-input") {
+          this.pendingActionClarification = {
+            declaration,
+            question: result.question,
+          };
+          this.add("system", result.question);
+        }
         else if (result.kind === "failed") {
           if (result.developmentSignal) {
             narrationStatus = "failed";

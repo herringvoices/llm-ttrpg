@@ -1,5 +1,8 @@
 import type { Setting } from "@llm-ttrpg/engine";
 
+export const awakeningEarthModernBaseline =
+  "Awakening Earth is contemporary modern Earth in the campaign's calendar year: cars and trucks, paved roads, electricity, phones, internet, modern construction, retail, schools, medicine, emergency services, media, and government remain ordinary. Rural, remote, traditional, or poor communities are still modern rather than medieval or preindustrial.";
+
 export const awakeningEarthSetting: Setting = {
   identity: { id: "awakening-earth", version: "0.2.0" },
   description:

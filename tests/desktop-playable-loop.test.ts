@@ -475,6 +475,13 @@ describe("desktop playable session integration", () => {
       createSqlJsClient(database),
       { ...options, modelRuntime: compatibilityModel },
     ).openWorld(play.view().worldId);
+    expect(reopened.view().transcript).toEqual([]);
+    const preparingOpening = reopened.prepareOpening();
+    expect(reopened.view()).toEqual(expect.objectContaining({
+      busy: true,
+      preparingOpening: true,
+    }));
+    await preparingOpening;
     expect(reopened.view().transcript).toEqual([
       expect.objectContaining({ speaker: "narrator", text: expect.stringContaining("Blue frost") }),
     ]);
@@ -709,6 +716,85 @@ describe("desktop playable session integration", () => {
     expect(savedPresentation).toEqual([
       expect.objectContaining({ narrationPreference: "concise" }),
     ]);
+  });
+
+  it("continues an action after a clarification without treating the answer as a new action", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Clarification continuation");
+    const model = new ScriptedModelRuntime([
+      {
+        id: "ask-for-location",
+        match: { schemaId: "player-action.intent-interpretation.v1" },
+        result: {
+          kind: "structured",
+          value: {
+            kind: "player-decision-required",
+            question: "Which location do you want to investigate?",
+          },
+        },
+      },
+      {
+        id: "interpret-clarification",
+        match: {
+          schemaId: "player-action.intent-interpretation.v1",
+          predicate: (request) => request.prompt.input.includes("I investigate the incident") &&
+            request.prompt.input.includes("Central Square"),
+        },
+        result: {
+          kind: "structured",
+          value: {
+            kind: "interpreted",
+            goal: "investigate the incident at Central Square",
+            targetRefs: [],
+            requestedHorizonMs: 60_000,
+            pressureLevel: 5,
+          },
+        },
+      },
+      {
+        id: "invoke",
+        match: { schemaId: "player-action.execution-decision.v1" },
+        result: {
+          kind: "structured",
+          value: {
+            kind: "invoke-tool",
+            toolId: "test.actions.resolve-effort",
+            arguments: { base: 8, modifier: 2, difficulty: 9, durationMs: 1_000 },
+          },
+        },
+      },
+      {
+        id: "stop",
+        match: { schemaId: "player-action.execution-decision.v1" },
+        result: { kind: "structured", value: { kind: "stop", reason: "goal-achieved" } },
+      },
+      {
+        id: "narrate",
+        match: { operation: "player-action.narration.v1" },
+        result: { kind: "text", text: "You inspect the square for signs of the incident." },
+      },
+    ]);
+    const play = new DesktopPlaySession(
+      engine,
+      model,
+      "campaign.entity.amelia",
+      undefined,
+    );
+
+    const question = await play.performTurn("I investigate the incident.");
+    expect(question.transcript.at(-1)).toEqual(expect.objectContaining({
+      speaker: "system",
+      text: "Which location do you want to investigate?",
+    }));
+
+    const resolved = await play.performTurn("Central Square");
+    expect(resolved.error).toBeUndefined();
+    expect(resolved.transcript.at(-1)).toEqual(expect.objectContaining({
+      speaker: "narrator",
+      text: "You inspect the square for signs of the incident.",
+    }));
+    expect(model.invocations.map((invocation) => invocation.schemaId))
+      .not.toContain("desktop.turn-route.v1");
   });
 
   it("keeps unavailable-model errors recoverable and leaves canon unchanged", async () => {

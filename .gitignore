@@ -1,4 +1,5 @@
 node_modules/
+apps/desktop/.model-validation/
 dist/
 coverage/
 *.tsbuildinfo

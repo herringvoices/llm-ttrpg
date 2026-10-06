@@ -416,16 +416,11 @@ export function createDesktopApplication(
     return rows[0];
   }
 
-  async function ensureOpeningNarration(
+  async function createOpeningNarration(
     session: GameSession,
     row: DesktopSessionRow,
     descriptor: GeneratedPackageDescriptor,
-  ): Promise<DesktopSessionRow> {
-    const existing = z.array(transcriptEntrySchema).parse(
-      JSON.parse(row.transcript_json),
-    );
-    if (existing.length > 0) return row;
-
+  ): Promise<TranscriptEntry> {
     const proposal = descriptor.openingProposal;
     const world = session.snapshot();
     const player = world.entities.find((entity) => entity.id === row.player_actor_id);
@@ -487,17 +482,16 @@ export function createDesktopApplication(
       });
       if (result.ok && result.output.text.trim()) narration = result.output.text.trim();
     }
-    const transcript = [transcriptEntrySchema.parse({
+    const entry = transcriptEntrySchema.parse({
       id: `transcript.${randomId().toLowerCase()}`,
       speaker: "narrator",
       text: narration,
-    })];
-    const transcriptJson = JSON.stringify(transcript);
+    }) as TranscriptEntry;
     await database.execute(
       "UPDATE desktop_play_sessions SET transcript_json = ? WHERE world_id = ?",
-      [transcriptJson, session.worldId],
+      [JSON.stringify([entry]), session.worldId],
     );
-    return { ...row, transcript_json: transcriptJson };
+    return entry;
   }
 
   async function wrap(
@@ -514,6 +508,13 @@ export function createDesktopApplication(
       row.locality_scope_id ?? undefined,
       { transcript, narrationPreference: row.narration_preference },
       presentationPersistence,
+      row.generated_package_json
+        ? () => createOpeningNarration(
+            session,
+            row,
+            generatedPackageDescriptorSchema.parse(JSON.parse(row.generated_package_json!)),
+          )
+        : undefined,
     );
   }
 
@@ -756,8 +757,8 @@ export function createDesktopApplication(
       ));
       const row = await sessionRow(session.worldId);
       if (!row) throw new Error(`Playable session metadata is missing for world ${session.worldId}`);
-      const narratedRow = await ensureOpeningNarration(session, row, descriptor);
-      const wrapped = await wrap(session, narratedRow);
+      const wrapped = await wrap(session, row);
+      await wrapped.prepareOpening();
       await database.execute("DELETE FROM campaign_generation_drafts WHERE id = ?", [draftId]);
       return { kind: "created", session: wrapped };
     } catch (error) {
@@ -872,14 +873,7 @@ export function createDesktopApplication(
           )
         : loadGameDefinition(referenceGameDefinition);
       const session = await createGameRuntime(dependencies(game)).openWorld(worldId);
-      const narratedRow = row.generated_package_json
-        ? await ensureOpeningNarration(
-            session,
-            row,
-            generatedPackageDescriptorSchema.parse(JSON.parse(row.generated_package_json)),
-          )
-        : row;
-      return wrap(session, narratedRow);
+      return wrap(session, row);
     },
   };
 }

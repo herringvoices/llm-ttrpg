@@ -22,6 +22,7 @@ import {
 import type { WorldState } from "./world.js";
 import type { EventHistoryStore, WorldId } from "./persistence.js";
 import type { ContextQueryAuthorization } from "./context-contracts.js";
+import type { SemanticActionMode } from "./semantic-action.js";
 
 export const toolDomainDescriptorSchema = z
   .object({
@@ -151,6 +152,10 @@ export interface ToolCatalog {
     policy?: ToolAvailabilityPolicy,
   ): readonly ToolSummary[];
   inspectTool(toolId: string, policy?: ToolAvailabilityPolicy): ToolContract;
+  listActionCandidates(
+    modes: readonly SemanticActionMode[],
+    policy?: ToolAvailabilityPolicy,
+  ): readonly ToolContract[];
   resolveBinding(toolId: string, policy?: ToolAvailabilityPolicy): ToolBinding;
 }
 
@@ -490,6 +495,25 @@ export function createToolCatalog(input: CreateToolCatalogInput): ToolCatalog {
         inputSchema: modelSchema(entry.inputSchema),
         outputSchema: modelSchema(entry.outputSchema),
       };
+    },
+    listActionCandidates(modes, policy) {
+      const isAvailable = policyOrDefault(policy);
+      const requestedModes = new Set(modes);
+      return sortedEntries
+        .filter((entry) => {
+          if (entry.binding.kind === "engine-query" || !isAvailable(clone(entry.descriptor))) {
+            return false;
+          }
+          const operation = input.operationRegistry.get(entry.descriptor.id);
+          return operation.metadata.applicability?.actionModes.some((mode) =>
+            requestedModes.has(mode),
+          ) ?? false;
+        })
+        .map((entry) => ({
+          ...clone(entry.descriptor),
+          inputSchema: modelSchema(entry.inputSchema),
+          outputSchema: modelSchema(entry.outputSchema),
+        }));
     },
     resolveBinding(toolId, policy) {
       return availableEntry(toolId, policy).binding;

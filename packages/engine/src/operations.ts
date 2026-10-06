@@ -31,6 +31,7 @@ import {
   mechanicalRealizationSchema,
   validateMechanicalRealizationUpdate,
 } from "./mechanical-realization.js";
+import { semanticActionModeSchema } from "./semantic-action.js";
 
 export const operationCategorySchema = z
   .object({
@@ -44,12 +45,20 @@ export const operationCategorySchema = z
   })
   .strict();
 
+export const operationApplicabilitySchema = z
+  .object({
+    actionModes: z.array(semanticActionModeSchema).min(1),
+  })
+  .strict();
+export type OperationApplicability = z.infer<typeof operationApplicabilitySchema>;
+
 export const operationMetadataSchema = z
   .object({
     id: stableIdSchema,
     kind: z.enum(["ordinary", "resolution"]),
     description: z.string().min(1),
     category: operationCategorySchema,
+    applicability: operationApplicabilitySchema.optional(),
   })
   .strict();
 export type OperationMetadata = z.infer<typeof operationMetadataSchema>;
