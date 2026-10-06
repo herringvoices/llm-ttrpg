@@ -26,6 +26,10 @@ import {
   invincibleActivatedEventType,
 } from "./invincible.js";
 import {
+  powerBehaviorDiscoveredEventType,
+  recordPowerDiscoveryOperation,
+} from "./power-discovery-operation.js";
+import {
   orderMaterialEffectsOperation,
   validateExtendedTaskOperation,
   validateRepeatAttemptOperation,
@@ -50,6 +54,7 @@ export * from "./invincible.js";
 export * from "./mechanics.js";
 export * from "./mechanical-generation.js";
 export * from "./model.js";
+export * from "./power-discovery-operation.js";
 export * from "./state-operations.js";
 export * from "./task-operations.js";
 export * from "./traversal-operation.js";
@@ -125,6 +130,7 @@ export const referenceRuleset: Ruleset = {
     createEmergentSkillOperation,
     manifestFirstPowerOperation,
     activateInvincibleOperation,
+    recordPowerDiscoveryOperation,
     realizeMechanicsOperation,
     applyCreatureGrowthOperation,
     validateExtendedTaskOperation,
@@ -142,6 +148,7 @@ export const referenceRuleset: Ruleset = {
     stressRecoveredEventType,
     firstPowerManifestedEventType,
     invincibleActivatedEventType,
+    powerBehaviorDiscoveredEventType,
     mechanicsRealizedEventType,
     creatureGrewEventType,
     routeTraversedEventType,

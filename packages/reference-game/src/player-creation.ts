@@ -373,6 +373,14 @@ export function validateFirstPowerProposal(
   if (!parsed.negativeConstraintsRespected) {
     throw new Error("A generated first power violated a hard negative preference");
   }
+  if (parsed.power.tags.length === 0) {
+    throw new Error("A generated first power must include semantic power tags");
+  }
+  if (parsed.power.tags.includes("role.stat-enhancement")) {
+    throw new Error(
+      "A raw stat-enhancement power cannot be the Awakening Earth player's first power",
+    );
+  }
   return parsed;
 }
 

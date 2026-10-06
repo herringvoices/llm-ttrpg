@@ -28,6 +28,15 @@ export const invinciblePower = powerStateSchema.parse({
   characterLevelAtManifestation: 1,
   manifestationStrength: 1,
   growthProfile: "scaling",
+  tags: [
+    "domain.body",
+    "operation.reinforce",
+    "target.self",
+    "shape.passive",
+    "shape.active",
+    "role.defense",
+    "role.enhancement",
+  ],
   pp: 5,
   powerLevel: 1,
   functions: [
@@ -58,6 +67,8 @@ export const invinciblePower = powerStateSchema.parse({
     },
   ],
   developmentAxes: ["passive reinforcement", "active duration"],
+  discoveredBehaviors: [],
+  committedMilestones: [],
   balanceRationale:
     "The active is short, self-only, costs meaningful Mana, and protects injury rather than all consequences.",
 });
