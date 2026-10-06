@@ -27,6 +27,7 @@ import {
   openingProgressionStateSchema,
   openingSituationSchema,
   OPENING_PHENOMENON_ENTITY_ID,
+  realizeMundaneOpeningCampaign,
   realizeOpeningIncidentCampaign,
   realizeOpeningPhenomenonCampaign,
   referenceGameDefinition,
@@ -438,6 +439,13 @@ async function rebuildGeneratedGame(
     opening.supernaturalFocus === "phenomenon"
   ) {
     campaign = realizeOpeningPhenomenonCampaign({
+      campaign: baseCampaign,
+      openingSituation: opening,
+      playerActorId: descriptor.seed.playerContext.entity.id,
+      occurredAt: descriptor.request.startTime,
+    });
+  } else if (opening.openingMode === "mundane-manifestation") {
+    campaign = realizeMundaneOpeningCampaign({
       campaign: baseCampaign,
       openingSituation: opening,
       playerActorId: descriptor.seed.playerContext.entity.id,
@@ -939,6 +947,13 @@ export function createDesktopApplication(
             occurredAt: request.startTime,
           });
           openingEntityId = OPENING_PHENOMENON_ENTITY_ID;
+        } else if (opening.openingMode === "mundane-manifestation") {
+          campaign = realizeMundaneOpeningCampaign({
+            campaign: baseCampaign,
+            openingSituation: opening,
+            playerActorId: completed.seed.playerContext.entity.id,
+            occurredAt: request.startTime,
+          });
         }
       }
 
