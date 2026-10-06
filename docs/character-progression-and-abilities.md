@@ -377,6 +377,11 @@ A Hybrid power gains both depth and breadth.
 
 Hybrid does not mean exactly 50% of each. Balance is qualitative and power-specific, but both compromises must be real.
 
+
+## Power semantics, exemplars, and discovery
+
+The reference rules in this document define power progression and mechanical state. Awakening Earth-specific guidance for what powers may look like, non-exhaustive semantic tags, scenario-owned exemplars, model generation, emergent synergy, and persistent experimental rulings is defined in [Awakening Earth Power Design and Discovery](awakening-earth/power-design-and-discovery.md).
+
 ## Power generation and balance rubric
 
 Power generation is constrained creativity, not unrestricted narration and not a universal point-buy table.

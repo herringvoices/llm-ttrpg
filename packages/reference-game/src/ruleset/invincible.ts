@@ -28,6 +28,15 @@ export const invinciblePower = powerStateSchema.parse({
   characterLevelAtManifestation: 1,
   manifestationStrength: 1,
   growthProfile: "scaling",
+  tags: [
+    "domain.body",
+    "operation.reinforce",
+    "target.self",
+    "shape.passive",
+    "shape.active",
+    "role.defense",
+    "role.enhancement",
+  ],
   pp: 5,
   powerLevel: 1,
   functions: [

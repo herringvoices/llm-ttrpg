@@ -120,6 +120,12 @@ export const manifestFirstPowerOperation: RulesOperation<
       );
     }
 
+    if (input.power.tags.includes("role.stat-enhancement")) {
+      throw new OperationValidationError(
+        "A raw stat-enhancement power cannot be the Awakening Earth player's first power",
+      );
+    }
+
     const next = JSON.parse(JSON.stringify(current)) as typeof current;
     for (const allocation of input.skillAllocations) {
       const skill = next.skills.find((item) => item.id === allocation.skillId);

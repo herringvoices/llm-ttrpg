@@ -165,6 +165,30 @@ export const powerGrowthProfileSchema = z.enum([
   "hybrid",
 ]);
 
+export const powerTagSchema = stableIdSchema;
+export type PowerTag = z.infer<typeof powerTagSchema>;
+
+export const powerDiscoveredBehaviorSchema = z.object({
+  id: stableIdSchema,
+  question: z.string().trim().min(1),
+  outcome: z.enum(["valid", "invalid", "conditional"]),
+  ruling: z.string().trim().min(1),
+  establishedBy: z.enum(["authored", "experiment", "adjudication"]),
+  evidenceEventIds: z.array(stableIdSchema).default([]),
+}).strict();
+export type PowerDiscoveredBehavior = z.infer<
+  typeof powerDiscoveredBehaviorSchema
+>;
+
+export const powerCommittedMilestoneSchema = z.object({
+  powerLevel: z.number().int().positive(),
+  description: z.string().trim().min(1),
+  functionIds: z.array(stableIdSchema).min(1),
+}).strict();
+export type PowerCommittedMilestone = z.infer<
+  typeof powerCommittedMilestoneSchema
+>;
+
 export const powerFunctionSchema = z.object({
   id: stableIdSchema,
   name: z.string().trim().min(1),
@@ -188,6 +212,9 @@ export const powerStateSchema = z.object({
   powerLevel: z.number().int().nonnegative(),
   functions: z.array(powerFunctionSchema).min(1),
   developmentAxes: z.array(z.string().trim().min(1)).min(1),
+  tags: z.array(powerTagSchema).default([]),
+  discoveredBehaviors: z.array(powerDiscoveredBehaviorSchema).default([]),
+  committedMilestones: z.array(powerCommittedMilestoneSchema).default([]),
   balanceRationale: z.string().trim().min(1),
 }).strict().superRefine((power, context) => {
   if (power.powerLevel !== pointDerivedLevel(power.pp)) {
@@ -204,6 +231,70 @@ export const powerStateSchema = z.object({
       message: "Manifestation Strength must be derived from manifestation level",
       path: ["manifestationStrength"],
     });
+  }
+
+  const functionIds = new Set<string>();
+  for (const [index, fn] of power.functions.entries()) {
+    if (functionIds.has(fn.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate power function ID: ${fn.id}`,
+        path: ["functions", index, "id"],
+      });
+    }
+    functionIds.add(fn.id);
+  }
+
+  const tags = new Set<string>();
+  for (const [index, tag] of power.tags.entries()) {
+    if (tags.has(tag)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate power tag: ${tag}`,
+        path: ["tags", index],
+      });
+    }
+    tags.add(tag);
+  }
+
+  const behaviorIds = new Set<string>();
+  for (const [index, behavior] of power.discoveredBehaviors.entries()) {
+    if (behaviorIds.has(behavior.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate discovered power behavior ID: ${behavior.id}`,
+        path: ["discoveredBehaviors", index, "id"],
+      });
+    }
+    behaviorIds.add(behavior.id);
+  }
+
+  const milestoneLevels = new Set<number>();
+  for (const [index, milestone] of power.committedMilestones.entries()) {
+    if (milestone.powerLevel > power.powerLevel) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Committed power milestones cannot be above the current Power Level",
+        path: ["committedMilestones", index, "powerLevel"],
+      });
+    }
+    if (milestoneLevels.has(milestone.powerLevel)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate committed milestone at Power Level ${milestone.powerLevel}`,
+        path: ["committedMilestones", index, "powerLevel"],
+      });
+    }
+    milestoneLevels.add(milestone.powerLevel);
+    for (const functionId of milestone.functionIds) {
+      if (!functionIds.has(functionId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Committed milestone references missing function ${functionId}`,
+          path: ["committedMilestones", index, "functionIds"],
+        });
+      }
+    }
   }
 });
 export type PowerState = z.infer<typeof powerStateSchema>;

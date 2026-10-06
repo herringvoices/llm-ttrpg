@@ -952,10 +952,9 @@ describe("mechanical realization and awakening", () => {
   it("persists the opening contract and performs a legal first awakening", async () => {
     const { definition } = await generatedGame(new DeterministicStartingRegionModel());
     const game = loadGameDefinition(definition);
-    const persistence = createInMemoryPersistence();
-    const session = await createGameRuntime(
-      runtimeDependencies(persistence, game, "awakening"),
-    ).createWorld("Awakening");
+    const sqlite = await createMigratedSqlitePersistence();
+    const dependencies = runtimeDependencies(sqlite.persistence, game, "awakening");
+    const session = await createGameRuntime(dependencies).createWorld("Awakening");
     const power = {
       id: "power.sheltering-fold",
       name: "Sheltering Fold",
@@ -976,6 +975,15 @@ describe("mechanical realization and awakening", () => {
         limits: ["brief duration", "local scale"],
       }],
       developmentAxes: ["duration", "area", "precision"],
+      tags: [
+        "domain.space",
+        "operation.create",
+        "target.area",
+        "shape.active",
+        "role.defense",
+      ],
+      discoveredBehaviors: [],
+      committedMilestones: [],
       balanceRationale: "One narrow protective function with visible limits.",
     };
     const result = await session.executeOperation(
@@ -1005,8 +1013,41 @@ describe("mechanical realization and awakening", () => {
     expect(mechanics.progression.powers).toEqual([power]);
     expect(mechanics.progression.mana).toEqual({ current: 108, max: 108 });
     expect(mechanics.skills[0]?.sp).toBe(55);
-    expect((await session.eventHistory()).at(-1)?.type)
-      .toBe("rules.first-power-manifested");
+
+    await session.executeOperation("rules.progression.record-power-discovery", {
+      actorId: "generated.actor.player",
+      powerId: "power.sheltering-fold",
+      behavior: {
+        id: "power-behavior.sheltering-fold.angled-surface",
+        question: "Can the fold be interposed along an angled visible surface?",
+        outcome: "valid",
+        ruling:
+          "The protective fold may align to an angled visible surface as long as it remains local and short-lived.",
+        establishedBy: "experiment",
+        evidenceEventIds: ["opening.shared-danger"],
+      },
+      scopeIds: ["scope.generated.locality.riverside"],
+      causedByEventIds: [],
+      reason: "Rowan tested the fold against an angled loading-dock door.",
+    });
+
+    const saved = await session.save("power discovery");
+    const reopened = await createGameRuntime(dependencies).openWorld(session.worldId);
+    const reopenedMechanics = rulesActorStateSchema.parse(
+      reopened.snapshot().entities.find(
+        (item) => item.id === "generated.actor.player",
+      )?.data.mechanics,
+    );
+    expect(reopenedMechanics.progression.powers?.[0]?.tags).toContain("domain.space");
+    expect(reopenedMechanics.progression.powers?.[0]?.discoveredBehaviors)
+      .toContainEqual(expect.objectContaining({
+        id: "power-behavior.sheltering-fold.angled-surface",
+        outcome: "valid",
+      }));
+    expect((await sqlite.persistence.saves.loadCheckpoint(saved.checkpointId))?.state)
+      .toEqual(reopened.snapshot());
+    expect((await reopened.eventHistory()).at(-1)?.type)
+      .toBe("rules.power-behavior-discovered");
   });
 });
 
