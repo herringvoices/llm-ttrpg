@@ -5,6 +5,7 @@ export * from "./context/index.js";
 export * from "./game-definition.js";
 export * from "./presentation/index.js";
 export * from "./player-creation.js";
+export * from "./opening-realization.js";
 export * from "./power-discovery.js";
 export * from "./power-generation.js";
 export * from "./powers.js";

@@ -1332,6 +1332,7 @@ export function createStartingRegionProposalModel(
               entity: context.playerContext.entity,
               currentObligations: context.playerContext.currentObligations,
               ordinaryPressures: context.playerContext.ordinaryPressures,
+              powerPreferences: context.normalized?.player.powerPreferences,
             },
             npcs: context.npcs?.map((npc) => ({
               entity: npc.entity,
@@ -1388,8 +1389,12 @@ export function createStartingRegionProposalModel(
             : []),
           ...(stageId === "opening-situation"
             ? [
-                "Frame one concise, immediate opening situation from the accepted entities and pressures supplied here.",
+                "Frame one concise opening from the accepted entities, ordinary life, player power preferences, and pressures supplied here.",
+                "Choose openingMode deliberately. supernatural-inciting-incident means magic is immediately relevant; mundane-manifestation means play begins in ordinary modern life and the player's power intrudes before any larger incident is required.",
+                "For supernatural-inciting-incident choose supernaturalFocus creature only when an accepted near-term creature genuinely fits; otherwise use phenomenon for a Gate, magical object, environmental anomaly, unstable power, or other non-creature supernatural event. For mundane-manifestation use supernaturalFocus none.",
+                "Choose manifestationTargetTurn from 1 through 3. The first power must manifest by turn 3, but do not script the player's actions needed to reach it.",
                 "Use only existing entity IDs for ordinaryAnchorEntityIds. Offer social, investigative, and risky directions without requiring combat or a mandatory quest.",
+                "awakeningEvent and manifestationOpportunity are protected opening guidance, not already-narrated outcomes. A mundane opening may keep both latent until the manifestation turn.",
                 "Do not restate the world, create mechanics, or narrate an outcome; return only the requested opening brief.",
               ]
             : []),
@@ -1713,14 +1718,20 @@ export const startingRegionSeedSchema = z.object({
 }).strict();
 
 /**
- * Repairs the narrow legacy case where an accepted pressure stage produced no
- * usable near-term creature. Opening-incident generation needs one canonical
- * creature whose mechanics already belong to campaign content; it must not ask
- * the model to invent that authoritative record later.
+ * Repairs the narrow legacy/creature-opening case where an accepted pressure
+ * stage produced no usable near-term creature. Mundane and non-creature
+ * supernatural openings must not manufacture a creature merely to satisfy the
+ * old incident contract.
  */
 export function ensureOpeningCreature(
   seed: StartingRegionSeed,
 ): StartingRegionSeed {
+  if (
+    seed.openingSituation.openingMode !== "supernatural-inciting-incident" ||
+    seed.openingSituation.supernaturalFocus !== "creature"
+  ) {
+    return seed;
+  }
   if (seed.creatures.some((creature) =>
     creature.nearTermPlayerFacing && creature.threatEnvelope
   )) {

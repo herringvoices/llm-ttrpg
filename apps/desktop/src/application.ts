@@ -18,12 +18,17 @@ import {
 } from "@llm-ttrpg/engine";
 import {
   compileStartingRegionCampaign,
+  createOpeningProgressionState,
   createStartingRegionProposalModel,
   ensureOpeningCreature,
   generateStartingRegion,
   openingBriefFromCampaign,
   openingIncidentProposalSchema,
+  openingProgressionStateSchema,
+  openingSituationSchema,
+  OPENING_PHENOMENON_ENTITY_ID,
   realizeOpeningIncidentCampaign,
+  realizeOpeningPhenomenonCampaign,
   referenceGameDefinition,
   referenceSceneSource,
   requestOpeningIncidentProposal,
@@ -183,7 +188,7 @@ const generatedPackageDescriptorSchema = z.object({
   request: startingRegionRequestSchema,
   seed: startingRegionSeedSchema,
   diagnostics: z.array(generationDiagnosticSchema),
-  openingProposal: openingIncidentProposalSchema,
+  openingProposal: openingIncidentProposalSchema.optional(),
 }).strict();
 type GeneratedPackageDescriptor = z.infer<typeof generatedPackageDescriptorSchema>;
 
@@ -198,7 +203,7 @@ const campaignGenerationStages = [
   ["pressures", "Seeding conflicts and supernatural pressures"],
   ["opening-situation", "Framing the opening situation"],
   ["coherence-audit", "Checking the campaign for contradictions"],
-  ["opening-incident", "Realizing the opening incident"],
+  ["opening-incident", "Preparing the opening"],
   ["finalize", "Saving the campaign and preparing play"],
 ] as const;
 
@@ -233,6 +238,7 @@ interface DesktopSessionRow {
   locality_scope_id: string | null;
   narration_preference: NarrationPreference;
   transcript_json: string;
+  opening_progression_json: string | null;
 }
 
 interface CampaignGenerationDraftRow {
@@ -264,11 +270,20 @@ function createInitialPlan(
   session: GameSession,
   playerActorId: string,
   seed: StartingRegionSeed,
-  incidentId: string,
+  openingEntityId?: string,
 ): CampaignPlanDocument {
   const basis = session.planningBasis();
   const grounding = [{ kind: "entity" as const, id: playerActorId }];
-  const reviewed = { worldRevision: basis.worldRevision, eventSequence: basis.eventSequence };
+  const openingGrounding = openingEntityId
+    ? [{ kind: "entity" as const, id: openingEntityId }]
+    : grounding;
+  const related = openingEntityId
+    ? [{ kind: "entity" as const, id: openingEntityId }]
+    : [];
+  const reviewed = {
+    worldRevision: basis.worldRevision,
+    eventSequence: basis.eventSequence,
+  };
   const makeThread = (
     id: string,
     horizon: "high" | "medium" | "low",
@@ -284,9 +299,10 @@ function createInitialPlan(
     priority,
     status: "active" as const,
     grounding,
-    related: [{ kind: "entity" as const, id: incidentId }],
+    related,
     playerInterestIds: [],
-    currentTension: "How will the player's choices redirect established pressures?",
+    currentTension:
+      "How will the player's choices redirect established pressures and their early Awakening?",
     assumptions: horizon === "low" ? [{
       id: "assumption.player-starting-location",
       summary: "The player remains at the established starting location.",
@@ -303,13 +319,16 @@ function createInitialPlan(
     }] : [],
     conditionalDevelopments: [{
       id: `development.${horizon}.opening-pressure`,
-      summary: "The established opening pressure may develop if canonical circumstances support it.",
-      condition: "The incident and related pressures remain unresolved and relevant.",
-      grounding: [{ kind: "entity" as const, id: incidentId }],
-      rationale: "Keep a grounded possibility without scheduling an event.",
+      summary:
+        "The established opening situation may develop if canonical circumstances support it.",
+      condition:
+        "The opening situation, personal Awakening, or related pressures remain unresolved and relevant.",
+      grounding: openingGrounding,
+      rationale: "Keep a grounded possibility without scheduling or forcing an event.",
     }],
     lastReviewedAt: reviewed,
-    rationale: "Start from generated player, locality, and incident material.",
+    rationale:
+      "Start from generated player, locality, ordinary life, and any committed opening material.",
   });
   const threads = [
     makeThread(
@@ -323,14 +342,14 @@ function createInitialPlan(
       "thread.opening-arc",
       "medium",
       "Opening arc",
-      "Follow grounded consequences of the realized opening incident.",
+      "Follow grounded consequences of the opening situation and the player's early Awakening.",
       75,
     ),
     makeThread(
       "thread.near-term-choice",
       "low",
       "Near-term choice",
-      "Attend to the player's immediate choices and accessible consequences.",
+      "Attend to the player's immediate choices while their personal Awakening remains a near-term obligation.",
       90,
     ),
   ];
@@ -347,13 +366,17 @@ function createInitialPlan(
         threadIds: [threads[0]!.id],
       },
       medium: {
-        summary: "Develop the opening incident through consequences and relationships.",
+        summary: "Develop the opening through consequences and relationships.",
         attention: ["Let player choices redirect the arc."],
         threadIds: [threads[1]!.id],
       },
       low: {
-        summary: "Surface grounded opportunities around the player's current situation.",
-        attention: ["Do not require one response to the opening."],
+        summary:
+          "Surface grounded opportunities and bring an unresolved personal Awakening into play promptly.",
+        attention: [
+          "Do not require one response to the opening.",
+          "The opening director, not narration, owns the first-power deadline.",
+        ],
         threadIds: [threads[2]!.id],
       },
     },
@@ -381,22 +404,47 @@ async function rebuildGeneratedGame(
     descriptor.seed,
     descriptor.diagnostics,
   );
-  const baseGame = loadGameDefinition({ ...referenceGameDefinition, campaign: baseCampaign });
-  const temporary = await createGameRuntime(
-    runtimeDependencies(baseGame, createInMemoryPersistence()),
-  ).createWorld("Opening incident reconstruction");
-  const context = temporary.assembleContext({
-    role: "orchestrator",
-    perspective: { kind: "canonical" },
-    budget: { maxUnits: 50_000 },
-  });
-  const campaign = realizeOpeningIncidentCampaign({
-    campaign: baseCampaign,
-    setting: referenceGameDefinition.setting,
-    world: temporary.snapshot(),
-    context,
-    proposal: descriptor.openingProposal,
-  });
+  const opening = openingSituationSchema.parse(descriptor.seed.openingSituation);
+  let campaign = baseCampaign;
+
+  if (
+    opening.openingMode === "supernatural-inciting-incident" &&
+    opening.supernaturalFocus === "creature"
+  ) {
+    if (!descriptor.openingProposal) {
+      throw new Error("Generated creature opening is missing its opening proposal");
+    }
+    const baseGame = loadGameDefinition({
+      ...referenceGameDefinition,
+      campaign: baseCampaign,
+    });
+    const temporary = await createGameRuntime(
+      runtimeDependencies(baseGame, createInMemoryPersistence()),
+    ).createWorld("Opening incident reconstruction");
+    const context = temporary.assembleContext({
+      role: "orchestrator",
+      perspective: { kind: "canonical" },
+      budget: { maxUnits: 50_000 },
+    });
+    campaign = realizeOpeningIncidentCampaign({
+      campaign: baseCampaign,
+      setting: referenceGameDefinition.setting,
+      world: temporary.snapshot(),
+      context,
+      proposal: descriptor.openingProposal,
+    });
+  } else if (
+    opening.openingMode === "supernatural-inciting-incident" &&
+    opening.supernaturalFocus === "phenomenon"
+  ) {
+    campaign = realizeOpeningPhenomenonCampaign({
+      campaign: baseCampaign,
+      openingSituation: opening,
+      playerActorId: descriptor.seed.playerContext.entity.id,
+      occurredAt: descriptor.request.startTime,
+    });
+  }
+
   return loadGameDefinition({ ...referenceGameDefinition, campaign });
 }
 
@@ -426,15 +474,20 @@ export function createDesktopApplication(
   const presentationPersistence: PlaySessionPersistence = {
     async savePresentation(input) {
       await database.execute(
-        "UPDATE desktop_play_sessions SET narration_preference = ?, transcript_json = ? WHERE world_id = ?",
-        [input.narrationPreference, JSON.stringify(input.transcript), input.worldId],
+        "UPDATE desktop_play_sessions SET narration_preference = ?, transcript_json = ?, opening_progression_json = ? WHERE world_id = ?",
+        [
+          input.narrationPreference,
+          JSON.stringify(input.transcript),
+          input.openingProgression ? JSON.stringify(input.openingProgression) : null,
+          input.worldId,
+        ],
       );
     },
   };
 
   async function sessionRow(worldId: string): Promise<DesktopSessionRow | undefined> {
     const rows = await database.select<DesktopSessionRow[]>(
-      "SELECT generated_package_json, player_actor_id, locality_scope_id, narration_preference, transcript_json FROM desktop_play_sessions WHERE world_id = $1",
+      "SELECT generated_package_json, player_actor_id, locality_scope_id, narration_preference, transcript_json, opening_progression_json FROM desktop_play_sessions WHERE world_id = $1",
       [worldId],
     );
     return rows[0];
@@ -445,7 +498,7 @@ export function createDesktopApplication(
     row: DesktopSessionRow,
     descriptor: GeneratedPackageDescriptor,
   ): Promise<TranscriptEntry> {
-    const proposal = descriptor.openingProposal;
+    const opening = openingSituationSchema.parse(descriptor.seed.openingSituation);
     const world = session.snapshot();
     const player = world.entities.find((entity) => entity.id === row.player_actor_id);
     const currentLocation = world.facts.find((fact) =>
@@ -459,13 +512,87 @@ export function createDesktopApplication(
       ...(locationId ? { locationId } : {}),
       budget: { maxUnits: 30_000 },
     });
-    const fallback = [
-      proposal.incident.name,
-      proposal.incident.summary,
-      ...proposal.incident.observedFacts
-        .filter((fact) => fact.visibility === "public")
-        .map((fact) => typeof fact.value === "string" ? fact.value : JSON.stringify(fact.value)),
-    ].map((part) => part.trim()).filter(Boolean).join("\n\n");
+
+    let fallback: string;
+    let openingMaterial: unknown;
+    let sceneInstruction: string;
+
+    if (
+      opening.openingMode === "supernatural-inciting-incident" &&
+      opening.supernaturalFocus === "creature"
+    ) {
+      const proposal = descriptor.openingProposal;
+      if (!proposal) throw new Error("Creature opening is missing its realized incident");
+      fallback = [
+        proposal.incident.name,
+        proposal.incident.summary,
+        ...proposal.incident.observedFacts
+          .filter((fact) => fact.visibility === "public")
+          .map((fact) =>
+            typeof fact.value === "string" ? fact.value : JSON.stringify(fact.value)
+          ),
+      ].map((part) => part.trim()).filter(Boolean).join("\n\n");
+      openingMaterial = {
+        mode: opening.openingMode,
+        incident: {
+          name: proposal.incident.name,
+          summary: proposal.incident.summary,
+          observedFacts: proposal.incident.observedFacts.filter((fact) =>
+            fact.visibility === "public"
+          ).map((fact) => ({ predicate: fact.predicate, value: fact.value })),
+          contactObject: {
+            name: proposal.incident.contactObject.name,
+            summary: proposal.incident.contactObject.summary,
+          },
+        },
+        creatureObservedTraits: proposal.creature.observedTraits,
+        publicResponse: {
+          observedThreat: proposal.publicResponse.observedThreat,
+          status: "reported",
+        },
+      };
+      sceneInstruction =
+        "Establish the place and the committed immediate supernatural tension, then leave the player's response completely open.";
+    } else if (
+      opening.openingMode === "supernatural-inciting-incident" &&
+      opening.supernaturalFocus === "phenomenon"
+    ) {
+      const phenomenon = world.entities.find((entity) =>
+        entity.id === OPENING_PHENOMENON_ENTITY_ID
+      );
+      if (!phenomenon) throw new Error("Realized opening phenomenon is missing");
+      fallback = phenomenon.summary;
+      openingMaterial = {
+        mode: opening.openingMode,
+        phenomenon: { name: phenomenon.name, summary: phenomenon.summary },
+      };
+      sceneInstruction =
+        "Establish the place and the committed non-creature supernatural phenomenon, then leave the player's response completely open.";
+    } else {
+      const anchors = opening.ordinaryAnchorEntityIds
+        .map((id) => world.entities.find((entity) => entity.id === id))
+        .filter((entity): entity is NonNullable<typeof entity> => Boolean(entity))
+        .map((entity) => ({
+          name: entity.name,
+          summary: entity.summary,
+          kind: entity.kind,
+        }));
+      const location = locationId
+        ? world.entities.find((entity) => entity.id === locationId)
+        : undefined;
+      fallback = [
+        location ? `${location.name}: ${location.summary}` : undefined,
+        player?.summary,
+        ...anchors.map((anchor) => `${anchor.name}: ${anchor.summary}`),
+      ].filter((part): part is string => Boolean(part?.trim())).join("\n\n");
+      openingMaterial = {
+        mode: opening.openingMode,
+        ordinaryAnchors: anchors,
+      };
+      sceneInstruction =
+        "Establish grounded ordinary modern life, activity, obligations, and relationships. Do not introduce a supernatural incident or reveal a power yet; those are not committed presentation facts.";
+    }
+
     let narration = fallback;
     if (options.modelRuntime) {
       const pressure = world.actionPressure.status === "assessed"
@@ -485,31 +612,14 @@ export function createDesktopApplication(
           protectedContext: [directive.protectedContext],
           instructions: [
             "Open the campaign using the protected narration profile.",
-            "Narrate only what the player character can immediately perceive from the authorized context and canonical opening material.",
+            "Narrate only what the player character can immediately perceive from the authorized context and committed opening material.",
             "Do not invent world changes, private knowledge, player actions, player speech, player thoughts, mechanics, or GM commentary.",
-            "Establish the place, the immediate supernatural tension, and concrete sensory details, then leave the player's response completely open.",
+            sceneInstruction,
             "Do not ask a meta-level question such as what the player wants to do.",
             "Target 500-900 characters.",
           ],
           context: renderContextForModel(context),
-          input: JSON.stringify({
-            incident: {
-              name: proposal.incident.name,
-              summary: proposal.incident.summary,
-              observedFacts: proposal.incident.observedFacts.filter((fact) =>
-                fact.visibility === "public"
-              ).map((fact) => ({ predicate: fact.predicate, value: fact.value })),
-              contactObject: {
-                name: proposal.incident.contactObject.name,
-                summary: proposal.incident.contactObject.summary,
-              },
-            },
-            creatureObservedTraits: proposal.creature.observedTraits,
-            publicResponse: {
-              observedThreat: proposal.publicResponse.observedThreat,
-              status: "reported",
-            },
-          }),
+          input: JSON.stringify(openingMaterial),
         },
         output: { kind: "text" },
         trace: { operation: "desktop.opening-narration.v1" },
@@ -538,12 +648,19 @@ export function createDesktopApplication(
     const transcript = z.array(transcriptEntrySchema).parse(
       JSON.parse(row.transcript_json),
     ) as TranscriptEntry[];
+    const openingProgression = row.opening_progression_json
+      ? openingProgressionStateSchema.parse(JSON.parse(row.opening_progression_json))
+      : undefined;
     return new DesktopPlaySession(
       session,
       options.modelRuntime,
       row.player_actor_id,
       row.locality_scope_id ?? undefined,
-      { transcript, narrationPreference: row.narration_preference },
+      {
+        transcript,
+        narrationPreference: row.narration_preference,
+        ...(openingProgression ? { openingProgression } : {}),
+      },
       presentationPersistence,
       row.generated_package_json
         ? () => createOpeningNarration(
@@ -756,46 +873,76 @@ export function createDesktopApplication(
         );
       }
 
-      const baseGame = loadGameDefinition({
-        ...referenceGameDefinition,
-        campaign: baseCampaign,
-      });
-      const temporary = await createGameRuntime(
-        dependencies(baseGame, createInMemoryPersistence()),
-      ).createWorld("Opening incident proposal context");
-      const protectedContext = temporary.assembleContext({
-        role: "orchestrator",
-        perspective: { kind: "canonical" },
-        budget: { maxUnits: 50_000 },
-      });
+      const opening = openingSituationSchema.parse(completed.seed.openingSituation);
       let openingProposal = stored.opening_proposal_json
         ? openingIncidentProposalSchema.parse(JSON.parse(stored.opening_proposal_json))
         : undefined;
-      if (!openingProposal) {
-        report("opening-incident");
-        openingProposal = await requestOpeningIncidentProposal({
-          modelRuntime: options.modelRuntime,
-          context: protectedContext,
+      let campaign = baseCampaign;
+      let openingEntityId: string | undefined;
+
+      if (
+        opening.openingMode === "supernatural-inciting-incident" &&
+        opening.supernaturalFocus === "creature"
+      ) {
+        const baseGame = loadGameDefinition({
+          ...referenceGameDefinition,
           campaign: baseCampaign,
-          openingBrief: openingBriefFromCampaign(baseCampaign),
-          options: {
-            timeoutMs: 20 * 60 * 1_000,
-            generation: { temperature: 0, maxOutputTokens: 1_024 },
-          },
         });
+        const temporary = await createGameRuntime(
+          dependencies(baseGame, createInMemoryPersistence()),
+        ).createWorld("Opening incident proposal context");
+        const protectedContext = temporary.assembleContext({
+          role: "orchestrator",
+          perspective: { kind: "canonical" },
+          budget: { maxUnits: 50_000 },
+        });
+        if (!openingProposal) {
+          report("opening-incident");
+          openingProposal = await requestOpeningIncidentProposal({
+            modelRuntime: options.modelRuntime,
+            context: protectedContext,
+            campaign: baseCampaign,
+            openingBrief: openingBriefFromCampaign(baseCampaign),
+            options: {
+              timeoutMs: 20 * 60 * 1_000,
+              generation: { temperature: 0, maxOutputTokens: 1_024 },
+            },
+          });
+          await database.execute(
+            "UPDATE campaign_generation_drafts SET opening_proposal_json = ?, last_completed_stage_id = 'opening-incident', updated_at = ? WHERE id = ?",
+            [JSON.stringify(openingProposal), now(), draftId],
+          );
+        }
+        campaign = realizeOpeningIncidentCampaign({
+          campaign: baseCampaign,
+          setting: referenceGameDefinition.setting,
+          world: temporary.snapshot(),
+          context: protectedContext,
+          proposal: openingProposal,
+        });
+        openingEntityId = openingProposal.incident.id;
+      } else {
+        report("opening-incident");
         await database.execute(
-          "UPDATE campaign_generation_drafts SET opening_proposal_json = ?, last_completed_stage_id = 'opening-incident', updated_at = ? WHERE id = ?",
-          [JSON.stringify(openingProposal), now(), draftId],
+          "UPDATE campaign_generation_drafts SET opening_proposal_json = NULL, last_completed_stage_id = 'opening-incident', updated_at = ? WHERE id = ?",
+          [now(), draftId],
         );
+        openingProposal = undefined;
+        if (
+          opening.openingMode === "supernatural-inciting-incident" &&
+          opening.supernaturalFocus === "phenomenon"
+        ) {
+          campaign = realizeOpeningPhenomenonCampaign({
+            campaign: baseCampaign,
+            openingSituation: opening,
+            playerActorId: completed.seed.playerContext.entity.id,
+            occurredAt: request.startTime,
+          });
+          openingEntityId = OPENING_PHENOMENON_ENTITY_ID;
+        }
       }
+
       report("finalize");
-      const campaign = realizeOpeningIncidentCampaign({
-        campaign: baseCampaign,
-        setting: referenceGameDefinition.setting,
-        world: temporary.snapshot(),
-        context: protectedContext,
-        proposal: openingProposal,
-      });
       const game = loadGameDefinition({ ...referenceGameDefinition, campaign });
       const session = await createGameRuntime(dependencies(game)).createWorld(stored.name);
       const playerActorId = completed.seed.playerContext.entity.id;
@@ -804,17 +951,27 @@ export function createDesktopApplication(
         request,
         seed: completed.seed,
         diagnostics: completed.diagnostics,
-        openingProposal,
+        ...(openingProposal ? { openingProposal } : {}),
+      });
+      const openingProgression = createOpeningProgressionState(opening, {
+        characterSummary: request.player.description,
+        normalizedSetup: completed.seed.normalized.player,
       });
       await database.execute(
-        "INSERT INTO desktop_play_sessions(world_id, generated_package_json, player_actor_id, locality_scope_id, narration_preference, transcript_json) VALUES ($1, $2, $3, $4, 'standard', '[]')",
-        [session.worldId, JSON.stringify(descriptor), playerActorId, localityScopeId],
+        "INSERT INTO desktop_play_sessions(world_id, generated_package_json, player_actor_id, locality_scope_id, narration_preference, transcript_json, opening_progression_json) VALUES ($1, $2, $3, $4, 'standard', '[]', $5)",
+        [
+          session.worldId,
+          JSON.stringify(descriptor),
+          playerActorId,
+          localityScopeId,
+          JSON.stringify(openingProgression),
+        ],
       );
       await session.initializeCampaignPlan(createInitialPlan(
         session,
         playerActorId,
         completed.seed,
-        openingProposal.incident.id,
+        openingEntityId,
       ));
       const row = await sessionRow(session.worldId);
       if (!row) throw new Error(`Playable session metadata is missing for world ${session.worldId}`);

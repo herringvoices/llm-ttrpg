@@ -384,10 +384,29 @@ export function validateFirstPowerProposal(
   return parsed;
 }
 
+export const openingModeSchema = z.enum([
+  "supernatural-inciting-incident",
+  "mundane-manifestation",
+]);
+export type OpeningMode = z.infer<typeof openingModeSchema>;
+
+export const openingSupernaturalFocusSchema = z.enum([
+  "creature",
+  "phenomenon",
+  "none",
+]);
+export type OpeningSupernaturalFocus = z.infer<
+  typeof openingSupernaturalFocusSchema
+>;
+
 export const openingSituationSchema = z.object({
   ordinaryAnchorEntityIds: z.array(stableIdSchema).min(1),
+  openingMode: openingModeSchema.default("supernatural-inciting-incident"),
+  supernaturalFocus: openingSupernaturalFocusSchema.default("creature"),
   awakeningEvent: z.string().trim().min(1),
   manifestationOpportunity: z.string().trim().min(1),
+  manifestationTargetTurn: z.number().int().min(1).max(3).default(3),
+  manifestationDeadlineTurns: z.literal(3).default(3),
   combatRequired: z.literal(false),
   unresolvedConsequences: z.array(z.string().trim().min(1)).min(1),
   actionableDirections: z.object({
@@ -396,8 +415,97 @@ export const openingSituationSchema = z.object({
     risky: z.array(z.string().trim().min(1)).min(1),
   }).strict(),
   mandatoryQuest: z.literal(false),
-}).strict();
+}).strict().superRefine((opening, context) => {
+  if (
+    opening.openingMode === "mundane-manifestation" &&
+    opening.supernaturalFocus !== "none"
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "A mundane-manifestation opening cannot begin with a committed supernatural focus",
+      path: ["supernaturalFocus"],
+    });
+  }
+  if (
+    opening.openingMode === "supernatural-inciting-incident" &&
+    opening.supernaturalFocus === "none"
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "A supernatural-inciting opening must identify a creature or phenomenon focus",
+      path: ["supernaturalFocus"],
+    });
+  }
+});
 export type OpeningSituation = z.infer<typeof openingSituationSchema>;
+
+export const openingProgressionStateSchema = z.object({
+  schemaVersion: z.literal(1),
+  openingMode: openingModeSchema,
+  supernaturalFocus: openingSupernaturalFocusSchema,
+  playerTurnsSinceStart: z.number().int().nonnegative(),
+  manifestationTargetTurn: z.number().int().min(1).max(3),
+  manifestationDeadlineTurns: z.literal(3),
+  firstPowerManifested: z.boolean(),
+  manifestationOpportunity: z.string().trim().min(1),
+  characterSummary: z.string().trim().min(1),
+  normalizedSetup: normalizedPlayerSetupSchema,
+  firstPowerProposal: firstPowerProposalSchema.optional(),
+  manifestationEventId: stableIdSchema.optional(),
+  manifestationNarrationPending: z.boolean(),
+}).strict().superRefine((state, context) => {
+  if (state.playerTurnsSinceStart > state.manifestationDeadlineTurns) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Opening progression cannot advance beyond the manifestation deadline",
+      path: ["playerTurnsSinceStart"],
+    });
+  }
+  if (state.firstPowerManifested && !state.firstPowerProposal) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "A manifested opening power requires the validated first-power proposal",
+      path: ["firstPowerProposal"],
+    });
+  }
+  if (state.manifestationNarrationPending && !state.firstPowerManifested) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "Manifestation narration can only be pending after the power is committed",
+      path: ["manifestationNarrationPending"],
+    });
+  }
+});
+export type OpeningProgressionState = z.infer<
+  typeof openingProgressionStateSchema
+>;
+
+export function createOpeningProgressionState(
+  openingValue: unknown,
+  input: {
+    readonly characterSummary: string;
+    readonly normalizedSetup: NormalizedPlayerSetup;
+  },
+): OpeningProgressionState {
+  const opening = openingSituationSchema.parse(openingValue);
+  return openingProgressionStateSchema.parse({
+    schemaVersion: 1,
+    openingMode: opening.openingMode,
+    supernaturalFocus: opening.supernaturalFocus,
+    playerTurnsSinceStart: 0,
+    manifestationTargetTurn: opening.manifestationTargetTurn,
+    manifestationDeadlineTurns: opening.manifestationDeadlineTurns,
+    firstPowerManifested: false,
+    manifestationOpportunity: opening.manifestationOpportunity,
+    characterSummary: input.characterSummary,
+    normalizedSetup: input.normalizedSetup,
+    manifestationNarrationPending: false,
+  });
+}
 
 export function playerMechanicalConstraints(
   playerEntityId: string,

@@ -637,6 +637,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0010_world_deletion.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "opening_progression",
+            sql: include_str!("../migrations/0011_opening_progression.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

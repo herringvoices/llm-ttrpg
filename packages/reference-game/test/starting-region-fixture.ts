@@ -487,8 +487,12 @@ export function startingRegionStageOutputs() {
     },
     "opening-situation": {
       ordinaryAnchorEntityIds: ["generated.location.grocery", "generated.actor.alice"],
+      openingMode: "supernatural-inciting-incident",
+      supernaturalFocus: "creature",
       awakeningEvent: "A shelf buckles as blue frost races across the loading dock.",
       manifestationOpportunity: "Rowan can instinctively protect Alice as the danger reaches them.",
+      manifestationTargetTurn: 2,
+      manifestationDeadlineTurns: 3,
       combatRequired: false,
       unresolvedConsequences: ["the creature remains nearby", "the clinic delivery is still missing"],
       actionableDirections: {

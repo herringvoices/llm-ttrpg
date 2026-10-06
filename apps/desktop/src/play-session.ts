@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
+  compileNarrationDirective,
   createCampaignPlanContextItem,
+  deriveSceneRegister,
   jsonValueSchema,
   performConversationTurn,
   renderContextForModel,
@@ -13,7 +15,15 @@ import {
   type ModelRuntime,
   type PlanRevisionDiagnostic,
 } from "@llm-ttrpg/engine";
-import { referenceConversationBindings } from "@llm-ttrpg/reference-game";
+import {
+  createPowerProposalModel,
+  firstPowerGenerationRequest,
+  openingProgressionStateSchema,
+  referenceConversationBindings,
+  referenceGameDefinition,
+  rulesActorStateSchema,
+  type OpeningProgressionState,
+} from "@llm-ttrpg/reference-game";
 
 export type NarrationPreference = "concise" | "standard" | "expansive";
 
@@ -78,6 +88,11 @@ export interface PlaySessionView {
   readonly turnProgress?: TurnProgress;
   readonly error?: string;
   readonly diagnostics?: TurnDiagnostics;
+  readonly openingProgression?: {
+    readonly playerTurnsSinceStart: number;
+    readonly manifestationDeadlineTurns: 3;
+    readonly firstPowerManifested: boolean;
+  };
 }
 
 export interface PlaySessionPersistence {
@@ -85,6 +100,7 @@ export interface PlaySessionPersistence {
     readonly worldId: string;
     readonly narrationPreference: NarrationPreference;
     readonly transcript: readonly TranscriptEntry[];
+    readonly openingProgression?: OpeningProgressionState;
   }): Promise<void>;
 }
 
@@ -150,6 +166,7 @@ export class DesktopPlaySession {
     readonly declaration: string;
     readonly question: string;
   };
+  private openingProgression?: OpeningProgressionState;
 
   constructor(
     private readonly session: GameSession,
@@ -159,12 +176,16 @@ export class DesktopPlaySession {
     initial: {
       readonly transcript?: readonly TranscriptEntry[];
       readonly narrationPreference?: NarrationPreference;
+      readonly openingProgression?: OpeningProgressionState;
     } = {},
     private readonly presentationPersistence?: PlaySessionPersistence,
     private readonly openingNarration?: () => Promise<TranscriptEntry>,
   ) {
     this.transcriptEntries = [...(initial.transcript ?? [])];
     this.preference = initial.narrationPreference ?? "standard";
+    this.openingProgression = initial.openingProgression
+      ? openingProgressionStateSchema.parse(initial.openingProgression)
+      : undefined;
   }
 
   engineSession(): GameSession {
@@ -193,6 +214,16 @@ export class DesktopPlaySession {
       ...(this.turnProgress ? { turnProgress: this.turnProgress } : {}),
       ...(this.lastError ? { error: this.lastError } : {}),
       ...(this.lastDiagnostics ? { diagnostics: this.lastDiagnostics } : {}),
+      ...(this.openingProgression
+        ? {
+            openingProgression: {
+              playerTurnsSinceStart: this.openingProgression.playerTurnsSinceStart,
+              manifestationDeadlineTurns:
+                this.openingProgression.manifestationDeadlineTurns,
+              firstPowerManifested: this.openingProgression.firstPowerManifested,
+            },
+          }
+        : {}),
     };
   }
 
@@ -246,6 +277,7 @@ export class DesktopPlaySession {
     try {
       const entry = await this.openingNarration();
       if (this.transcriptEntries.length === 0) this.transcriptEntries.push(entry);
+      await this.persistPresentation();
     } catch (error) {
       this.lastError = errorMessage(error);
     } finally {
@@ -279,6 +311,226 @@ export class DesktopPlaySession {
     });
     if (!result.ok) throw new Error(`Unable to interpret the turn safely: ${result.error.message}`);
     return { route: result.output.value, context };
+  }
+
+  private async persistPresentation(): Promise<void> {
+    await this.presentationPersistence?.savePresentation({
+      worldId: this.session.worldId,
+      narrationPreference: this.preference,
+      transcript: this.transcriptEntries,
+      ...(this.openingProgression
+        ? { openingProgression: this.openingProgression }
+        : {}),
+    });
+  }
+
+  private playerMechanics() {
+    const player = this.session.snapshot().entities.find(
+      (entity) => entity.id === this.playerActorId,
+    );
+    if (!player) throw new Error(`Missing player actor ${this.playerActorId}`);
+    return rulesActorStateSchema.parse(player.data.mechanics);
+  }
+
+  private async narrateCommittedAwakening(
+    listener?: TurnProgressListener,
+  ): Promise<void> {
+    const state = this.openingProgression;
+    if (!state?.manifestationNarrationPending || !state.firstPowerProposal) return;
+    const mechanics = this.playerMechanics();
+    const power = mechanics.progression.powers?.find(
+      (candidate) => candidate.id === state.firstPowerProposal!.power.id,
+    );
+    if (!power) {
+      throw new Error(
+        "First-power narration was requested before the power was committed",
+      );
+    }
+
+    this.reportTurnProgress("presenting", listener);
+    const world = this.session.snapshot();
+    const pressure = world.actionPressure.status === "assessed"
+      ? world.actionPressure.level
+      : "unassessed";
+    const directive = compileNarrationDirective(
+      referenceGameDefinition.presentation.narrationProfile,
+      deriveSceneRegister({
+        kind: "action",
+        actionPressure: pressure,
+        authorizedHorizonMs: 0,
+        elapsedMs: 0,
+      }),
+    );
+    const context = this.session.assembleContext({
+      role: "actor",
+      perspective: { kind: "actor", id: this.playerActorId },
+      focalActorId: this.playerActorId,
+      ...(this.view().currentLocationId
+        ? { locationId: this.view().currentLocationId }
+        : {}),
+      budget: { maxUnits: 30_000 },
+    });
+    const history = await this.session.eventHistory();
+    const manifestationEvent = state.manifestationEventId
+      ? history.find((event) => event.id === state.manifestationEventId)
+      : history.findLast((event) => event.type === "rules.first-power-manifested");
+    const result = await this.requireModel().generate({
+      prompt: {
+        protectedContext: [directive.protectedContext],
+        instructions: [
+          "Present the already-committed first-power manifestation using the protected narration profile.",
+          "The rules operation has already made the power authoritative. Narration may describe only observable consequences of that committed state.",
+          "Do not invent additional functions, costs, mechanics, choices, player speech, player thoughts, or a second triggering action.",
+          "Make the moment legible as the character's first personal Awakening, then return control.",
+        ],
+        context: renderContextForModel(context),
+        input: JSON.stringify({
+          manifestationEvent: manifestationEvent
+            ? { id: manifestationEvent.id, summary: manifestationEvent.summary }
+            : undefined,
+          power: {
+            name: power.name,
+            corePrinciple: power.corePrinciple,
+            functions: power.functions.map((fn) => ({
+              name: fn.name,
+              description: fn.description,
+            })),
+          },
+        }),
+      },
+      output: { kind: "text" },
+      trace: { operation: "desktop.first-power-narration.v1" },
+    }, {
+      timeoutMs: 5 * 60 * 1_000,
+      generation: { temperature: 0.4, maxOutputTokens: 512 },
+    });
+    if (!result.ok || !result.output.text.trim()) {
+      this.add(
+        "system",
+        "Your first power manifested, but presentation failed. You may retry narration safely without replaying the Awakening.",
+      );
+      await this.persistPresentation();
+      return;
+    }
+
+    this.add("narrator", result.output.text.trim());
+    this.openingProgression = openingProgressionStateSchema.parse({
+      ...state,
+      manifestationNarrationPending: false,
+    });
+    await this.persistPresentation();
+  }
+
+  private async ensureOpeningManifestation(
+    listener?: TurnProgressListener,
+  ): Promise<void> {
+    const state = this.openingProgression;
+    if (!state || state.firstPowerManifested) return;
+
+    const currentMechanics = this.playerMechanics();
+    const alreadyManifested = currentMechanics.progression.characterLevel > 0 ||
+      (currentMechanics.progression.powers?.length ?? 0) > 0;
+    if (alreadyManifested) {
+      if (!state.firstPowerProposal) {
+        throw new Error(
+          "Player is already awakened but the protected first-power proposal is missing",
+        );
+      }
+      const history = await this.session.eventHistory();
+      const event = history.findLast((candidate) =>
+        candidate.type === "rules.first-power-manifested"
+      );
+      this.openingProgression = openingProgressionStateSchema.parse({
+        ...state,
+        firstPowerManifested: true,
+        ...(event ? { manifestationEventId: event.id } : {}),
+        manifestationNarrationPending: true,
+      });
+      await this.persistPresentation();
+      await this.narrateCommittedAwakening(listener);
+      return;
+    }
+
+    let proposal = state.firstPowerProposal;
+    if (!proposal) {
+      this.reportTurnProgress("updating", listener);
+      proposal = await createPowerProposalModel(this.requireModel()).propose(
+        firstPowerGenerationRequest({
+          characterSummary: state.characterSummary,
+          normalizedSetup: state.normalizedSetup,
+        }),
+      );
+      this.openingProgression = openingProgressionStateSchema.parse({
+        ...state,
+        firstPowerProposal: proposal,
+      });
+      await this.persistPresentation();
+    }
+
+    const mechanics = this.playerMechanics();
+    const skill = [...mechanics.skills].sort((left, right) =>
+      right.sp - left.sp || left.id.localeCompare(right.id)
+    )[0];
+    if (!skill) {
+      throw new Error("The player has no grounded skill available for Level 1 allocation");
+    }
+    const historyBefore = await this.session.eventHistory();
+    const evidence = historyBefore.at(-1);
+    if (!evidence) {
+      throw new Error(
+        "First-power manifestation requires an authoritative event from the opening turn",
+      );
+    }
+
+    this.reportTurnProgress("updating", listener);
+    await this.session.executeOperation("rules.progression.manifest-first-power", {
+      actorId: this.playerActorId,
+      power: proposal.power,
+      skillAllocations: [{
+        skillId: skill.id,
+        amount: 5,
+        evidenceEventIds: [evidence.id],
+      }],
+      scopeIds: evidence.scopeIds.length > 0
+        ? evidence.scopeIds
+        : this.localityScopeId
+          ? [this.localityScopeId]
+          : [],
+      causedByEventIds: [evidence.id],
+      reason: state.manifestationOpportunity,
+    });
+
+    const historyAfter = await this.session.eventHistory();
+    const manifested = historyAfter.findLast((event) =>
+      event.type === "rules.first-power-manifested"
+    );
+    this.openingProgression = openingProgressionStateSchema.parse({
+      ...this.openingProgression!,
+      firstPowerManifested: true,
+      ...(manifested ? { manifestationEventId: manifested.id } : {}),
+      manifestationNarrationPending: true,
+    });
+    await this.persistPresentation();
+    await this.narrateCommittedAwakening(listener);
+  }
+
+  private async advanceOpeningProgression(
+    listener?: TurnProgressListener,
+  ): Promise<void> {
+    const state = this.openingProgression;
+    if (!state || state.firstPowerManifested) return;
+    const nextTurns = Math.min(
+      state.manifestationDeadlineTurns,
+      state.playerTurnsSinceStart + 1,
+    );
+    this.openingProgression = openingProgressionStateSchema.parse({
+      ...state,
+      playerTurnsSinceStart: nextTurns,
+    });
+    await this.persistPresentation();
+    if (nextTurns >= state.manifestationTargetTurn) {
+      await this.ensureOpeningManifestation(listener);
+    }
   }
 
   private async replanIfInvalidated(
@@ -336,6 +588,22 @@ export class DesktopPlaySession {
     if (this.active) throw new Error("A player turn is already running");
     this.active = true;
     this.lastError = undefined;
+    try {
+      if (
+        this.openingProgression &&
+        !this.openingProgression.firstPowerManifested &&
+        this.openingProgression.playerTurnsSinceStart >=
+          this.openingProgression.manifestationDeadlineTurns
+      ) {
+        await this.ensureOpeningManifestation(onProgress);
+      }
+    } catch (error) {
+      this.lastError = errorMessage(error);
+      this.active = false;
+      this.turnProgress = undefined;
+      await this.persistPresentation().catch(() => undefined);
+      return this.view();
+    }
     const pendingClarification = this.pendingActionClarification;
     this.pendingActionClarification = undefined;
     const declaration = pendingClarification
@@ -349,6 +617,7 @@ export class DesktopPlaySession {
       const historyBefore = await this.session.eventHistory();
       const startedAt = nowMs();
       let routeKind: "action" | "conversation" = "action";
+      let meaningfulTurn = false;
       const routed = !pendingClarification && mayBeConversation(declaration)
         ? await this.routeDeclaration(declaration)
         : undefined;
@@ -388,6 +657,7 @@ export class DesktopPlaySession {
           onProgress: (phase) => this.reportTurnProgress(phase, onProgress),
         });
         this.workingConversation = result.workingState;
+        meaningfulTurn = true;
         if (result.narration) this.add("npc", result.narration);
         else {
           narrationStatus = "failed";
@@ -426,14 +696,21 @@ export class DesktopPlaySession {
         }
         else if (result.kind === "failed") {
           if (result.developmentSignal) {
+            meaningfulTurn = true;
             narrationStatus = "failed";
             this.add("system", "The action changed the world, but presentation failed. You may retry narration without replaying it.");
           } else throw new Error(result.failure.message);
-        } else if (result.narration) this.add("narrator", result.narration);
-        else {
-          narrationStatus = "failed";
-          this.add("system", "The action committed, but narration was unavailable. You may retry narration safely.");
+        } else {
+          meaningfulTurn = true;
+          if (result.narration) this.add("narrator", result.narration);
+          else {
+            narrationStatus = "failed";
+            this.add("system", "The action committed, but narration was unavailable. You may retry narration safely.");
+          }
         }
+      }
+      if (meaningfulTurn) {
+        await this.advanceOpeningProgression(onProgress);
       }
       const planner = await this.replanIfInvalidated(onProgress)
         .catch((error: unknown) => ({ error: errorMessage(error) }));
@@ -473,13 +750,35 @@ export class DesktopPlaySession {
     } finally {
       this.active = false;
       this.turnProgress = undefined;
+      await this.persistPresentation().catch((error: unknown) => {
+        if (!this.lastError) this.lastError = errorMessage(error);
+      });
     }
     return this.view();
   }
 
   async retryNarration(onProgress?: TurnProgressListener): Promise<PlaySessionView> {
-    if (!this.lastActionRequest) throw new Error("There is no action narration to retry");
     if (this.active) throw new Error("A player turn is already running");
+    if (this.openingProgression?.manifestationNarrationPending) {
+      this.active = true;
+      this.lastError = undefined;
+      try {
+        await this.narrateCommittedAwakening(onProgress);
+        if (this.openingProgression?.manifestationNarrationPending) {
+          throw new Error(
+            "Awakening narration is still unavailable; the committed power was not replayed",
+          );
+        }
+      } catch (error) {
+        this.lastError = errorMessage(error);
+      } finally {
+        this.active = false;
+        this.turnProgress = undefined;
+        await this.persistPresentation().catch(() => undefined);
+      }
+      return this.view();
+    }
+    if (!this.lastActionRequest) throw new Error("There is no action narration to retry");
     this.active = true;
     this.lastError = undefined;
     this.reportTurnProgress("presenting", onProgress);
@@ -511,18 +810,17 @@ export class DesktopPlaySession {
       this.lastError = errorMessage(error);
     } finally {
       this.active = false;
+      await this.persistPresentation().catch((error: unknown) => {
+        if (!this.lastError) this.lastError = errorMessage(error);
+      });
     }
     return this.view();
   }
 
   async save(slotName = "Manual save"): Promise<PlaySessionView> {
     await this.session.save(slotName);
-    await this.presentationPersistence?.savePresentation({
-      worldId: this.session.worldId,
-      narrationPreference: this.preference,
-      transcript: this.transcriptEntries,
-    });
     this.add("system", `Saved to ${slotName}.`);
+    await this.persistPresentation();
     return this.view();
   }
 }
