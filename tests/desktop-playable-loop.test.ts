@@ -17,10 +17,12 @@ import {
   generatedStart,
   startingRegionStageOutputs,
 } from "../packages/reference-game/test/starting-region-fixture.js";
+import { quickChangePower } from "@llm-ttrpg/reference-game";
 
 function generatedCampaignModel(options: {
   readonly minimalPlayer?: boolean;
   readonly playerName?: string;
+  readonly openingSituation?: Readonly<Record<string, unknown>>;
   readonly turnSteps?: readonly ScriptedModelStep[];
 } = {}) {
   const outputs = startingRegionStageOutputs();
@@ -29,7 +31,9 @@ function generatedCampaignModel(options: {
     match: { schemaId: `starting-region.${stageId}.v1` },
     result: {
       kind: "structured" as const,
-      value: stageId === "normalize" && options.minimalPlayer
+      value: stageId === "opening-situation" && options.openingSituation
+        ? { ...outputs["opening-situation"], ...options.openingSituation }
+        : stageId === "normalize" && options.minimalPlayer
         ? {
             ...outputs.normalize,
             player: {
@@ -225,13 +229,158 @@ function generatedCampaignModel(options: {
           request.prompt.protectedContext?.join("\n").includes("awakening-earth-grounded") === true &&
           request.prompt.protectedContext?.join("\n").includes('"kind":"opening"') === true,
       },
-      result: {
-        kind: "text",
-        text: "Blue frost crawls over the loading dock as a strange feline silhouette watches from between the pallets. The bat beside your hand is ordinary wood, but it is the nearest solid thing between you and the creature.",
+      result: (request: ModelRequest<unknown>) => {
+        const input = JSON.parse(request.prompt.input) as {
+          mode?: string;
+          phenomenon?: { summary?: string };
+        };
+        if (input.mode === "mundane-manifestation") {
+          return {
+            kind: "text" as const,
+            text: "The grocery store settles into its ordinary afternoon rhythm: scanner beeps, cart wheels chatter, and Alice is sorting a delivery beside you.",
+          };
+        }
+        if (input.phenomenon) {
+          return {
+            kind: "text" as const,
+            text: `Something impossible interrupts the familiar loading dock: ${input.phenomenon.summary ?? "a supernatural anomaly is unfolding"}.`,
+          };
+        }
+        return {
+          kind: "text" as const,
+          text: "Blue frost crawls over the loading dock as a strange feline silhouette watches from between the pallets. The bat beside your hand is ordinary wood, but it is the nearest solid thing between you and the creature.",
+        };
       },
     },
     ...(options.turnSteps ?? []),
   ]);
+}
+
+
+function openingConversationSteps(
+  prefix: string,
+  options: {
+    readonly includePowerManifestation?: boolean;
+    readonly failFirstPowerNarrationOnce?: boolean;
+  } = {},
+): ScriptedModelStep[] {
+  const outputs = startingRegionStageOutputs();
+  const npcName = outputs.npcs[0]!.entity.name;
+  const steps: ScriptedModelStep[] = [
+    {
+      id: `${prefix}-route-conversation`,
+      match: { schemaId: "desktop.turn-route.v1" },
+      result: (request: ModelRequest<unknown>) => {
+        const context = JSON.parse(request.prompt.context!) as {
+          situation: { scene: Array<{ localRef: string; displayIdentity: string }> };
+        };
+        const recipientRef = context.situation.scene
+          .find((item) => item.displayIdentity === npcName)?.localRef;
+        if (!recipientRef) throw new Error(`Conversation context omitted ${npcName}`);
+        return {
+          kind: "structured" as const,
+          value: { kind: "conversation" as const, recipientRefs: [recipientRef] },
+        };
+      },
+    },
+    {
+      id: `${prefix}-interpret-conversation`,
+      match: { schemaId: "conversation.player-communication.v1" },
+      result: {
+        kind: "structured",
+        value: {
+          inputMode: "described",
+          exactQuoteFragments: [],
+          semanticKinds: ["question"],
+          authorizedContent: "Ask Alice a harmless ordinary question.",
+          testimonyIds: [],
+          materialCommitments: [],
+          deliveryIntent: "honest",
+          containsNonSpeechAction: false,
+          estimatedDurationMs: 1_000,
+          pressureLevel: 2,
+        },
+      },
+    },
+    {
+      id: `${prefix}-npc-response`,
+      match: { schemaId: "conversation.npc-decision.v1" },
+      result: (request: ModelRequest<unknown>) => {
+        const input = JSON.parse(request.prompt.input) as { actorRef: string };
+        return {
+          kind: "structured" as const,
+          value: {
+            actorId: input.actorRef,
+            interpretation: "The player asks an ordinary question.",
+            responseKind: "speak",
+            intendedSpeechSemantics: "Alice answers casually.",
+            speechSemanticKinds: ["assertion"],
+            estimatedSpeechDurationMs: 500,
+            disclosure: { mode: "none" },
+            sceneState: {
+              actorId: input.actorRef,
+              interpretation: "This is an ordinary conversation during the current routine.",
+              attention: ["the player", "the current task"],
+              immediatePriorities: ["finish the current task"],
+              stance: "casual",
+              wants: ["keep the shift moving"],
+              reluctantToRevealIds: [],
+              considering: [],
+              unresolvedQuestions: [],
+            },
+            requiresAuthoritativeResolution: false,
+            stopReason: "answer-expected",
+          },
+        };
+      },
+    },
+    {
+      id: `${prefix}-extract-conversation`,
+      match: { schemaId: "conversation.durable-extraction.v1" },
+      result: { kind: "structured", value: { proposals: [] } },
+    },
+    {
+      id: `${prefix}-narrate-conversation`,
+      match: { operation: "conversation.narration.v1" },
+      result: { kind: "text", text: "Alice answers while continuing the ordinary task beside you." },
+    },
+  ];
+
+  if (options.includePowerManifestation) {
+    steps.push({
+      id: `${prefix}-power-proposal`,
+      match: { schemaId: "awakening-earth.power-proposal.v1" },
+      result: {
+        kind: "structured",
+        value: {
+          power: quickChangePower,
+          preferenceRationale:
+            "Quick Change is a coherent physical utility power that fits an otherwise ordinary character and violates no negative preference.",
+          negativeConstraintsRespected: true,
+        },
+      },
+    });
+    if (options.failFirstPowerNarrationOnce) {
+      steps.push({
+        id: `${prefix}-power-narration-failure`,
+        match: { operation: "desktop.first-power-narration.v1" },
+        result: {
+          kind: "failure",
+          failureKind: "runtime-unavailable",
+          message: "simulated presentation failure",
+        },
+      });
+    }
+    steps.push({
+      id: `${prefix}-power-narration`,
+      match: { operation: "desktop.first-power-narration.v1" },
+      result: {
+        kind: "text",
+        text: "For one impossible instant, your sense of your own weight becomes something you can change deliberately.",
+      },
+    });
+  }
+  return steps;
 }
 
 function setup(persistence: PersistencePorts = createInMemoryPersistence()) {
@@ -542,6 +691,224 @@ describe("desktop playable session integration", () => {
     expect((await reopened.engineSession().eventHistory()).some((event) =>
       event.type === "campaign.public-response-advanced"
     )).toBe(true);
+  });
+
+
+  it("starts mundanely and commits the first power through the real rules path on turn 1", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    let id = 0;
+    const model = generatedCampaignModel({
+      openingSituation: {
+        openingMode: "mundane-manifestation",
+        supernaturalFocus: "none",
+        awakeningEvent: "Rowan's first personal Awakening interrupts an otherwise ordinary grocery shift.",
+        manifestationOpportunity: "The new power emerges naturally from Rowan's current ordinary action.",
+        manifestationTargetTurn: 1,
+        manifestationDeadlineTurns: 3,
+      },
+      turnSteps: openingConversationSteps("mundane-turn-1", {
+        includePowerManifestation: true,
+      }),
+    });
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: model,
+      now: () => generatedStart,
+      randomId: () => `mundane-opening-${++id}`,
+      nextSeed: () => 0x4545_0001,
+    });
+
+    const play = await app.createWorld({
+      characterName: "Rowan",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      bioHistory: "Rowan works at a grocery store and is in the middle of an ordinary shift.",
+      allowGeneratedDetails: true,
+    });
+
+    expect(play.view().openingProgression).toEqual({
+      playerTurnsSinceStart: 0,
+      manifestationDeadlineTurns: 3,
+      firstPowerManifested: false,
+    });
+    expect(play.view().transcript[0]?.text).toContain("ordinary afternoon rhythm");
+    expect(play.view().transcript[0]?.text).not.toContain("frost");
+    expect((await play.engineSession().eventHistory()).some((event) =>
+      event.type === "campaign.opening-incident-realized" ||
+      event.type === "campaign.opening-phenomenon-realized"
+    )).toBe(false);
+
+    const afterTurn = await play.performTurn("I ask Alice how the shift is going.");
+    expect(afterTurn.error).toBeUndefined();
+    expect(afterTurn.openingProgression).toEqual({
+      playerTurnsSinceStart: 1,
+      manifestationDeadlineTurns: 3,
+      firstPowerManifested: true,
+    });
+    const manifestations = (await play.engineSession().eventHistory()).filter((event) =>
+      event.type === "rules.first-power-manifested"
+    );
+    expect(manifestations).toHaveLength(1);
+    const player = play.engineSession().snapshot().entities.find((entity) =>
+      entity.id === "generated.actor.player"
+    );
+    expect(player?.data.mechanics).toEqual(expect.objectContaining({
+      progression: expect.objectContaining({
+        characterLevel: 1,
+        powers: [expect.objectContaining({ id: quickChangePower.id })],
+      }),
+    }));
+    expect(afterTurn.transcript.at(-1)?.text).toContain("weight");
+  });
+
+  it("preserves the original three-turn Awakening window across save/reload and adapts to sideways choices", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    let id = 0;
+    const firstModel = generatedCampaignModel({
+      openingSituation: {
+        openingMode: "mundane-manifestation",
+        supernaturalFocus: "none",
+        awakeningEvent: "Rowan's first personal Awakening is close, but ordinary life continues first.",
+        manifestationOpportunity: "The power can surface through whatever grounded situation Rowan creates.",
+        manifestationTargetTurn: 3,
+        manifestationDeadlineTurns: 3,
+      },
+      turnSteps: openingConversationSteps("deadline-turn-1"),
+    });
+    const options = {
+      now: () => generatedStart,
+      randomId: () => `deadline-opening-${++id}`,
+      nextSeed: () => 0x4545_0002,
+    };
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      ...options,
+      modelRuntime: firstModel,
+    });
+    const play = await app.createWorld({
+      characterName: "Rowan",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      bioHistory: "Rowan works at a grocery store.",
+      allowGeneratedDetails: true,
+    });
+
+    await play.performTurn("I ask Alice whether she wants coffee later.");
+    expect(play.view().openingProgression).toEqual({
+      playerTurnsSinceStart: 1,
+      manifestationDeadlineTurns: 3,
+      firstPowerManifested: false,
+    });
+    await play.save("Before Awakening");
+
+    const reopenedModel = generatedCampaignModel({
+      turnSteps: [
+        ...openingConversationSteps("deadline-turn-2"),
+        ...openingConversationSteps("deadline-turn-3", {
+          includePowerManifestation: true,
+        }),
+      ],
+    });
+    const reopened = await createDesktopApplication(
+      createSqlJsClient(database),
+      { ...options, modelRuntime: reopenedModel },
+    ).openWorld(play.view().worldId);
+
+    expect(reopened.view().openingProgression).toEqual({
+      playerTurnsSinceStart: 1,
+      manifestationDeadlineTurns: 3,
+      firstPowerManifested: false,
+    });
+    await reopened.performTurn("I ask Alice if the delivery list is finished.");
+    expect(reopened.view().openingProgression?.playerTurnsSinceStart).toBe(2);
+    expect(reopened.view().openingProgression?.firstPowerManifested).toBe(false);
+
+    await reopened.performTurn("I ask Alice if she has plans after work.");
+    expect(reopened.view().openingProgression).toEqual({
+      playerTurnsSinceStart: 3,
+      manifestationDeadlineTurns: 3,
+      firstPowerManifested: true,
+    });
+    expect((await reopened.engineSession().eventHistory()).filter((event) =>
+      event.type === "rules.first-power-manifested"
+    )).toHaveLength(1);
+  });
+
+  it("realizes a non-creature supernatural phenomenon without forcing the creature incident path", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    let id = 0;
+    const model = generatedCampaignModel({
+      openingSituation: {
+        openingMode: "supernatural-inciting-incident",
+        supernaturalFocus: "phenomenon",
+        awakeningEvent: "Every metal shelf on the loading dock begins humming in the same impossible chord.",
+        manifestationOpportunity: "Rowan may awaken while reacting to or investigating the anomaly.",
+        manifestationTargetTurn: 2,
+        manifestationDeadlineTurns: 3,
+      },
+    });
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: model,
+      now: () => generatedStart,
+      randomId: () => `phenomenon-opening-${++id}`,
+      nextSeed: () => 0x4545_0003,
+    });
+    const play = await app.createWorld({
+      characterName: "Rowan",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      allowGeneratedDetails: true,
+    });
+
+    const history = await play.engineSession().eventHistory();
+    expect(history.some((event) => event.type === "campaign.opening-phenomenon-realized"))
+      .toBe(true);
+    expect(history.some((event) => event.type === "campaign.opening-incident-realized"))
+      .toBe(false);
+    expect(model.invocations.map((invocation) => invocation.schemaId))
+      .not.toContain("awakening-earth.opening-incident-compact-v1");
+    expect(play.view().transcript[0]?.text).toContain("impossible");
+  });
+
+  it("retries first-power presentation without replaying the committed Awakening", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    let id = 0;
+    const model = generatedCampaignModel({
+      openingSituation: {
+        openingMode: "mundane-manifestation",
+        supernaturalFocus: "none",
+        awakeningEvent: "Rowan's first personal Awakening interrupts an ordinary conversation.",
+        manifestationOpportunity: "The first power surfaces after the current grounded turn.",
+        manifestationTargetTurn: 1,
+        manifestationDeadlineTurns: 3,
+      },
+      turnSteps: openingConversationSteps("awakening-retry", {
+        includePowerManifestation: true,
+        failFirstPowerNarrationOnce: true,
+      }),
+    });
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: model,
+      now: () => generatedStart,
+      randomId: () => `awakening-retry-${++id}`,
+      nextSeed: () => 0x4545_0004,
+    });
+    const play = await app.createWorld({
+      characterName: "Rowan",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      allowGeneratedDetails: true,
+    });
+
+    const failedPresentation = await play.performTurn("I ask Alice a boring work question.");
+    expect(failedPresentation.openingProgression?.firstPowerManifested).toBe(true);
+    const historyAfterCommit = await play.engineSession().eventHistory();
+    expect(historyAfterCommit.filter((event) =>
+      event.type === "rules.first-power-manifested"
+    )).toHaveLength(1);
+    expect(failedPresentation.transcript.at(-1)?.text).toContain("presentation failed");
+
+    const retried = await play.retryNarration();
+    expect(retried.error).toBeUndefined();
+    expect(retried.transcript.at(-1)?.text).toContain("weight");
+    expect((await play.engineSession().eventHistory()).filter((event) =>
+      event.type === "rules.first-power-manifested"
+    )).toHaveLength(1);
+    expect(await play.engineSession().eventHistory()).toEqual(historyAfterCommit);
   });
 
   it("accepts the minimal structured questionnaire and preserves the supplied character name", async () => {
