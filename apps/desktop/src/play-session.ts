@@ -80,7 +80,7 @@ const turnRouteSchema = z.discriminatedUnion("kind", [
 
 const ROUTING_CONTEXT_BUDGET_UNITS = 8_000;
 const ACTION_CONTEXT_BUDGET_UNITS = 12_000;
-const ACTION_MAX_MODEL_TURNS = 24;
+const ACTION_MAX_MODEL_TURNS = 6;
 
 function mayBeConversation(declaration: string): boolean {
   return /["“”]|\b(answer|ask|call|greet|reply|say|speak|talk|tell|text|whisper|yell)\b/i

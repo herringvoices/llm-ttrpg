@@ -1,6 +1,8 @@
+import { z } from "zod";
 import {
   actionPressureAssessmentSchema,
   boundInterpretedIntent,
+  intentStopReasonSchema,
   type ActionPressureAssessment,
   type ActionPressureState,
 } from "./action-pressure.js";
@@ -239,6 +241,21 @@ function rejectModelAuthoredCanonicalEntityIds(
       rejectModelAuthoredCanonicalEntityIds(item, entityIds);
     }
   }
+}
+
+function constrainedExecutionDecisionSchema(candidateIds: readonly string[]) {
+  if (candidateIds.length === 0) return executionDecisionSchema;
+  const toolIdSchema = candidateIds.length === 1
+    ? z.literal(candidateIds[0]!)
+    : z.enum(candidateIds as [string, ...string[]]);
+  return z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("invoke-tool"),
+      toolId: toolIdSchema,
+      arguments: jsonValueSchema,
+    }).strict(),
+    z.object({ kind: z.literal("stop"), reason: intentStopReasonSchema }).strict(),
+  ]);
 }
 
 async function structuredModelDecision<T>(
@@ -1260,14 +1277,20 @@ function openSession(
           ...(options.toolPolicy ? { toolPolicy: options.toolPolicy } : {}),
         });
         record("context", { stage: "execution", turn, usedUnits: context.diagnostics.usedUnits }, { worldRevision: revision });
+        const decisionSchema = constrainedExecutionDecisionSchema([...candidateIds]);
         const decisionResult = await structuredModelDecision(
           options.modelRuntime,
           "player-action.execution-decision.v1",
-          executionDecisionSchema,
+          decisionSchema,
           {
             instructions: [
               ...(candidates.length
-                ? [
+                ? candidates.length === 1
+                  ? [
+                    "The engine has selected the only applicable capability. Supply its model-safe arguments, or stop if the goal is already complete.",
+                    "You may not discover catalog entries, inspect tools, or choose another tool.",
+                  ]
+                  : [
                     "Choose exactly one next action: invoke one supplied candidate or stop.",
                     "You may not discover catalog entries, inspect tools, or choose a tool outside the supplied candidates.",
                   ]

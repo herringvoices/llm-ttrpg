@@ -121,6 +121,19 @@ describe("player action execution pipeline", () => {
     expect(model.requests.some((entry) => entry.prompt.instructions.some((instruction) =>
       instruction.includes("discover subsystems/tools"),
     ))).toBe(false);
+    const boundedDecision = model.requests.find((entry) =>
+      entry.output.kind === "structured" &&
+      entry.output.schemaId === "player-action.execution-decision.v1",
+    );
+    expect(boundedDecision?.output.kind).toBe("structured");
+    if (boundedDecision?.output.kind !== "structured") {
+      throw new Error("Expected a bounded execution decision request");
+    }
+    expect(boundedDecision.output.schema.safeParse({
+      kind: "invoke-tool",
+      toolId: "test.actions.unrelated-capability",
+      arguments: {},
+    }).success).toBe(false);
   });
 
   it("records a model-turn limit without misreporting fictional-time exhaustion", async () => {
