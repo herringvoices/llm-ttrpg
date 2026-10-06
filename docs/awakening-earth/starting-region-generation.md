@@ -600,6 +600,7 @@ Record enough information to reproduce and diagnose a generation attempt:
 - game component versions;
 - generation seed/control seed where applicable;
 - raw player setup input;
+- structured desktop questionnaire answers rendered deterministically into that player source text, with exact supplied wording retained for provenance and the supplied character name carried separately so generation cannot rename the player;
 - normalized constraints;
 - stage outputs;
 - validation results;

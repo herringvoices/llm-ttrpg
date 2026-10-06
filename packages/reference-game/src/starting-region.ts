@@ -752,7 +752,9 @@ function expandPlayerContextProposal(
     entity: {
       id: "generated.actor.player",
       kind: "actor",
-      name: proposal.entity.name?.trim().slice(0, 120) || "Player",
+      name: context.request.player.name ?? (
+        proposal.entity.name?.trim().slice(0, 120) || "Player"
+      ),
       summary: proposal.entity.summary?.trim().slice(0, 320) ||
         context.request.player.description.slice(0, 320),
       data: {},

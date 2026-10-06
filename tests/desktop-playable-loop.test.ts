@@ -18,14 +18,28 @@ import {
   startingRegionStageOutputs,
 } from "../packages/reference-game/test/starting-region-fixture.js";
 
-function generatedCampaignModel() {
+function generatedCampaignModel(options: {
+  readonly minimalPlayer?: boolean;
+  readonly playerName?: string;
+} = {}) {
   const outputs = startingRegionStageOutputs();
   const stageSteps = Object.entries(outputs).map(([stageId, value]) => ({
     id: `generate-${stageId}`,
     match: { schemaId: `starting-region.${stageId}.v1` },
     result: {
       kind: "structured" as const,
-      value: stageId === "player-context"
+      value: stageId === "normalize" && options.minimalPlayer
+        ? {
+            ...outputs.normalize,
+            player: {
+              establishedFacts: [],
+              unspecifiedAreas: ["sex/gender", "appearance", "hobbies", "biography"],
+              currentWants: [],
+              powerPreferences: { positive: [], negative: [], surpriseMe: true },
+              followUpQuestions: [],
+            },
+          }
+        : stageId === "player-context"
         ? (() => {
             const player = outputs["player-context"];
             return {
@@ -160,6 +174,7 @@ function generatedCampaignModel() {
           return found;
         };
         const player = outputs["player-context"].entity;
+        const playerName = options.playerName ?? player.name;
         const npc = outputs.npcs[0]!.entity;
         const creature = outputs.pressures.creatures[0]!;
         const location = outputs.locality.locations.find((item) =>
@@ -173,7 +188,7 @@ function generatedCampaignModel() {
               summary: "A grounded supernatural threat emerges at the generated grocery.",
               locationRef: refForName(location.name),
               involvedRefs: [
-                refForName(player.name),
+                refForName(playerName),
                 refForName(npc.name),
                 refForName(creature.entity.name),
               ],
@@ -181,7 +196,7 @@ function generatedCampaignModel() {
               contactObject: {
                 name: "Loading Dock Bat",
                 summary: "An ordinary wooden bat available at the loading dock.",
-                wielderRef: refForName(player.name),
+                wielderRef: refForName(playerName),
               },
               observedCondition: "blue frost spreads across the loading dock",
             },
@@ -439,11 +454,15 @@ describe("desktop playable session integration", () => {
       randomId: () => `generated-${++id}`,
       nextSeed: () => 0x1919_1919,
     };
-    const app = createDesktopApplication(createSqlJsClient(database), options);
+    const client = createSqlJsClient(database);
+    const app = createDesktopApplication(client, options);
     const play = await app.createWorld({
-      name: "Generated desktop campaign",
+      characterName: "Rowan",
+      sexGender: "nonbinary",
+      appearance: "Rowan has close-cropped black hair and wears a faded green rain jacket.",
       locationDescription: "Medium-sized city in the Pacific Northwest.",
-      playerDescription: "Rowan works at a grocery store, rents an apartment, and wants to protect their sibling.",
+      hobbies: "urban sketching and pickup basketball",
+      bioHistory: "Rowan works at a grocery store, rents an apartment, and wants to protect their sibling.",
     });
     expect(play.view()).toEqual(expect.objectContaining({
       playerName: "Rowan",
@@ -453,6 +472,19 @@ describe("desktop playable session integration", () => {
         text: expect.stringContaining("Blue frost"),
       })],
     }));
+    expect((await app.listWorlds())[0]?.name).toBe("Rowan's Awakening Earth campaign");
+    const sessionRows = await client.select<Array<{ generated_package_json: string }>>(
+      "SELECT generated_package_json FROM desktop_play_sessions WHERE world_id = ?",
+      [play.view().worldId],
+    );
+    const descriptor = JSON.parse(sessionRows[0]!.generated_package_json) as {
+      request: { player: { name?: string; description: string } };
+    };
+    expect(descriptor.request.player.name).toBe("Rowan");
+    expect(descriptor.request.player.description).toContain("Sex/Gender: nonbinary");
+    expect(descriptor.request.player.description).toContain("Appearance: Rowan has close-cropped black hair");
+    expect(descriptor.request.player.description).toContain("Hobbies: urban sketching and pickup basketball");
+    expect(descriptor.request.player.description).toContain("Bio / History: Rowan works at a grocery store");
     expect((await play.engineSession().eventHistory()).some((event) =>
       event.type === "campaign.opening-incident-realized"
     )).toBe(true);
@@ -508,6 +540,28 @@ describe("desktop playable session integration", () => {
     expect((await reopened.engineSession().eventHistory()).some((event) =>
       event.type === "campaign.public-response-advanced"
     )).toBe(true);
+  });
+
+  it("accepts the minimal structured questionnaire and preserves the supplied character name", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    let id = 0;
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: generatedCampaignModel({ minimalPlayer: true, playerName: "Alex" }),
+      now: () => generatedStart,
+      randomId: () => `minimal-${++id}`,
+      nextSeed: () => 0x2020_2020,
+    });
+
+    const play = await app.createWorld({
+      characterName: "Alex",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      allowGeneratedDetails: true,
+    });
+
+    expect(play.view().playerName).toBe("Alex");
+    expect((await app.listWorlds())[0]?.name).toBe("Alex's Awakening Earth campaign");
+    const reopened = await app.openWorld(play.view().worldId);
+    expect(reopened.view().playerName).toBe("Alex");
   });
 
   it("returns setup follow-ups as a continuation step and reports generation progress", async () => {

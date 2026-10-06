@@ -11,9 +11,12 @@ import type { DesktopPlaySession, PlaySessionView } from "./play-session.js";
 export function App({ application }: { readonly application: DesktopApplication }) {
   const [worlds, setWorlds] = useState<readonly WorldMetadata[]>([]);
   const [drafts, setDrafts] = useState<readonly CampaignGenerationDraft[]>([]);
-  const [name, setName] = useState("New Awakening Earth campaign");
-  const [location, setLocation] = useState("A fictional small town in the upper Midwest");
-  const [player, setPlayer] = useState("I am an ordinary local adult with close community ties and a practical job.");
+  const [characterName, setCharacterName] = useState("");
+  const [sexGender, setSexGender] = useState("");
+  const [appearance, setAppearance] = useState("");
+  const [location, setLocation] = useState("");
+  const [hobbies, setHobbies] = useState("");
+  const [bioHistory, setBioHistory] = useState("");
   const [message, setMessage] = useState("Loading campaigns…");
   const [creating, setCreating] = useState(false);
   const [allowGeneratedDetails, setAllowGeneratedDetails] = useState(true);
@@ -104,9 +107,12 @@ export function App({ application }: { readonly application: DesktopApplication 
     setMessage("Preparing campaign generation…");
     try {
       const result = await application.createCampaign({
-        name,
+        characterName,
+        sexGender,
+        appearance,
         locationDescription: location,
-        playerDescription: player,
+        hobbies,
+        bioHistory,
         allowGeneratedDetails,
       }, progressOptions());
       if (acceptCreationResult(result)) await refresh();
@@ -179,9 +185,12 @@ export function App({ application }: { readonly application: DesktopApplication 
 
   async function resumeDraft(draft: CampaignGenerationDraft) {
     if (draft.status === "needs-input" && draft.questions.length > 0) {
-      setName(draft.input.name);
+      setCharacterName(draft.input.characterName ?? "");
+      setSexGender(draft.input.sexGender ?? "");
+      setAppearance(draft.input.appearance ?? "");
       setLocation(draft.input.locationDescription);
-      setPlayer(draft.input.playerDescription);
+      setHobbies(draft.input.hobbies ?? "");
+      setBioHistory(draft.input.bioHistory ?? draft.input.playerDescription ?? "");
       setGenerateUnanswered(draft.input.allowGeneratedDetails ?? true);
       setFollowUpAnswers(Object.fromEntries(
         (draft.input.followUpAnswers ?? []).map((answer) => [followUpKey(answer), answer.answer]),
@@ -301,9 +310,46 @@ export function App({ application }: { readonly application: DesktopApplication 
       {followUps.length === 0 ? (
         <section aria-labelledby="new-world-heading">
           <h2 id="new-world-heading">Begin a campaign</h2>
-          <label>Campaign name<input disabled={creating} value={name} onChange={(event) => setName(event.target.value)} /></label>
-          <label>Where does it begin?<textarea disabled={creating} value={location} onChange={(event) => setLocation(event.target.value)} /></label>
-          <label>Who are you?<textarea disabled={creating} value={player} onChange={(event) => setPlayer(event.target.value)} /></label>
+          <label>
+            Name
+            <input required disabled={creating} value={characterName} onChange={(event) => setCharacterName(event.target.value)} />
+          </label>
+          <label>
+            Sex/Gender
+            <input disabled={creating} value={sexGender} onChange={(event) => setSexGender(event.target.value)} />
+          </label>
+          <label>
+            Appearance
+            <textarea
+              disabled={creating}
+              value={appearance}
+              placeholder="What does your character look like? Include as much or as little detail as you want."
+              onChange={(event) => setAppearance(event.target.value)}
+            />
+          </label>
+          <label>
+            Location
+            <textarea
+              required
+              disabled={creating}
+              value={location}
+              placeholder="Where does your character live or where should the story begin? A city, region, neighborhood, type of community, or made-up place is fine."
+              onChange={(event) => setLocation(event.target.value)}
+            />
+          </label>
+          <label>
+            Hobbies
+            <input disabled={creating} value={hobbies} onChange={(event) => setHobbies(event.target.value)} />
+          </label>
+          <label>
+            Bio / History
+            <textarea
+              disabled={creating}
+              value={bioHistory}
+              placeholder="Tell us as much or as little as you want about your character's life so far: work or school, relationships, goals, history, routines, or anything else that matters."
+              onChange={(event) => setBioHistory(event.target.value)}
+            />
+          </label>
           <label className="checkbox-row">
             <input
               type="checkbox"
@@ -316,7 +362,13 @@ export function App({ application }: { readonly application: DesktopApplication 
               <small>Grounded choices will be generator-created, not treated as facts you supplied.</small>
             </span>
           </label>
-          <button type="button" disabled={creating} onClick={() => void createWorld()}>{creating ? "Generating…" : "Create campaign"}</button>
+          <button
+            type="button"
+            disabled={creating || !characterName.trim() || !location.trim()}
+            onClick={() => void createWorld()}
+          >
+            {creating ? "Generating…" : "Create campaign"}
+          </button>
           {creating && generationProgress && (
             <div className="generation-progress" role="status" aria-live="polite">
               <div>

@@ -44,9 +44,16 @@ import { createSqlitePersistence } from "./persistence/sqlite-persistence.js";
 import type { SqlClient } from "./persistence/sql-client.js";
 
 export interface CreateCampaignInput {
-  readonly name: string;
+  /** Current six-question input. */
+  readonly characterName?: string;
+  readonly sexGender?: string;
+  readonly appearance?: string;
   readonly locationDescription: string;
-  readonly playerDescription: string;
+  readonly hobbies?: string;
+  readonly bioHistory?: string;
+  /** Legacy draft/API fields retained only for deterministic compatibility. */
+  readonly name?: string;
+  readonly playerDescription?: string;
   readonly powerGuidance?: string;
   readonly allowGeneratedDetails?: boolean;
   readonly followUpAnswers?: readonly CampaignFollowUpAnswer[];
@@ -144,13 +151,26 @@ const campaignFollowUpAnswerSchema = campaignFollowUpQuestionSchema.extend({
 }).strict();
 
 const createCampaignInputSchema = z.object({
-  name: z.string(),
-  locationDescription: z.string(),
-  playerDescription: z.string(),
+  characterName: z.string().optional(),
+  sexGender: z.string().optional(),
+  appearance: z.string().optional(),
+  locationDescription: z.string().trim().min(1),
+  hobbies: z.string().optional(),
+  bioHistory: z.string().optional(),
+  name: z.string().optional(),
+  playerDescription: z.string().optional(),
   powerGuidance: z.string().optional(),
   allowGeneratedDetails: z.boolean().optional(),
   followUpAnswers: z.array(campaignFollowUpAnswerSchema).optional(),
-}).strict();
+}).strict().superRefine((input, context) => {
+  if (!input.characterName?.trim() && !input.playerDescription?.trim()) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["characterName"],
+      message: "Character name is required",
+    });
+  }
+});
 
 const completedStartingRegionSchema = z.object({
   seed: startingRegionSeedSchema,
@@ -559,10 +579,19 @@ export function createDesktopApplication(
   }
 
   function normalizeCampaignInput(inputValue: CreateCampaignInput): CreateCampaignInput {
+    const characterName = inputValue.characterName?.trim();
+    const legacyPlayerDescription = inputValue.playerDescription?.trim();
+    const campaignName = inputValue.name?.trim() ||
+      (characterName ? `${characterName}'s Awakening Earth campaign` : "Awakening Earth campaign");
     return createCampaignInputSchema.parse({
-      name: inputValue.name.trim() || "Untitled campaign",
+      ...(characterName ? { characterName } : {}),
+      ...(inputValue.sexGender?.trim() ? { sexGender: inputValue.sexGender.trim() } : {}),
+      ...(inputValue.appearance?.trim() ? { appearance: inputValue.appearance.trim() } : {}),
       locationDescription: inputValue.locationDescription.trim(),
-      playerDescription: inputValue.playerDescription.trim(),
+      ...(inputValue.hobbies?.trim() ? { hobbies: inputValue.hobbies.trim() } : {}),
+      ...(inputValue.bioHistory?.trim() ? { bioHistory: inputValue.bioHistory.trim() } : {}),
+      name: campaignName,
+      ...(legacyPlayerDescription ? { playerDescription: legacyPlayerDescription } : {}),
       allowGeneratedDetails: inputValue.allowGeneratedDetails ?? false,
       ...(inputValue.powerGuidance?.trim()
         ? { powerGuidance: inputValue.powerGuidance.trim() }
@@ -571,6 +600,20 @@ export function createDesktopApplication(
         ? { followUpAnswers: inputValue.followUpAnswers }
         : {}),
     });
+  }
+
+  function questionnaireDescription(input: CreateCampaignInput): string {
+    if (!input.characterName) return input.playerDescription ?? "";
+    return [
+      ["Name", input.characterName],
+      ["Sex/Gender", input.sexGender],
+      ["Appearance", input.appearance],
+      ["Location", input.locationDescription],
+      ["Hobbies", input.hobbies],
+      ["Bio / History", input.bioHistory],
+    ].filter((entry): entry is [string, string] => Boolean(entry[1]?.trim()))
+      .map(([label, value]) => `${label}: ${value.trim()}`)
+      .join("\n\n");
   }
 
   function requestForInput(
@@ -584,8 +627,9 @@ export function createDesktopApplication(
         "region",
       ),
       player: {
+        ...(input.characterName ? { name: input.characterName } : {}),
         description: addFollowUpAnswers(
-          input.playerDescription,
+          questionnaireDescription(input),
           input.followUpAnswers,
           "player",
         ),
@@ -751,7 +795,7 @@ export function createDesktopApplication(
         proposal: openingProposal,
       });
       const game = loadGameDefinition({ ...referenceGameDefinition, campaign });
-      const session = await createGameRuntime(dependencies(game)).createWorld(input.name);
+      const session = await createGameRuntime(dependencies(game)).createWorld(stored.name);
       const playerActorId = completed.seed.playerContext.entity.id;
       const localityScopeId = `scope.${completed.seed.locality.id}`;
       const descriptor = generatedPackageDescriptorSchema.parse({
@@ -801,7 +845,7 @@ export function createDesktopApplication(
       "INSERT INTO campaign_generation_drafts(id, name, input_json, request_json, state_json, diagnostics_json, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '[]', 'generating', ?, ?)",
       [
         draftId,
-        input.name,
+        input.name ?? "Awakening Earth campaign",
         JSON.stringify(input),
         JSON.stringify(request),
         JSON.stringify({ request }),

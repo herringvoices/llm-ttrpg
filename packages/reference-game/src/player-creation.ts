@@ -26,6 +26,7 @@ export const STARTING_SKILL_POINT_RANGE = Object.freeze({
 });
 
 export const playerCreationInputSchema = z.object({
+  name: z.string().trim().min(1).optional(),
   description: z.string().trim().min(1),
   powerGuidance: z.string().trim().min(1).optional(),
 }).strict();

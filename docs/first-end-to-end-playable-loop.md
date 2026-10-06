@@ -282,7 +282,7 @@ Provide:
 
 - existing world list;
 - create/new-game action;
-- natural-language setup input sufficient for starting-region generation;
+- a six-question natural-language character setup (Name, Sex/Gender, Appearance, Location, Hobbies, and Bio / History) sufficient for starting-region generation; Name and Location are required, optional blanks remain unspecified, and the campaign display name is derived from the character name;
 - open/load action for an existing world;
 - clear loading and failure states.
 
