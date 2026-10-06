@@ -53,13 +53,18 @@ section > button { margin-top: 1rem; }
 .preference legend { color: #c9c4b8; font-size: .7rem; }
 .preference label { display: flex; grid: none; align-items: center; gap: .2rem; width: auto; font-size: .72rem; text-transform: capitalize; }
 .preference input { width: auto; }
-.transcript { overflow-y: auto; min-height: 0; margin-top: 1rem; padding: 1rem clamp(1rem, 4vw, 3.5rem); }
+.transcript { overflow-y: auto; min-height: 0; margin-top: 1rem; padding: 1.25rem clamp(1rem, 4vw, 3.5rem); }
 .empty-copy { color: #8f9288; font-style: italic; text-align: center; }
-.transcript-entry { max-width: 46rem; margin: 0 auto 1.15rem; }
-.transcript-entry span { color: #9bb08f; font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.transcript-entry p { margin: .25rem 0 0; line-height: 1.65; white-space: pre-wrap; }
-.transcript-entry.player { padding-left: 1rem; border-left: 2px solid #7d9472; color: #d9e5d2; }
-.transcript-entry.system { color: #c7ad7c; font-style: italic; }
+.transcript-entry { width: fit-content; max-width: min(52rem, 92%); margin: 0 auto 1rem 0; padding: .85rem 1rem; border: 1px solid #40483d; border-radius: .85rem .85rem .85rem .2rem; color: #e4e0d6; background: #1a1f19; box-shadow: 0 .2rem .7rem rgba(0, 0, 0, .14); overflow-wrap: anywhere; }
+.transcript-entry .speaker-label { display: block; color: #9bb08f; font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.transcript-entry p { margin: .3rem 0 0; line-height: 1.65; white-space: pre-wrap; }
+.transcript-entry.player { max-width: min(38rem, 78%); margin-right: 0; margin-left: auto; border-color: #657a5d; border-radius: .85rem .85rem .2rem .85rem; color: #f0f5ec; background: #30402d; }
+.transcript-entry.player .speaker-label { color: #bfd1b6; }
+.transcript-entry.npc { border-color: #625f49; background: #27271e; }
+.transcript-entry.npc .speaker-label { color: #d0bd82; }
+.transcript-entry.system { max-width: min(42rem, 90%); margin-right: auto; margin-left: auto; padding: .45rem .8rem; border-color: #4a4c43; border-radius: 999px; color: #aaa99f; background: rgba(31, 33, 29, .72); box-shadow: none; font-size: .88rem; font-style: italic; text-align: center; }
+.transcript-entry.system .speaker-label { color: #8f9288; }
+.transcript-entry.system p { margin-top: .15rem; line-height: 1.45; }
 .turn-composer { display: grid; grid-template-columns: 1fr auto; gap: .65rem; margin-top: .8rem; padding: .75rem; }
 .turn-composer textarea { min-height: 4.5rem; }
 .secondary-actions { display: flex; gap: .6rem; margin-top: .6rem; }
@@ -72,4 +77,8 @@ section > button { margin-top: 1rem; }
   .play-header, .header-actions { align-items: stretch; flex-direction: column; }
   .turn-composer { grid-template-columns: 1fr; }
   .play-shell { height: auto; min-height: 100vh; }
+  .transcript { padding: .8rem .7rem; }
+  .transcript-entry { max-width: 100%; }
+  .transcript-entry.player { max-width: 92%; }
+  .transcript-entry.system { max-width: 96%; }
 }

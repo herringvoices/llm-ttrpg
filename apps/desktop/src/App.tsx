@@ -273,12 +273,25 @@ export function App({ application }: { readonly application: DesktopApplication 
                 : "The world is ready. Describe what you do or say."}
             </p>
           )}
-          {playView.transcript.map((entry) => (
-            <article className={`transcript-entry ${entry.speaker}`} key={entry.id}>
-              <span>{entry.speaker === "player" ? "You" : entry.speaker}</span>
-              <p>{entry.text}</p>
-            </article>
-          ))}
+          {playView.transcript.map((entry) => {
+            const speakerLabel = entry.speaker === "player"
+              ? "You"
+              : entry.speaker === "npc"
+                ? "Character"
+                : entry.speaker === "narrator"
+                  ? "Narrator"
+                  : "System";
+            return (
+              <article
+                className={`transcript-entry ${entry.speaker}`}
+                aria-label={`${speakerLabel} message`}
+                key={entry.id}
+              >
+                <span className="speaker-label">{speakerLabel}</span>
+                <p>{entry.text}</p>
+              </article>
+            );
+          })}
           <div ref={transcriptEnd} />
         </section>
 

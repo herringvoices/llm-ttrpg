@@ -70,6 +70,8 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Player UX, World / Content
 - #41 — Delete Saved Campaigns from the Landing Screen
   - Labels: Player UX, Persistence
+- #42 — Render the Play Transcript as Chat-Style Bubbles
+  - Labels: Player UX
 
 ## Verify / Playtest
 
@@ -78,7 +80,6 @@ This file records the current GitHub Project placement for the seeded issues.
 
 ## Ready for Dev
 
-- #42 — Render the Play Transcript as Chat-Style Bubbles
 - #43 — Show Submitted Messages Immediately and Surface Real Turn Progress
 
 ## Icebox
