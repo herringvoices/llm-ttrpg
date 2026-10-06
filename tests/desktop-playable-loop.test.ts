@@ -789,9 +789,13 @@ describe("desktop playable session integration", () => {
 
     play.setNarrationPreference("concise");
     await play.save("Manual save");
-    expect(savedPresentation).toEqual([
+    expect(savedPresentation).toHaveLength(2);
+    expect(savedPresentation[0]).toEqual(
+      expect.objectContaining({ narrationPreference: "standard" }),
+    );
+    expect(savedPresentation[1]).toEqual(
       expect.objectContaining({ narrationPreference: "concise" }),
-    ]);
+    );
   });
 
   it("shows submitted text and real action progress before completing", async () => {

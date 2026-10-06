@@ -317,7 +317,7 @@ export class DesktopPlaySession {
     await this.presentationPersistence?.savePresentation({
       worldId: this.session.worldId,
       narrationPreference: this.preference,
-      transcript: this.transcriptEntries,
+      transcript: [...this.transcriptEntries],
       ...(this.openingProgression
         ? { openingProgression: this.openingProgression }
         : {}),
