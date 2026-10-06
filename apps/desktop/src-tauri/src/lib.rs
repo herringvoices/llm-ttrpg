@@ -278,7 +278,7 @@ async fn verified_model(app: &AppHandle) -> Result<PathBuf, String> {
     )?;
 
     let client = reqwest::Client::builder()
-        .user_agent("llm-ttrpg/0.1.18")
+        .user_agent("llm-ttrpg/0.1.19")
         .build()
         .map_err(|error| format!("Unable to initialize the model downloader: {error}"))?;
     let mut request = client.get(MODEL_URL);
