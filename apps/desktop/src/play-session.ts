@@ -23,6 +23,20 @@ export interface TranscriptEntry {
   readonly text: string;
 }
 
+export type TurnProgressPhase =
+  | "understanding"
+  | "resolving"
+  | "responding"
+  | "updating"
+  | "presenting";
+
+export interface TurnProgress {
+  readonly phase: TurnProgressPhase;
+  readonly label: string;
+}
+
+export type TurnProgressListener = (view: PlaySessionView) => void;
+
 export interface TurnDiagnostics {
   readonly declaration: string;
   readonly route: "action" | "conversation";
@@ -61,6 +75,7 @@ export interface PlaySessionView {
   readonly transcript: readonly TranscriptEntry[];
   readonly busy: boolean;
   readonly preparingOpening: boolean;
+  readonly turnProgress?: TurnProgress;
   readonly error?: string;
   readonly diagnostics?: TurnDiagnostics;
 }
@@ -121,6 +136,7 @@ export class DesktopPlaySession {
   private workingConversation?: ConversationWorkingState;
   private active = false;
   private preparingOpening = false;
+  private turnProgress?: TurnProgress;
   private lastError?: string;
   private lastDiagnostics?: TurnDiagnostics;
   private lastActionRequest?: {
@@ -174,6 +190,7 @@ export class DesktopPlaySession {
       transcript: [...this.transcriptEntries],
       busy: this.active,
       preparingOpening: this.preparingOpening,
+      ...(this.turnProgress ? { turnProgress: this.turnProgress } : {}),
       ...(this.lastError ? { error: this.lastError } : {}),
       ...(this.lastDiagnostics ? { diagnostics: this.lastDiagnostics } : {}),
     };
@@ -199,6 +216,25 @@ export class DesktopPlaySession {
       );
     }
     return this.modelRuntime;
+  }
+
+  private reportTurnProgress(
+    phase: TurnProgressPhase,
+    listener?: TurnProgressListener,
+  ): void {
+    const labels: Record<TurnProgressPhase, string> = {
+      understanding: "Understanding what you want to do…",
+      resolving: "Resolving what happens…",
+      responding: "Seeing how others respond…",
+      updating: "Updating the world…",
+      presenting: "Putting the scene into words…",
+    };
+    this.turnProgress = { phase, label: labels[phase] };
+    try {
+      listener?.(this.view());
+    } catch {
+      // Progress is a non-authoritative observer and cannot interrupt a turn.
+    }
   }
 
   async prepareOpening(): Promise<PlaySessionView> {
@@ -245,7 +281,9 @@ export class DesktopPlaySession {
     return { route: result.output.value, context };
   }
 
-  private async replanIfInvalidated(): Promise<PlanRevisionDiagnostic | { readonly error: string } | undefined> {
+  private async replanIfInvalidated(
+    listener?: TurnProgressListener,
+  ): Promise<PlanRevisionDiagnostic | { readonly error: string } | undefined> {
     let plan = await this.session.campaignPlan();
     if (!plan) return undefined;
     const basis = this.session.planningBasis();
@@ -257,6 +295,7 @@ export class DesktopPlaySession {
       ...basis,
     });
     if (validation.signals.length === 0) return undefined;
+    this.reportTurnProgress("updating", listener);
     const model = this.requireModel();
     let horizon: "low" | "medium" | "high" = "low";
     let finalDiagnostic: PlanRevisionDiagnostic | undefined;
@@ -288,7 +327,10 @@ export class DesktopPlaySession {
     return finalDiagnostic;
   }
 
-  async performTurn(rawDeclaration: string): Promise<PlaySessionView> {
+  async performTurn(
+    rawDeclaration: string,
+    onProgress?: TurnProgressListener,
+  ): Promise<PlaySessionView> {
     const submittedDeclaration = rawDeclaration.trim();
     if (!submittedDeclaration) return this.view();
     if (this.active) throw new Error("A player turn is already running");
@@ -299,18 +341,19 @@ export class DesktopPlaySession {
     const declaration = pendingClarification
       ? `${pendingClarification.declaration}\n\nPlayer clarification in response to "${pendingClarification.question}": ${submittedDeclaration}`
       : submittedDeclaration;
-    const beforeBasis = this.session.planningBasis();
-    const before = this.session.snapshot();
-    const historyBefore = await this.session.eventHistory();
-    const startedAt = nowMs();
-    let routeKind: "action" | "conversation" = "action";
+    this.add("player", submittedDeclaration);
+    this.reportTurnProgress("understanding", onProgress);
     try {
+      const beforeBasis = this.session.planningBasis();
+      const before = this.session.snapshot();
+      const historyBefore = await this.session.eventHistory();
+      const startedAt = nowMs();
+      let routeKind: "action" | "conversation" = "action";
       const routed = !pendingClarification && mayBeConversation(declaration)
         ? await this.routeDeclaration(declaration)
         : undefined;
       const route = routed?.route ?? { kind: "action" as const };
       routeKind = route.kind;
-      this.add("player", submittedDeclaration);
       let actionTrace: JsonValue | undefined;
       let narrationStatus: "complete" | "failed" = "complete";
       if (route.kind === "conversation") {
@@ -342,6 +385,7 @@ export class DesktopPlaySession {
             extractDurableConsequences: true,
           },
           ...(this.workingConversation ? { workingState: this.workingConversation } : {}),
+          onProgress: (phase) => this.reportTurnProgress(phase, onProgress),
         });
         this.workingConversation = result.workingState;
         if (result.narration) this.add("npc", result.narration);
@@ -370,6 +414,7 @@ export class DesktopPlaySession {
           modelRuntime: this.requireModel(),
           maxModelTurns: ACTION_MAX_MODEL_TURNS,
           narrationPreference: this.preference,
+          onProgress: (phase) => this.reportTurnProgress(phase, onProgress),
         });
         actionTrace = asJson(result.trace);
         if (result.kind === "needs-player-input") {
@@ -390,7 +435,8 @@ export class DesktopPlaySession {
           this.add("system", "The action committed, but narration was unavailable. You may retry narration safely.");
         }
       }
-      const planner = await this.replanIfInvalidated().catch((error: unknown) => ({ error: errorMessage(error) }));
+      const planner = await this.replanIfInvalidated(onProgress)
+        .catch((error: unknown) => ({ error: errorMessage(error) }));
       const after = this.session.snapshot();
       const afterBasis = this.session.planningBasis();
       const historyAfter = await this.session.eventHistory();
@@ -426,15 +472,17 @@ export class DesktopPlaySession {
       this.lastError = errorMessage(error);
     } finally {
       this.active = false;
+      this.turnProgress = undefined;
     }
     return this.view();
   }
 
-  async retryNarration(): Promise<PlaySessionView> {
+  async retryNarration(onProgress?: TurnProgressListener): Promise<PlaySessionView> {
     if (!this.lastActionRequest) throw new Error("There is no action narration to retry");
     if (this.active) throw new Error("A player turn is already running");
     this.active = true;
     this.lastError = undefined;
+    this.reportTurnProgress("presenting", onProgress);
     try {
       const result = await this.session.performPlayerAction(this.lastActionRequest, {
         modelRuntime: this.requireModel(),
@@ -446,6 +494,7 @@ export class DesktopPlaySession {
       this.lastError = errorMessage(error);
     } finally {
       this.active = false;
+      this.turnProgress = undefined;
     }
     return this.view();
   }

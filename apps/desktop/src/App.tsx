@@ -175,7 +175,7 @@ export function App({ application }: { readonly application: DesktopApplication 
     const text = declaration.trim();
     if (!text || !playSession) return;
     setDeclaration("");
-    await run(() => playSession.performTurn(text));
+    await run(() => playSession.performTurn(text, setPlayView));
   }
 
   async function submitFollowUps() {
@@ -292,6 +292,12 @@ export function App({ application }: { readonly application: DesktopApplication 
               </article>
             );
           })}
+          {playView.turnProgress && (
+            <div className="turn-progress" role="status" aria-live="polite">
+              <span className="turn-progress-mark" aria-hidden="true" />
+              <span>{playView.turnProgress.label}</span>
+            </div>
+          )}
           <div ref={transcriptEnd} />
         </section>
 
@@ -320,7 +326,7 @@ export function App({ application }: { readonly application: DesktopApplication 
         <div className="secondary-actions">
           <button disabled={playView.busy} onClick={() => void run(() => playSession.passThreeDaysAndCatchUp())}>Pass three days and catch up</button>
           {playView.diagnostics?.narrationStatus === "failed" && (
-            <button disabled={playView.busy} onClick={() => void run(() => playSession.retryNarration())}>Retry narration</button>
+            <button disabled={playView.busy} onClick={() => void run(() => playSession.retryNarration(setPlayView))}>Retry narration</button>
           )}
         </div>
 

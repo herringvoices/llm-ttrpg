@@ -151,6 +151,9 @@ export interface PerformPlayerActionOptions {
   readonly maxModelTurns?: number;
   readonly toolPolicy?: ToolAvailabilityPolicy;
   readonly narrationPreference?: NarrationPreference;
+  readonly onProgress?: (
+    phase: "understanding" | "resolving" | "presenting",
+  ) => void;
 }
 
 export interface GameSession {
@@ -978,6 +981,15 @@ function openSession(
     },
     async performPlayerAction(rawRequest, options) {
       const request = playerActionRequestSchema.parse(rawRequest);
+      const reportProgress = (
+        phase: "understanding" | "resolving" | "presenting",
+      ) => {
+        try {
+          options.onProgress?.(phase);
+        } catch {
+          // Progress is a non-authoritative observer and cannot interrupt a turn.
+        }
+      };
       const trace: PlayerActionTraceEntry[] = [];
       const record = (
         phase: PlayerActionTraceEntry["phase"],
@@ -1032,6 +1044,7 @@ function openSession(
       let retrieved: ContextItem[] = [];
 
       if (!run) {
+        reportProgress("understanding");
         const context = assembleContext({
           game: dependencies.game,
           world: state,
@@ -1207,6 +1220,7 @@ function openSession(
             : "medium";
         const [minimumCharacters, maximumCharacters] =
           NARRATION_CHARACTER_TARGETS[narrationPreference][narrationBand];
+        reportProgress("presenting");
         record("narration", {
           stage: "prepared",
           presentationComponent: dependencies.game.presentation.identity,
@@ -1289,6 +1303,7 @@ function openSession(
           ? 6
           : 24
       );
+      reportProgress("resolving");
       for (let turn = 1; turn <= maxTurns; turn += 1) {
         const persistedWorld = await currentPersisted();
         if (!persistedWorld || persistedWorld.revision !== revision || run.lastWorldRevision !== revision) {

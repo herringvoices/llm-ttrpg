@@ -65,6 +65,15 @@ section > button { margin-top: 1rem; }
 .transcript-entry.system { max-width: min(42rem, 90%); margin-right: auto; margin-left: auto; padding: .45rem .8rem; border-color: #4a4c43; border-radius: 999px; color: #aaa99f; background: rgba(31, 33, 29, .72); box-shadow: none; font-size: .88rem; font-style: italic; text-align: center; }
 .transcript-entry.system .speaker-label { color: #8f9288; }
 .transcript-entry.system p { margin-top: .15rem; line-height: 1.45; }
+.turn-progress { display: flex; align-items: center; width: fit-content; max-width: 92%; margin: 0 auto 1rem 0; padding: .7rem .9rem; border: 1px solid #40483d; border-radius: .8rem .8rem .8rem .2rem; color: #b9bdb4; background: #171b16; font-size: .9rem; }
+.turn-progress-mark { width: .55rem; height: .55rem; margin-right: .65rem; border-radius: 50%; background: #91a987; box-shadow: 0 0 0 0 rgba(145, 169, 135, .45); animation: progress-pulse 1.4s ease-out infinite; }
+@keyframes progress-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(145, 169, 135, .45); }
+  70%, 100% { box-shadow: 0 0 0 .45rem rgba(145, 169, 135, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-progress-mark { animation: none; }
+}
 .turn-composer { display: grid; grid-template-columns: 1fr auto; gap: .65rem; margin-top: .8rem; padding: .75rem; }
 .turn-composer textarea { min-height: 4.5rem; }
 .secondary-actions { display: flex; gap: .6rem; margin-top: .6rem; }

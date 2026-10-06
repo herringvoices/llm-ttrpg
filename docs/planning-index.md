@@ -72,15 +72,13 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Player UX, Persistence
 - #42 — Render the Play Transcript as Chat-Style Bubbles
   - Labels: Player UX
+- #43 — Show Submitted Messages Immediately and Surface Real Turn Progress
+  - Labels: Player UX, Core Engine
 
 ## Verify / Playtest
 
 - #38 — Upgrade bundled local model and establish hardware-aware model tiers
   - Installer/runtime compatibility is verified; comparative quality and representative 16 GB playtesting remain
-
-## Ready for Dev
-
-- #43 — Show Submitted Messages Immediately and Surface Real Turn Progress
 
 ## Icebox
 

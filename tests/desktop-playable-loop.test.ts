@@ -8,7 +8,7 @@ import {
   type PersistencePorts,
   type ModelRequest,
 } from "@llm-ttrpg/engine";
-import { ScriptedModelRuntime } from "@llm-ttrpg/harness";
+import { ScriptedModelRuntime, type ScriptedModelStep } from "@llm-ttrpg/harness";
 import { DesktopPlaySession } from "../apps/desktop/src/play-session.js";
 import { createDesktopApplication } from "../apps/desktop/src/application.js";
 import { contractTestGameDefinition } from "./support/contract-game.js";
@@ -21,6 +21,7 @@ import {
 function generatedCampaignModel(options: {
   readonly minimalPlayer?: boolean;
   readonly playerName?: string;
+  readonly turnSteps?: readonly ScriptedModelStep[];
 } = {}) {
   const outputs = startingRegionStageOutputs();
   const stageSteps = Object.entries(outputs).map(([stageId, value]) => ({
@@ -229,6 +230,7 @@ function generatedCampaignModel(options: {
         text: "Blue frost crawls over the loading dock as a strange feline silhouette watches from between the pallets. The bat beside your hand is ordinary wood, but it is the nearest solid thing between you and the creature.",
       },
     },
+    ...(options.turnSteps ?? []),
   ]);
 }
 
@@ -792,6 +794,154 @@ describe("desktop playable session integration", () => {
     ]);
   });
 
+  it("shows submitted text and real action progress before completing", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Immediate player turn");
+    const play = new DesktopPlaySession(
+      engine,
+      actionModel(),
+      "campaign.entity.amelia",
+      undefined,
+    );
+    const updates: Array<{ busy: boolean; phase?: string; text?: string }> = [];
+
+    const pending = play.performTurn("I test my footing and press forward.", (view) => {
+      updates.push({
+        busy: view.busy,
+        phase: view.turnProgress?.phase,
+        text: view.transcript.at(-1)?.text,
+      });
+    });
+
+    expect(play.view()).toEqual(expect.objectContaining({
+      busy: true,
+      turnProgress: expect.objectContaining({ phase: "understanding" }),
+      transcript: [expect.objectContaining({
+        speaker: "player",
+        text: "I test my footing and press forward.",
+      })],
+    }));
+    await expect(play.performTurn("I submit again.")).rejects.toThrow("already running");
+
+    const completed = await pending;
+    expect(updates.map((update) => update.phase)).toEqual(expect.arrayContaining([
+      "understanding",
+      "resolving",
+      "presenting",
+    ]));
+    expect(updates[0]).toEqual({
+      busy: true,
+      phase: "understanding",
+      text: "I test my footing and press forward.",
+    });
+    expect(completed.turnProgress).toBeUndefined();
+    expect(completed.busy).toBe(false);
+  });
+
+  it("reports responding while a routed conversation awaits an NPC", async () => {
+    const model = generatedCampaignModel({
+      turnSteps: [
+        {
+          id: "route-conversation",
+          match: { schemaId: "desktop.turn-route.v1" },
+          result: (request: ModelRequest<unknown>) => {
+            const context = JSON.parse(request.prompt.context!) as {
+              situation: {
+                scene: Array<{ localRef: string; displayIdentity: string }>;
+              };
+            };
+            const recipientRef = context.situation.scene
+              .find((item) => item.displayIdentity !== "Rowan")?.localRef;
+            if (!recipientRef) throw new Error("Conversation recipient was absent from the authorized scene");
+            return { kind: "structured", value: { kind: "conversation", recipientRefs: [recipientRef] } };
+          },
+        },
+        {
+          id: "interpret-conversation",
+          match: { schemaId: "conversation.player-communication.v1" },
+          result: {
+            kind: "structured",
+            value: {
+              inputMode: "described",
+              exactQuoteFragments: [],
+              semanticKinds: ["question"],
+              authorizedContent: "Ask what is happening at the loading dock.",
+              testimonyIds: [],
+              materialCommitments: [],
+              deliveryIntent: "honest",
+              containsNonSpeechAction: false,
+              estimatedDurationMs: 1_000,
+              pressureLevel: 3,
+            },
+          },
+        },
+        {
+          id: "npc-response",
+          match: { schemaId: "conversation.npc-decision.v1" },
+          result: (request: ModelRequest<unknown>) => {
+            const input = JSON.parse(request.prompt.input) as { actorRef: string };
+            return {
+              kind: "structured",
+              value: {
+                actorId: input.actorRef,
+                interpretation: "The player asks about the immediate danger.",
+                responseKind: "speak",
+                intendedSpeechSemantics: "The NPC warns the player to stay back.",
+                speechSemanticKinds: ["assertion"],
+                estimatedSpeechDurationMs: 500,
+                disclosure: { mode: "none" },
+                sceneState: {
+                  actorId: input.actorRef,
+                  interpretation: "The danger at the loading dock has everyone's attention.",
+                  attention: ["the player", "the loading dock"],
+                  immediatePriorities: ["keep people safe"],
+                  stance: "worried",
+                  wants: ["avoid escalation"],
+                  reluctantToRevealIds: [],
+                  considering: ["whether to call for help"],
+                  unresolvedQuestions: ["what caused the frost"],
+                },
+                requiresAuthoritativeResolution: false,
+                stopReason: "answer-expected",
+              },
+            };
+          },
+        },
+        {
+          id: "extract-conversation",
+          match: { schemaId: "conversation.durable-extraction.v1" },
+          result: { kind: "structured", value: { proposals: [] } },
+        },
+        {
+          id: "narrate-conversation",
+          match: { operation: "conversation.narration.v1" },
+          result: { kind: "text", text: "The NPC looks toward the frost and tells you to stay back." },
+        },
+      ],
+    });
+    const { database } = await createMigratedSqlitePersistence();
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: model,
+      now: () => generatedStart,
+      randomId: () => "conversation-progress",
+      nextSeed: () => 0x1919_1919,
+    });
+    const play = await app.createWorld({
+      characterName: "Rowan",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      allowGeneratedDetails: true,
+    });
+    const phases: string[] = [];
+
+    const view = await play.performTurn("I ask what is happening at the loading dock.", (update) => {
+      if (update.turnProgress) phases.push(update.turnProgress.phase);
+    });
+
+    expect(phases).toContain("responding");
+    expect(view.turnProgress).toBeUndefined();
+    expect(view.busy).toBe(false);
+  });
+
   it("continues an action after a clarification without treating the answer as a new action", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Clarification continuation");
@@ -882,8 +1032,20 @@ describe("desktop playable session integration", () => {
       "campaign.entity.amelia",
       undefined,
     );
-    const view = await play.performTurn("I look around.");
+    const updates: string[] = [];
+    const pending = play.performTurn("I look around.", (view) => {
+      updates.push(view.turnProgress?.phase ?? "cleared");
+    });
+    expect(play.view()).toEqual(expect.objectContaining({
+      busy: true,
+      turnProgress: expect.objectContaining({ phase: "understanding" }),
+      transcript: [expect.objectContaining({ speaker: "player", text: "I look around." })],
+    }));
+    const view = await pending;
     expect(view.error).toContain("No local model runtime");
+    expect(view.busy).toBe(false);
+    expect(view.turnProgress).toBeUndefined();
+    expect(updates).toEqual(["understanding"]);
     expect(engine.snapshot()).toEqual(before);
     expect(await engine.eventHistory()).toEqual(history);
   });

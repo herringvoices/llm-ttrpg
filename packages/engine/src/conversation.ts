@@ -49,6 +49,9 @@ export interface PerformConversationTurnInput {
   readonly bindings: ConversationAuthorityBindings;
   readonly workingState?: ConversationWorkingState;
   readonly modelOptions?: ModelInvocationOptions;
+  readonly onProgress?: (
+    phase: "understanding" | "responding" | "updating" | "presenting",
+  ) => void;
 }
 
 export interface CommittedConversationAction {
@@ -507,6 +510,15 @@ function validateExtraction(
 export async function performConversationTurn(
   input: PerformConversationTurnInput,
 ): Promise<ConversationTurnResult> {
+  const reportProgress = (
+    phase: "understanding" | "responding" | "updating" | "presenting",
+  ) => {
+    try {
+      input.onProgress?.(phase);
+    } catch {
+      // Progress is a non-authoritative observer and cannot interrupt a turn.
+    }
+  };
   const request = conversationTurnRequestSchema.parse(input.request);
   let working = initialWorkingState(request, input.workingState);
   const worldAtStart = input.session.snapshot();
@@ -527,6 +539,7 @@ export async function performConversationTurn(
     declaration: request.declaration,
     budget: request.budget,
   });
+  reportProgress("understanding");
   const interpretation = await structuredDecision(
     input.modelRuntime,
     "conversation.player-communication.v1",
@@ -586,6 +599,7 @@ export async function performConversationTurn(
   }
 
   const committedActions: CommittedConversationAction[] = [];
+  reportProgress("responding");
   if (request.authorizedPlayerAction) {
     if (request.authorizedPlayerAction.actorId !== request.playerActorId) {
       throw new ConversationValidationError(
@@ -804,6 +818,7 @@ export async function performConversationTurn(
 
   let extractionEventIds: readonly string[] = [];
   if (request.extractDurableConsequences) {
+    reportProgress("updating");
     allEvents = await input.session.eventHistory();
     const eventIds = new Set(allEvents.map((event) => event.id));
     const extraction = await structuredDecision(
@@ -901,6 +916,7 @@ export async function performConversationTurn(
       elapsedMs: conversationElapsedMs,
     }),
   );
+  reportProgress("presenting");
   const narrationResult = await input.modelRuntime.generate({
     prompt: {
       protectedContext: [directive.protectedContext],
