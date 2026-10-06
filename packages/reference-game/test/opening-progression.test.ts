@@ -3,6 +3,7 @@ import {
   createOpeningProgressionState,
   ensureOpeningCreature,
   openingSituationSchema,
+  startingRegionSeedSchema,
 } from "@llm-ttrpg/reference-game";
 import { startingRegionStageOutputs } from "./starting-region-fixture.js";
 
@@ -31,7 +32,7 @@ describe("Awakening Earth opening progression", () => {
 
   it("does not manufacture a near-term creature for mundane or phenomenon openings", () => {
     const outputs = startingRegionStageOutputs();
-    const baseSeed = {
+    const baseSeed = startingRegionSeedSchema.parse({
       normalized: outputs.normalize,
       region: outputs.region,
       settlement: outputs.settlement,
@@ -45,21 +46,21 @@ describe("Awakening Earth opening progression", () => {
       processes: outputs.pressures.processes,
       openingSituation: {
         ...outputs["opening-situation"],
-        openingMode: "mundane-manifestation" as const,
-        supernaturalFocus: "none" as const,
+        openingMode: "mundane-manifestation",
+        supernaturalFocus: "none",
       },
-    };
+    });
     const mundane = ensureOpeningCreature(baseSeed);
     expect(mundane.creatures).toEqual([]);
 
-    const phenomenon = ensureOpeningCreature({
+    const phenomenon = ensureOpeningCreature(startingRegionSeedSchema.parse({
       ...baseSeed,
       openingSituation: {
         ...baseSeed.openingSituation,
-        openingMode: "supernatural-inciting-incident" as const,
-        supernaturalFocus: "phenomenon" as const,
+        openingMode: "supernatural-inciting-incident",
+        supernaturalFocus: "phenomenon",
       },
-    });
+    }));
     expect(phenomenon.creatures).toEqual([]);
   });
 
@@ -74,7 +75,20 @@ describe("Awakening Earth opening progression", () => {
     const state = createOpeningProgressionState(opening, {
       characterSummary:
         "Rowan works at a grocery store, rents an apartment, and wants to protect their sibling.",
-      normalizedSetup: outputs.normalize.player,
+      normalizedSetup: startingRegionSeedSchema.parse({
+        normalized: outputs.normalize,
+        region: outputs.region,
+        settlement: outputs.settlement,
+        institutions: outputs.institutions,
+        locality: outputs.locality,
+        playerContext: outputs["player-context"],
+        npcs: outputs.npcs,
+        pressures: outputs.pressures.pressures,
+        creatures: outputs.pressures.creatures,
+        knowledge: outputs.pressures.knowledge,
+        processes: outputs.pressures.processes,
+        openingSituation: outputs["opening-situation"],
+      }).normalized.player,
     });
     expect(state).toEqual(expect.objectContaining({
       openingMode: "mundane-manifestation",
