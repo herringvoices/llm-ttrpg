@@ -315,9 +315,10 @@ describe("NPC interaction and conversation", () => {
     const acts = [];
     for (const [index, declaration] of declarations.entries()) {
       const { session } = await createConversationSession();
+      const model = simpleModel();
       const result = await performConversationTurn({
         session,
-        modelRuntime: simpleModel(),
+        modelRuntime: model,
         bindings: referenceConversationBindings,
         request: turnRequest(`turn.form-${index + 1}`, declaration),
       });
@@ -326,6 +327,15 @@ describe("NPC interaction and conversation", () => {
       expect(result.act.semanticKinds).toEqual(["question"]);
       expect(result.act.materialCommitments).toEqual([]);
       expect(result.narration).toBeDefined();
+      const narrationRequest = model.requests.find((request) =>
+        request.output.kind === "text"
+      );
+      expect(narrationRequest?.prompt.protectedContext?.join("\n"))
+        .toContain("awakening-earth-grounded");
+      expect(result.narrationPresentation).toEqual(expect.objectContaining({
+        protectedGuidanceIncluded: true,
+        selectedExemplarIds: ["awakening-earth.example.conversation"],
+      }));
       const recordedPlayerAct = (await session.eventHistory()).find((event) =>
         event.type === "rules.communication-recorded" &&
         event.relatedEntityIds[0] === playerId

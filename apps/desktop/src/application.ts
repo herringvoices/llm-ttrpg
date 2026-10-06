@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
   campaignPlanDocumentSchema,
+  compileNarrationDirective,
   createGameRuntime,
   createInMemoryPersistence,
   generationIssueSchema,
   generationStageDiagnosticSchema,
+  deriveSceneRegister,
   loadGameDefinition,
   renderContextForModel,
   type CampaignPlanDocument,
@@ -444,10 +446,23 @@ export function createDesktopApplication(
     ].map((part) => part.trim()).filter(Boolean).join("\n\n");
     let narration = fallback;
     if (options.modelRuntime) {
+      const pressure = world.actionPressure.status === "assessed"
+        ? world.actionPressure.level
+        : "unassessed";
+      const directive = compileNarrationDirective(
+        referenceGameDefinition.presentation.narrationProfile,
+        deriveSceneRegister({
+          kind: "opening",
+          actionPressure: pressure,
+          authorizedHorizonMs: 0,
+          elapsedMs: 0,
+        }),
+      );
       const result = await options.modelRuntime.generate({
         prompt: {
+          protectedContext: [directive.protectedContext],
           instructions: [
-            `Open the campaign in second-person present tense. Style: ${referenceGameDefinition.presentation.narrationStyle}`,
+            "Open the campaign using the protected narration profile.",
             "Narrate only what the player character can immediately perceive from the authorized context and canonical opening material.",
             "Do not invent world changes, private knowledge, player actions, player speech, player thoughts, mechanics, or GM commentary.",
             "Establish the place, the immediate supernatural tension, and concrete sensory details, then leave the player's response completely open.",
@@ -461,7 +476,7 @@ export function createDesktopApplication(
               summary: proposal.incident.summary,
               observedFacts: proposal.incident.observedFacts.filter((fact) =>
                 fact.visibility === "public"
-              ),
+              ).map((fact) => ({ predicate: fact.predicate, value: fact.value })),
               contactObject: {
                 name: proposal.incident.contactObject.name,
                 summary: proposal.incident.contactObject.summary,

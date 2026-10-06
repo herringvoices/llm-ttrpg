@@ -209,6 +209,10 @@ describe("player action execution pipeline", () => {
     expect(result.trace.entries.some((entry) => entry.phase === "catalog")).toBe(true);
     const narrationRequest = model.requests.at(-1);
     expect(narrationRequest?.output.kind).toBe("text");
+    expect(narrationRequest?.prompt.protectedContext?.join("\n"))
+      .toContain("awakening-earth-grounded");
+    expect(narrationRequest?.prompt.protectedContext?.join("\n"))
+      .toContain("actionableDetailPolicy");
     expect(narrationRequest?.prompt.input).not.toContain("campaign.entity.amelia");
     expect(narrationRequest?.prompt.input).not.toContain("proposedMutations");
     expect(await persistence.actionRuns.load(session.worldId, request.actionId)).toEqual(result.run);

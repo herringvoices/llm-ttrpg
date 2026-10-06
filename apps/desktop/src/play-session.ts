@@ -355,6 +355,7 @@ export class DesktopPlaySession {
           decisions: result.decisions,
           committedActions: result.committedActions,
           stopReason: result.stopReason,
+          narrationPresentation: result.narrationPresentation,
         });
       } else {
         const actionRequest = {
@@ -368,6 +369,7 @@ export class DesktopPlaySession {
         const result = await this.session.performPlayerAction(actionRequest, {
           modelRuntime: this.requireModel(),
           maxModelTurns: ACTION_MAX_MODEL_TURNS,
+          narrationPreference: this.preference,
         });
         actionTrace = asJson(result.trace);
         if (result.kind === "needs-player-input") {
@@ -436,6 +438,7 @@ export class DesktopPlaySession {
     try {
       const result = await this.session.performPlayerAction(this.lastActionRequest, {
         modelRuntime: this.requireModel(),
+        narrationPreference: this.preference,
       });
       if (result.kind === "resolved" && result.narration) this.add("narrator", result.narration);
       else throw new Error("Narration is still unavailable; the committed action was not replayed");

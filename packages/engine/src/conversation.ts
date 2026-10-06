@@ -35,6 +35,7 @@ import type { ResolutionEnvelope } from "./resolution.js";
 import type { GameSession } from "./runtime.js";
 import { fictionalDurationMs } from "./time.js";
 import type { WorldState } from "./world.js";
+import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
 
 export interface ConversationAuthorityBindings {
   readonly recordCommunicationOperationId: string;
@@ -69,6 +70,24 @@ export interface ConversationTurnResult {
   readonly narrationTarget: NarrationTarget;
   readonly narration?: string;
   readonly narrationError?: string;
+  readonly narrationPresentation?: {
+    readonly presentationComponent: { readonly id: string; readonly version: string };
+    readonly profile: { readonly id: string; readonly version: string };
+    readonly protectedGuidanceIncluded: true;
+    readonly compiledProfileSize: number;
+    readonly selectedExemplarIds: readonly string[];
+    readonly sceneRegister: import("./presentation.js").SceneRegister;
+    readonly narrationPreference: import("./conversation-contracts.js").NarrationPreference;
+    readonly targetBand: NarrationTarget["band"];
+    readonly contextOmissions: readonly {
+      readonly localId: string;
+      readonly decision: "omitted" | "compressed";
+      readonly reason: string;
+    }[];
+    readonly modelElapsedMs: number;
+    readonly status: "complete" | "failed";
+    readonly presentationKind: "conversation";
+  };
   readonly workingState: ConversationWorkingState;
 }
 
@@ -852,26 +871,57 @@ export async function performConversationTurn(
     },
     budget: request.budget,
   });
+  const reversePlayerRefs = new Map(
+    Object.entries(playerContext.diagnostics.localReferences)
+      .map(([localRef, canonicalId]) => [canonicalId, localRef]),
+  );
   const publicDecisions = decisions.map((decision) => ({
-    actorId: decision.actorId,
+    actorRef: reversePlayerRefs.get(decision.actorId) ?? "unavailable-actor",
     responseKind: decision.responseKind,
     intendedSpeechSemantics: decision.intendedSpeechSemantics ?? null,
-    intendedSocialEffect: decision.intendedSocialEffect ?? null,
-    committedAction: committedActions.find((action) =>
+    committedActionOccurred: committedActions.some((action) =>
       action.actorId === decision.actorId
-    ) ?? null,
+    ),
   }));
+  const conversationElapsedMs = act.durationMs + decisions.reduce(
+    (total, decision) => total + decision.estimatedSpeechDurationMs,
+    0,
+  );
+  const pressure = input.session.snapshot().actionPressure;
+  if (pressure.status !== "assessed") {
+    throw new ConversationValidationError("Conversation narration requires assessed Action Pressure");
+  }
+  const presentation = input.session.presentation();
+  const directive = compileNarrationDirective(
+    presentation.narrationProfile,
+    deriveSceneRegister({
+      kind: "conversation",
+      actionPressure: pressure.level,
+      authorizedHorizonMs: speechIntent.authorizedHorizonMs,
+      elapsedMs: conversationElapsedMs,
+    }),
+  );
   const narrationResult = await input.modelRuntime.generate({
     prompt: {
+      protectedContext: [directive.protectedContext],
       instructions: [
         "Narrate only authorized player speech, observable NPC responses, and committed outcomes supplied here.",
         "Do not add facts, promises, decisions, actions, private cognition, hidden truth status, or player-character behavior.",
         "Preserve every exact player quote verbatim.",
+        "Do not invent actionable objects, routes, hazards, witnesses, resources, or clues.",
         `Target ${narrationTarget.minimumCharacters}-${narrationTarget.maximumCharacters} characters (${narrationTarget.preference}/${narrationTarget.band}); this is guidance, never a truncation limit.`,
       ],
       context: renderContextForModel(playerContext),
       input: JSON.stringify({
-        playerCommunication: act,
+        playerCommunication: {
+          inputMode: act.inputMode,
+          exactQuoteFragments: act.exactQuoteFragments,
+          semanticKinds: act.semanticKinds,
+          authorizedContent: act.authorizedContent,
+          materialCommitments: act.materialCommitments,
+          deliveryIntent: act.deliveryIntent,
+          containsNonSpeechAction: act.containsNonSpeechAction,
+        },
         npcResponses: publicDecisions,
         stopReason,
       }),
@@ -918,6 +968,28 @@ export async function performConversationTurn(
     narrationTarget,
     ...(narration ? { narration } : {}),
     ...(narrationError ? { narrationError } : {}),
+    narrationPresentation: {
+      presentationComponent: presentation.identity,
+      profile: presentation.narrationProfile.identity,
+      protectedGuidanceIncluded: true,
+      compiledProfileSize: directive.compiledProfileSize,
+      selectedExemplarIds: directive.selectedExemplarIds,
+      sceneRegister: directive.sceneRegister,
+      narrationPreference: narrationTarget.preference,
+      targetBand: narrationTarget.band,
+      contextOmissions: playerContext.diagnostics.decisions
+        .filter((decision): decision is typeof decision & {
+          decision: "omitted" | "compressed";
+        } => decision.decision !== "included")
+        .map((decision) => ({
+          localId: decision.localId,
+          decision: decision.decision,
+          reason: decision.reason,
+        })),
+      modelElapsedMs: narrationResult.metadata.elapsedMs,
+      status: narration ? "complete" : "failed",
+      presentationKind: "conversation",
+    },
     workingState: working,
   };
 }

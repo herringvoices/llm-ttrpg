@@ -12,7 +12,7 @@ import {
   type EventOrigin,
   type EventQuery,
 } from "./events.js";
-import type { LoadedGameDefinition } from "./contracts.js";
+import type { LoadedGameDefinition, PresentationConfig } from "./contracts.js";
 import {
   applyMutationProposals,
   assessResolutionOperation,
@@ -108,6 +108,12 @@ import {
   campaignPlanDocumentSchema,
   type CampaignPlanDocument,
 } from "./campaign-planning.js";
+import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
+import {
+  NARRATION_CHARACTER_TARGETS,
+  narrationPreferenceSchema,
+  type NarrationPreference,
+} from "./conversation-contracts.js";
 
 export interface WallClock {
   now(): string;
@@ -144,10 +150,12 @@ export interface PerformPlayerActionOptions {
   readonly modelRuntime: ModelRuntime;
   readonly maxModelTurns?: number;
   readonly toolPolicy?: ToolAvailabilityPolicy;
+  readonly narrationPreference?: NarrationPreference;
 }
 
 export interface GameSession {
   readonly worldId: string;
+  presentation(): PresentationConfig;
   snapshot(): WorldState;
   planningBasis(): { readonly worldRevision: number; readonly eventSequence: number };
   campaignPlan(): Promise<CampaignPlanDocument | undefined>;
@@ -474,6 +482,9 @@ function openSession(
 
   return {
     worldId: persisted.metadata.id,
+    presentation() {
+      return dependencies.game.presentation;
+    },
     snapshot() {
       return clone(state);
     },
@@ -1000,6 +1011,7 @@ function openSession(
         persisted.metadata.id,
         request.actionId,
       );
+      const narrationRetry = run?.status === "stopped" && !run.narration;
       if (run && !identityMatches(run)) {
         record("rejection", { reason: "action-id-identity-conflict" });
         return fail(
@@ -1167,12 +1179,65 @@ function openSession(
             .filter((event) => event.access === "public")
             .map((event) => ({ type: event.type, summary: event.summary })),
         }));
+        const narrationKind = completed.executableIntent.pressureLevel >= 7
+          ? "immediate-danger"
+          : completed.elapsedMs >= 10 * 60 * 1_000
+            ? "compressed-duration"
+            : completed.semanticAction?.modes.some((mode) =>
+                mode === "movement" || mode === "observation"
+              )
+              ? "exploration"
+              : "action";
+        const directive = compileNarrationDirective(
+          dependencies.game.presentation.narrationProfile,
+          deriveSceneRegister({
+            kind: narrationKind,
+            actionPressure: completed.executableIntent.pressureLevel,
+            authorizedHorizonMs: completed.executableIntent.authorizedHorizonMs,
+            elapsedMs: completed.elapsedMs,
+          }),
+        );
+        const narrationPreference = narrationPreferenceSchema.parse(
+          options.narrationPreference ?? "standard",
+        );
+        const narrationBand = directive.sceneRegister.pacing === "immediate"
+          ? "small"
+          : directive.sceneRegister.pacing === "compressed"
+            ? "large"
+            : "medium";
+        const [minimumCharacters, maximumCharacters] =
+          NARRATION_CHARACTER_TARGETS[narrationPreference][narrationBand];
+        record("narration", {
+          stage: "prepared",
+          presentationComponent: dependencies.game.presentation.identity,
+          profile: dependencies.game.presentation.narrationProfile.identity,
+          protectedGuidanceIncluded: true,
+          compiledProfileSize: directive.compiledProfileSize,
+          selectedExemplarIds: [...directive.selectedExemplarIds],
+          sceneRegister: directive.sceneRegister,
+          narrationPreference,
+          targetBand: narrationBand,
+          targetCharacters: { minimum: minimumCharacters, maximum: maximumCharacters },
+          sourceCategories: ["actor-visible-context", "committed-outcomes", "player-declaration"],
+          contextOmissions: actorContext.diagnostics.decisions
+            .filter((decision) => decision.decision !== "included")
+            .map((decision) => ({
+              localId: decision.localId,
+              decision: decision.decision,
+              reason: decision.reason,
+            })),
+          presentationKind: narrationRetry ? "retry" : "action",
+        });
         const narrationResult = await options.modelRuntime.generate({
           prompt: {
+            protectedContext: [directive.protectedContext],
             instructions: [
-              `Narrate only what the focal actor can perceive. Style: ${dependencies.game.presentation.narrationStyle}`,
+              "Narrate only what the focal actor can perceive.",
               "Do not reveal canonical IDs, hidden state, rejected proposals, private events, mechanics not exposed by the presentation, or GM reasoning.",
               "Do not invent additional world changes. The supplied committed outcomes are authoritative.",
+              "Do not invent player thoughts, feelings, dialogue, decisions, or voluntary actions beyond the submitted declaration.",
+              "Do not invent actionable objects, routes, hazards, witnesses, resources, or clues. Harmless transient color must not create a future affordance.",
+              `Target ${minimumCharacters}-${maximumCharacters} characters (${narrationPreference}/${narrationBand}); this is guidance, never a truncation limit.`,
             ],
             context: renderContextForModel(actorContext),
             input: JSON.stringify({

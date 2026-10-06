@@ -15,6 +15,7 @@ export type ModelConversationTurn = z.infer<
 
 export const modelPromptSchema = z
   .object({
+    protectedContext: z.array(z.string().min(1)).optional(),
     instructions: z.array(z.string().min(1)),
     context: z.string().min(1).optional(),
     conversation: z.array(modelConversationTurnSchema).optional(),

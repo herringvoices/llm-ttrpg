@@ -14,7 +14,7 @@ These are project-level constraints. Implementation should work within them unle
 - The engine knows how to run a game; it does not contain the rules or setting of a specific game.
 - A game definition composes exactly one ruleset, setting, pair-specific setting adapter, campaign, and presentation configuration.
 - Rulesets define mechanics. Settings define reusable fictional truth. Adapters translate one specific setting/ruleset pair. Campaigns define starting content. World State owns mutable reality after initialization.
-- Presentation guidance can shape narration and UI language but cannot determine truth or outcomes.
+- Presentation guidance can shape narration and UI language but cannot determine truth or outcomes. Its package-owned Narration Profile is protected from ordinary context trimming, remains non-authoritative, and cannot authorize invented player choices, hidden-knowledge leakage, or new actionable affordances.
 - The engine package must never import the reference-game package.
 - Establish these seams while building the reference game; do not build a marketplace, public mod SDK, or dynamic third-party loader before a real second game requires one.
 

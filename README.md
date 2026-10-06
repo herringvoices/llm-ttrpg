@@ -59,6 +59,7 @@ See:
 - [NPC interaction and conversation](docs/npc-interaction-conversation.md)
 - [Content and encounter principles](docs/content-encounter-principles.md)
 - [Campaign planning and narrative direction](docs/campaign-planning-narrative-direction.md)
+- [Narration and presentation](docs/narration-presentation.md)
 - [Character and creature mechanical generation](docs/character-creature-mechanical-generation.md)
 - [Awakening Earth setting premise](docs/awakening-earth/setting-premise.md)
 - [Awakening Earth institutions, economy, and society](docs/awakening-earth/institutions-economy-society.md)

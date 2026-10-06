@@ -62,6 +62,22 @@ This file records the current GitHub Project placement for the seeded issues.
   - Labels: Core Engine, Context & Tools, World / Content
 - #19 — First End-to-End Playable Loop
   - Labels: Core Engine, Player UX, Dev Tools / Testing
+- #37 — Reduce model orchestration responsibility in player-action execution
+  - Labels: Core Engine, Actions & Rules, Context & Tools
+- #39 — Narration & Presentation System
+  - Labels: Player UX, Core Engine
+
+## Verify / Playtest
+
+- #38 — Upgrade bundled local model and establish hardware-aware model tiers
+  - Installer/runtime compatibility is verified; comparative quality and representative 16 GB playtesting remain
+
+## Ready for Dev
+
+- #40 — Structured Initial Character Questionnaire
+- #41 — Delete Saved Campaigns from the Landing Screen
+- #42 — Render the Play Transcript as Chat-Style Bubbles
+- #43 — Show Submitted Messages Immediately and Surface Real Turn Progress
 
 ## Icebox
 

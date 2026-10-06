@@ -28,6 +28,7 @@ import { createWorldSimulationRegistry } from "./simulation.js";
 import { actorSocialStateSchema } from "./actor-social-state.js";
 import { mechanicalRealizationSchema } from "./mechanical-realization.js";
 import { generationRecordSchema } from "./generation.js";
+import { narrationProfileSchema } from "./presentation.js";
 
 const worldSimulationBoundarySchema = z.object({
   scopes: z.array(z.unknown()).optional(),
@@ -102,7 +103,7 @@ const presentationBoundarySchema = z
   .object({
     identity: componentIdentitySchema,
     description: z.string().min(1),
-    narrationStyle: z.string().min(1),
+    narrationProfile: narrationProfileSchema,
     terminology: z.record(z.string().min(1)),
     revealMechanics: z.enum(["minimal", "summary", "detailed"]),
   })

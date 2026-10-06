@@ -309,6 +309,7 @@ export const narrationPreferenceSchema = z.enum([
   "standard",
   "expansive",
 ]);
+export type NarrationPreference = z.infer<typeof narrationPreferenceSchema>;
 export const narrationSizeBandSchema = z.enum(["small", "medium", "large"]);
 export const conversationBeatComplexitySchema = z.enum([
   "terse",

@@ -129,7 +129,7 @@ The campaign-planning decision does not add a sixth `GameDefinition` component o
 - The living high/medium/low campaign plan is hidden, mutable runtime/save state.
 - Plan state is separate from authoritative World State/event history and from actor/group beliefs.
 - Generic planning orchestration, validation, persistence/state, triggers, and context isolation belong to the engine.
-- Presentation guidance may shape pacing and narrative emphasis but never truth.
+- Presentation owns a validated, versioned Narration Profile. Its deterministically compiled guidance is protected on every player-facing LLM prose request and may shape pacing, voice, and narrative emphasis but never truth. See [Narration & Presentation](narration-presentation.md).
 
 The engine now implements the planner schemas and dedicated persistence boundary from [issue #28](https://github.com/herringvoices/llm-ttrpg/issues/28). Composition metadata identifies the game a save belongs to, while checkpoint payloads snapshot validated living plan state without embedding it in immutable campaign source content.
 

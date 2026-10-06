@@ -260,7 +260,49 @@ export const fantasyHarnessGameDefinition: GameDefinition = {
   presentation: {
     identity: { id: "fantasy-fixture-presentation", version: "1.0.0" },
     description: "Minimal fixture presentation.",
-    narrationStyle: "Clear test output.",
+    narrationProfile: {
+      identity: { id: "fixture-clear", version: "1.0.0" },
+      perspective: { person: "second", tense: "present", camera: "player-limited" },
+      playerAgency: {
+        inventVoluntaryActions: false,
+        inventDialogue: false,
+        inventThoughtsFeelingsOrDecisions: false,
+        describeGroundedInvoluntaryConsequences: true,
+      },
+      knowledge: {
+        playerObservableOnly: true,
+        revealPrivateCognition: false,
+        revealHiddenPlans: false,
+      },
+      voice: {
+        tone: ["clear"],
+        proseTendencies: ["state visible outcomes directly"],
+        humor: "None required.",
+        diction: "Plain test language.",
+        avoid: ["unsupported details"],
+      },
+      description: {
+        sensoryDetail: "Minimal.",
+        expositionDensity: "Low.",
+        environment: "Only when supplied.",
+        spatialClarity: "Explicit.",
+      },
+      dialogue: {
+        preserveNpcVoice: true,
+        attribution: "Direct.",
+        preserveQuotedPlayerSpeechVerbatim: true,
+      },
+      authority: {
+        reminder: "Narration cannot change canonical state.",
+        transientColorPolicy: "Use only harmless color.",
+        actionableDetailPolicy: "Do not invent interactive facts.",
+      },
+      exemplars: [{
+        id: "fixture.example.clear",
+        sceneKinds: ["opening", "conversation", "exploration", "action", "immediate-danger", "compressed-duration"],
+        text: "The established result is visible. The next decision remains yours.",
+      }],
+    },
     terminology: {},
     revealMechanics: "detailed",
   },

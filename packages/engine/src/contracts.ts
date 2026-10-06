@@ -20,6 +20,7 @@ import type {
   WorldSimulationContribution,
   WorldSimulationRegistry,
 } from "./simulation.js";
+import type { NarrationProfile } from "./presentation.js";
 
 export interface EventTypeProvider {
   readonly eventTypes: readonly RegisteredEventType[];
@@ -79,7 +80,7 @@ export interface Campaign
 export interface PresentationConfig {
   readonly identity: ComponentIdentity;
   readonly description: string;
-  readonly narrationStyle: string;
+  readonly narrationProfile: NarrationProfile;
   readonly terminology: Readonly<Record<string, string>>;
   readonly revealMechanics: "minimal" | "summary" | "detailed";
 }

@@ -202,7 +202,13 @@ function generatedCampaignModel() {
     },
     {
       id: "opening-narration",
-      match: { operation: "desktop.opening-narration.v1", outputKind: "text" },
+      match: {
+        operation: "desktop.opening-narration.v1",
+        outputKind: "text",
+        predicate: (request) =>
+          request.prompt.protectedContext?.join("\n").includes("awakening-earth-grounded") === true &&
+          request.prompt.protectedContext?.join("\n").includes('"kind":"opening"') === true,
+      },
       result: {
         kind: "text",
         text: "Blue frost crawls over the loading dock as a strange feline silhouette watches from between the pallets. The bat beside your hand is ordinary wood, but it is the nearest solid thing between you and the creature.",
