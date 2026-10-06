@@ -257,92 +257,43 @@ function generatedCampaignModel(options: {
 }
 
 
-function openingConversationSteps(
+function openingActionSteps(
   prefix: string,
   options: {
     readonly includePowerManifestation?: boolean;
     readonly failFirstPowerNarrationOnce?: boolean;
   } = {},
 ): ScriptedModelStep[] {
-  const outputs = startingRegionStageOutputs();
-  const npcName = outputs.npcs[0]!.entity.name;
   const steps: ScriptedModelStep[] = [
     {
-      id: `${prefix}-route-conversation`,
-      match: { schemaId: "desktop.turn-route.v1" },
-      result: (request: ModelRequest<unknown>) => {
-        const context = JSON.parse(request.prompt.context!) as {
-          situation: { scene: Array<{ localRef: string; displayIdentity: string }> };
-        };
-        const recipientRef = context.situation.scene
-          .find((item) => item.displayIdentity === npcName)?.localRef;
-        if (!recipientRef) throw new Error(`Conversation context omitted ${npcName}`);
-        return {
-          kind: "structured" as const,
-          value: { kind: "conversation" as const, recipientRefs: [recipientRef] },
-        };
-      },
-    },
-    {
-      id: `${prefix}-interpret-conversation`,
-      match: { schemaId: "conversation.player-communication.v1" },
+      id: `${prefix}-interpret-action`,
+      match: { schemaId: "player-action.intent-interpretation.v1" },
       result: {
         kind: "structured",
         value: {
-          inputMode: "described",
-          exactQuoteFragments: [],
-          semanticKinds: ["question"],
-          authorizedContent: "Ask Alice a harmless ordinary question.",
-          testimonyIds: [],
-          materialCommitments: [],
-          deliveryIntent: "honest",
-          containsNonSpeechAction: false,
-          estimatedDurationMs: 1_000,
+          kind: "interpreted",
+          goal: "continue a harmless ordinary action",
+          targetRefs: [],
+          requestedHorizonMs: 30_000,
           pressureLevel: 2,
         },
       },
     },
     {
-      id: `${prefix}-npc-response`,
-      match: { schemaId: "conversation.npc-decision.v1" },
-      result: (request: ModelRequest<unknown>) => {
-        const input = JSON.parse(request.prompt.input) as { actorRef: string };
-        return {
-          kind: "structured" as const,
-          value: {
-            actorId: input.actorRef,
-            interpretation: "The player asks an ordinary question.",
-            responseKind: "speak",
-            intendedSpeechSemantics: "Alice answers casually.",
-            speechSemanticKinds: ["assertion"],
-            estimatedSpeechDurationMs: 500,
-            disclosure: { mode: "none" },
-            sceneState: {
-              actorId: input.actorRef,
-              interpretation: "This is an ordinary conversation during the current routine.",
-              attention: ["the player", "the current task"],
-              immediatePriorities: ["finish the current task"],
-              stance: "casual",
-              wants: ["keep the shift moving"],
-              reluctantToRevealIds: [],
-              considering: [],
-              unresolvedQuestions: [],
-            },
-            requiresAuthoritativeResolution: false,
-            stopReason: "answer-expected",
-          },
-        };
+      id: `${prefix}-stop-action`,
+      match: { schemaId: "player-action.execution-decision.v1" },
+      result: {
+        kind: "structured",
+        value: { kind: "stop", reason: "goal-achieved" },
       },
     },
     {
-      id: `${prefix}-extract-conversation`,
-      match: { schemaId: "conversation.durable-extraction.v1" },
-      result: { kind: "structured", value: { proposals: [] } },
-    },
-    {
-      id: `${prefix}-narrate-conversation`,
-      match: { operation: "conversation.narration.v1" },
-      result: { kind: "text", text: "Alice answers while continuing the ordinary task beside you." },
+      id: `${prefix}-narrate-action`,
+      match: { operation: "player-action.narration.v1" },
+      result: {
+        kind: "text",
+        text: "You continue the ordinary task without anything else demanding a decision yet.",
+      },
     },
   ];
 
@@ -706,7 +657,7 @@ describe("desktop playable session integration", () => {
         manifestationTargetTurn: 1,
         manifestationDeadlineTurns: 3,
       },
-      turnSteps: openingConversationSteps("mundane-turn-1", {
+      turnSteps: openingActionSteps("mundane-turn-1", {
         includePowerManifestation: true,
       }),
     });
@@ -736,7 +687,7 @@ describe("desktop playable session integration", () => {
       event.type === "campaign.opening-phenomenon-realized"
     )).toBe(false);
 
-    const afterTurn = await play.performTurn("I ask Alice how the shift is going.");
+    const afterTurn = await play.performTurn("I check the delivery list and keep working.");
     expect(afterTurn.error).toBeUndefined();
     expect(afterTurn.openingProgression).toEqual({
       playerTurnsSinceStart: 1,
@@ -771,7 +722,7 @@ describe("desktop playable session integration", () => {
         manifestationTargetTurn: 3,
         manifestationDeadlineTurns: 3,
       },
-      turnSteps: openingConversationSteps("deadline-turn-1"),
+      turnSteps: openingActionSteps("deadline-turn-1"),
     });
     const options = {
       now: () => generatedStart,
@@ -789,7 +740,7 @@ describe("desktop playable session integration", () => {
       allowGeneratedDetails: true,
     });
 
-    await play.performTurn("I ask Alice whether she wants coffee later.");
+    await play.performTurn("I straighten a display and keep working.");
     expect(play.view().openingProgression).toEqual({
       playerTurnsSinceStart: 1,
       manifestationDeadlineTurns: 3,
@@ -799,8 +750,8 @@ describe("desktop playable session integration", () => {
 
     const reopenedModel = generatedCampaignModel({
       turnSteps: [
-        ...openingConversationSteps("deadline-turn-2"),
-        ...openingConversationSteps("deadline-turn-3", {
+        ...openingActionSteps("deadline-turn-2"),
+        ...openingActionSteps("deadline-turn-3", {
           includePowerManifestation: true,
         }),
       ],
@@ -815,11 +766,11 @@ describe("desktop playable session integration", () => {
       manifestationDeadlineTurns: 3,
       firstPowerManifested: false,
     });
-    await reopened.performTurn("I ask Alice if the delivery list is finished.");
+    await reopened.performTurn("I check the time and keep working.");
     expect(reopened.view().openingProgression?.playerTurnsSinceStart).toBe(2);
     expect(reopened.view().openingProgression?.firstPowerManifested).toBe(false);
 
-    await reopened.performTurn("I ask Alice if she has plans after work.");
+    await reopened.performTurn("I finish stocking the next shelf.");
     expect(reopened.view().openingProgression).toEqual({
       playerTurnsSinceStart: 3,
       manifestationDeadlineTurns: 3,
@@ -877,7 +828,7 @@ describe("desktop playable session integration", () => {
         manifestationTargetTurn: 1,
         manifestationDeadlineTurns: 3,
       },
-      turnSteps: openingConversationSteps("awakening-retry", {
+      turnSteps: openingActionSteps("awakening-retry", {
         includePowerManifestation: true,
         failFirstPowerNarrationOnce: true,
       }),
@@ -894,7 +845,7 @@ describe("desktop playable session integration", () => {
       allowGeneratedDetails: true,
     });
 
-    const failedPresentation = await play.performTurn("I ask Alice a boring work question.");
+    const failedPresentation = await play.performTurn("I keep sorting the delivery paperwork.");
     expect(failedPresentation.openingProgression?.firstPowerManifested).toBe(true);
     const historyAfterCommit = await play.engineSession().eventHistory();
     expect(historyAfterCommit.filter((event) =>
