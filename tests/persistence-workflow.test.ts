@@ -135,4 +135,110 @@ describe("project shell persistence workflow", () => {
     expect(stale.snapshot()).not.toHaveProperty("events");
     expect(await stale.eventHistory()).toHaveLength(2);
   });
+
+  it("deletes one in-memory world completely without disturbing another", async () => {
+    const persistence = createInMemoryPersistence();
+    const runtime = createGameRuntime(createDependencies(persistence));
+    const doomed = await runtime.createWorld("Delete me");
+    const retained = await runtime.createWorld("Keep me");
+    const slot = await doomed.save("Before deletion");
+
+    expect(await persistence.worlds.delete(doomed.worldId)).toEqual({
+      deleted: true,
+      worldId: doomed.worldId,
+    });
+    expect(await persistence.worlds.load(doomed.worldId)).toBeUndefined();
+    expect(await persistence.saves.loadCheckpoint(slot.checkpointId)).toBeUndefined();
+    expect(await persistence.worlds.load(retained.worldId)).toBeDefined();
+    expect(await persistence.worlds.delete(doomed.worldId)).toEqual({
+      deleted: false,
+      worldId: doomed.worldId,
+      reason: "not-found",
+    });
+  });
+
+  it("atomically deletes all SQLite-owned rows through the privileged lifecycle command", async () => {
+    const { database, persistence } = await createMigratedSqlitePersistence();
+    const runtime = createGameRuntime(createDependencies(persistence));
+    const doomed = await runtime.createWorld("Delete me");
+    const retained = await runtime.createWorld("Keep me");
+    const slot = await doomed.save("Before deletion");
+    const retainedBefore = await persistence.worlds.load(retained.worldId);
+    const retainedHistoryBefore = await persistence.history.query(retained.worldId);
+
+    database.run(
+      "INSERT INTO action_runs(world_id, action_id, actor_id, declaration, run_json) VALUES (?, 'action.test', 'actor.test', 'test', '{}')",
+      [doomed.worldId],
+    );
+    database.run(
+      "INSERT INTO campaign_plans(world_id, schema_version, plan_revision, based_on_world_revision, based_on_event_sequence, document_json) VALUES (?, 1, 0, 0, 0, '{}')",
+      [doomed.worldId],
+    );
+    database.run(
+      "INSERT INTO checkpoint_campaign_plans(checkpoint_id, source_world_id, document_json) VALUES (?, ?, '{}')",
+      [slot.checkpointId, doomed.worldId],
+    );
+    database.run(
+      "INSERT INTO desktop_play_sessions(world_id, player_actor_id) VALUES (?, 'actor.test')",
+      [doomed.worldId],
+    );
+
+    expect(() => database.run(
+      "DELETE FROM events WHERE world_id = ?",
+      [doomed.worldId],
+    )).toThrow(/event history is immutable/);
+    expect(() => database.run(
+      "DELETE FROM checkpoints WHERE world_id = ?",
+      [doomed.worldId],
+    )).toThrow(/checkpoints are immutable/);
+
+    expect(await persistence.worlds.delete(doomed.worldId)).toEqual({
+      deleted: true,
+      worldId: doomed.worldId,
+    });
+
+    for (const table of [
+      "checkpoints",
+      "save_slots",
+      "entities",
+      "facts",
+      "events",
+      "beliefs",
+      "documents",
+      "document_sections",
+      "scheduled_triggers",
+      "simulation_cursors",
+      "action_pressure_states",
+      "randomness_states",
+      "extended_world_states",
+      "action_runs",
+      "campaign_plans",
+      "desktop_play_sessions",
+    ]) {
+      const result = database.exec(
+        `SELECT COUNT(*) FROM ${table} WHERE world_id = '${doomed.worldId}'`,
+      );
+      expect(result[0]?.values[0]?.[0], table).toBe(0);
+    }
+    expect(database.exec(
+      `SELECT COUNT(*) FROM worlds WHERE id = '${doomed.worldId}'`,
+    )[0]?.values[0]?.[0]).toBe(0);
+    expect(database.exec(
+      `SELECT COUNT(*) FROM checkpoint_campaign_plans WHERE source_world_id = '${doomed.worldId}'`,
+    )[0]?.values[0]?.[0]).toBe(0);
+    expect(await persistence.saves.loadCheckpoint(slot.checkpointId)).toBeUndefined();
+    expect(await persistence.worlds.load(retained.worldId)).toEqual(retainedBefore);
+    expect(await persistence.history.query(retained.worldId)).toEqual(retainedHistoryBefore);
+    expect(await persistence.worlds.delete(doomed.worldId)).toEqual({
+      deleted: false,
+      worldId: doomed.worldId,
+      reason: "not-found",
+    });
+
+    expect(() => database.run(
+      "DELETE FROM events WHERE world_id = ?",
+      [retained.worldId],
+    )).toThrow(/event history is immutable/);
+    database.close();
+  });
 });

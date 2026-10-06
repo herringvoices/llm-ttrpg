@@ -77,7 +77,7 @@ The workspace keeps the native shell and game logic separated:
 - `apps/desktop` — React/Vite presentation, the SQLite adapter, and a thin Tauri 2 host that registers migrations
 - `apps/harness-cli` — a persistent interactive developer shell over the same harness API used by Vitest
 
-Canonical changes follow `validate -> apply -> persist atomically -> expose`. Worlds are persistent campaign lineages. Current World State is separate from append-only meaningful event history and from future scheduled work. Named save slots point to immutable checkpoints of both state and the history visible at that point, so saving again moves the slot without rewriting history.
+Canonical changes follow `validate -> apply -> persist atomically -> expose`. Worlds are persistent campaign lineages. Current World State is separate from append-only meaningful event history and from future scheduled work. Named save slots point to immutable checkpoints of both state and the history visible at that point, so saving again moves the slot without rewriting history. Permanent campaign deletion is a separate, explicit lifecycle operation that atomically removes one lineage; ordinary runtime writes still cannot delete checkpoints or event history.
 
 Install dependencies with `npm install`, then run the complete verification suite with:
 

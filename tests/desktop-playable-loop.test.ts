@@ -723,6 +723,7 @@ describe("desktop playable session integration", () => {
     };
     const firstApplication = createDesktopApplication(createSqlJsClient(database), options);
     const first = await firstApplication.createWorld("Desktop lifecycle");
+    const retained = await firstApplication.createWorld("Retained lifecycle");
     first.setNarrationPreference("expansive");
     await first.save("Manual save");
     const state = first.engineSession().snapshot();
@@ -738,7 +739,20 @@ describe("desktop playable session integration", () => {
 
     await expect(reopenedApplication.openWorld("world.missing"))
       .rejects.toThrow("metadata is missing");
-    expect(await reopenedApplication.listWorlds()).toHaveLength(1);
+    expect(await reopenedApplication.listWorlds()).toHaveLength(2);
+    expect(await reopenedApplication.deleteWorld(worldId)).toEqual({
+      deleted: true,
+      worldId,
+    });
+    await expect(reopenedApplication.openWorld(worldId))
+      .rejects.toThrow("metadata is missing");
+    expect((await reopenedApplication.listWorlds()).map((world) => world.id))
+      .toEqual([retained.view().worldId]);
+    expect(await reopenedApplication.deleteWorld(worldId)).toEqual({
+      deleted: false,
+      worldId,
+      reason: "not-found",
+    });
   });
 
   it("runs a freeform turn through production orchestration and exposes bounded diagnostics", async () => {

@@ -249,6 +249,31 @@ export function createInMemoryPersistence(): PersistencePorts {
         }
         return clone(committed);
       },
+      async delete(worldId: WorldId) {
+        if (!worlds.has(worldId)) {
+          return { deleted: false as const, worldId, reason: "not-found" as const };
+        }
+        const checkpointIds = new Set(
+          [...checkpoints.values()]
+            .filter((checkpoint) => checkpoint.metadata.worldId === worldId)
+            .map((checkpoint) => checkpoint.metadata.id),
+        );
+        for (const [slotId, slot] of slots) {
+          if (slot.worldId === worldId) slots.delete(slotId);
+        }
+        for (const checkpointId of checkpointIds) {
+          checkpoints.delete(checkpointId);
+          checkpointPlans.delete(checkpointId);
+        }
+        const actionPrefix = `${worldId}\u0000`;
+        for (const key of actionRuns.keys()) {
+          if (key.startsWith(actionPrefix)) actionRuns.delete(key);
+        }
+        histories.delete(worldId);
+        campaignPlans.delete(worldId);
+        worlds.delete(worldId);
+        return { deleted: true as const, worldId };
+      },
     },
     saves: {
       async saveCheckpoint(input: SaveCheckpointInput) {

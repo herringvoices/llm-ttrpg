@@ -459,6 +459,22 @@ export function createSqlitePersistence(database: SqlClient): PersistencePorts {
         await issueCommand(database, { operation: "commit-world", ...input });
         return (await loadWorld(input.worldId))!;
       },
+      async delete(worldId: string) {
+        if (!(await loadWorld(worldId))) {
+          return { deleted: false as const, worldId, reason: "not-found" as const };
+        }
+        try {
+          await database.execute(
+            "INSERT INTO world_deletion_commands(payload_json) VALUES ($1)",
+            [JSON.stringify({ operation: "delete-world", worldId })],
+          );
+        } catch (error) {
+          throw new PersistenceConflictError(
+            error instanceof Error ? error.message : "World deletion failed",
+          );
+        }
+        return { deleted: true as const, worldId };
+      },
     },
     saves: {
       async saveCheckpoint(input: SaveCheckpointInput) {

@@ -91,6 +91,14 @@ export interface SaveCheckpointInput {
   };
 }
 
+export type DeleteWorldResult =
+  | { readonly deleted: true; readonly worldId: WorldId }
+  | {
+      readonly deleted: false;
+      readonly worldId: WorldId;
+      readonly reason: "not-found";
+    };
+
 export interface InitializeCampaignPlanInput {
   readonly worldId: WorldId;
   readonly expectedWorldRevision: number;
@@ -120,6 +128,7 @@ export interface WorldStore {
   list(): Promise<readonly WorldMetadata[]>;
   load(worldId: WorldId): Promise<PersistedWorld | undefined>;
   commit(input: CommitWorldInput): Promise<PersistedWorld>;
+  delete(worldId: WorldId): Promise<DeleteWorldResult>;
 }
 
 export interface SaveStore {

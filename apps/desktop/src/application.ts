@@ -10,6 +10,7 @@ import {
   loadGameDefinition,
   renderContextForModel,
   type CampaignPlanDocument,
+  type DeleteWorldResult,
   type GameSession,
   type ModelRuntime,
   type PersistencePorts,
@@ -122,6 +123,7 @@ export interface DesktopApplication {
     options?: CampaignCreationOptions,
   ): Promise<CampaignCreationResult>;
   listWorlds(): Promise<readonly WorldMetadata[]>;
+  deleteWorld(worldId: string): Promise<DeleteWorldResult>;
   openWorld(worldId: string): Promise<DesktopPlaySession>;
 }
 
@@ -860,6 +862,9 @@ export function createDesktopApplication(
     ...(options.modelRuntime ? { modelRuntime: options.modelRuntime } : {}),
     listWorlds() {
       return persistence.worlds.list();
+    },
+    deleteWorld(worldId) {
+      return persistence.worlds.delete(worldId);
     },
     async listCampaignDrafts() {
       const rows = await database.select<CampaignGenerationDraftRow[]>(

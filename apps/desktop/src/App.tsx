@@ -27,6 +27,7 @@ export function App({ application }: { readonly application: DesktopApplication 
   const [generationProgress, setGenerationProgress] = useState<CampaignCreationProgress>();
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const [openingWorldId, setOpeningWorldId] = useState<string>();
+  const [deletingWorldId, setDeletingWorldId] = useState<string>();
   const [playSession, setPlaySession] = useState<DesktopPlaySession>();
   const [playView, setPlayView] = useState<PlaySessionView>();
   const [declaration, setDeclaration] = useState("");
@@ -126,7 +127,7 @@ export function App({ application }: { readonly application: DesktopApplication 
   }
 
   async function openWorld(worldId: string) {
-    if (openingWorldId) return;
+    if (openingWorldId || deletingWorldId) return;
     setOpeningWorldId(worldId);
     setMessage("Opening campaign…");
     try {
@@ -140,6 +141,26 @@ export function App({ application }: { readonly application: DesktopApplication 
       setMessage(error instanceof Error ? error.message : "Unable to open campaign");
     } finally {
       setOpeningWorldId(undefined);
+    }
+  }
+
+  async function deleteWorld(world: WorldMetadata) {
+    if (openingWorldId || deletingWorldId) return;
+    if (!window.confirm(`Permanently remove "${world.name}"? This cannot be undone.`)) return;
+    setDeletingWorldId(world.id);
+    setMessage(`Deleting ${world.name}…`);
+    try {
+      const result = await application.deleteWorld(world.id);
+      if (!result.deleted) {
+        setMessage(`${world.name} was already deleted.`);
+      } else {
+        await refresh();
+        setMessage(`Deleted ${world.name}.`);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to remove campaign");
+    } finally {
+      setDeletingWorldId(undefined);
     }
   }
 
@@ -481,13 +502,23 @@ export function App({ application }: { readonly application: DesktopApplication 
             {worlds.map((world) => (
               <li key={world.id}>
                 <div><strong>{world.name}</strong><small>Updated {new Date(world.updatedAt).toLocaleString()}</small></div>
-                <button
-                  type="button"
-                  disabled={Boolean(openingWorldId)}
-                  onClick={() => void openWorld(world.id)}
-                >
-                  {openingWorldId === world.id ? "Opening…" : "Open"}
-                </button>
+                <div className="world-actions">
+                  <button
+                    type="button"
+                    disabled={Boolean(openingWorldId || deletingWorldId)}
+                    onClick={() => void openWorld(world.id)}
+                  >
+                    {openingWorldId === world.id ? "Opening…" : "Open"}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    disabled={Boolean(openingWorldId || deletingWorldId)}
+                    onClick={() => void deleteWorld(world)}
+                  >
+                    {deletingWorldId === world.id ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
