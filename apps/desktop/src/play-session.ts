@@ -373,7 +373,7 @@ export class DesktopPlaySession {
     const history = await this.session.eventHistory();
     const manifestationEvent = state.manifestationEventId
       ? history.find((event) => event.id === state.manifestationEventId)
-      : history.findLast((event) => event.type === "rules.first-power-manifested");
+      : [...history].reverse().find((event) => event.type === "rules.first-power-manifested");
     const result = await this.requireModel().generate({
       prompt: {
         protectedContext: [directive.protectedContext],
@@ -437,7 +437,7 @@ export class DesktopPlaySession {
         );
       }
       const history = await this.session.eventHistory();
-      const event = history.findLast((candidate) =>
+      const event = [...history].reverse().find((candidate) =>
         candidate.type === "rules.first-power-manifested"
       );
       this.openingProgression = openingProgressionStateSchema.parse({
@@ -501,7 +501,7 @@ export class DesktopPlaySession {
     });
 
     const historyAfter = await this.session.eventHistory();
-    const manifested = historyAfter.findLast((event) =>
+    const manifested = [...historyAfter].reverse().find((event) =>
       event.type === "rules.first-power-manifested"
     );
     this.openingProgression = openingProgressionStateSchema.parse({
