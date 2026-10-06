@@ -8,7 +8,14 @@ import {
 } from "./ruleset/model.js";
 
 function authoredPower(value: unknown): PowerState {
-  return powerStateSchema.parse(value);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return powerStateSchema.parse(value);
+  }
+  return powerStateSchema.parse({
+    discoveredBehaviors: [],
+    committedMilestones: [],
+    ...value,
+  });
 }
 
 /**

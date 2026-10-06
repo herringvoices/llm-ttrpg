@@ -67,6 +67,8 @@ export const invinciblePower = powerStateSchema.parse({
     },
   ],
   developmentAxes: ["passive reinforcement", "active duration"],
+  discoveredBehaviors: [],
+  committedMilestones: [],
   balanceRationale:
     "The active is short, self-only, costs meaningful Mana, and protects injury rather than all consequences.",
 });

@@ -67,6 +67,8 @@ function novelFirstPower() {
       "shape.touch",
       "role.utility",
     ],
+    discoveredBehaviors: [],
+    committedMilestones: [],
     balanceRationale:
       "The effect preserves one narrow physical property rather than granting general surface control.",
   };

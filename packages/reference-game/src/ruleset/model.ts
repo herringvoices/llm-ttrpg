@@ -174,7 +174,7 @@ export const powerDiscoveredBehaviorSchema = z.object({
   outcome: z.enum(["valid", "invalid", "conditional"]),
   ruling: z.string().trim().min(1),
   establishedBy: z.enum(["authored", "experiment", "adjudication"]),
-  evidenceEventIds: z.array(stableIdSchema).default([]),
+  evidenceEventIds: z.array(stableIdSchema),
 }).strict();
 export type PowerDiscoveredBehavior = z.infer<
   typeof powerDiscoveredBehaviorSchema
@@ -212,9 +212,9 @@ export const powerStateSchema = z.object({
   powerLevel: z.number().int().nonnegative(),
   functions: z.array(powerFunctionSchema).min(1),
   developmentAxes: z.array(z.string().trim().min(1)).min(1),
-  tags: z.array(powerTagSchema).default([]),
-  discoveredBehaviors: z.array(powerDiscoveredBehaviorSchema).default([]),
-  committedMilestones: z.array(powerCommittedMilestoneSchema).default([]),
+  tags: z.array(powerTagSchema),
+  discoveredBehaviors: z.array(powerDiscoveredBehaviorSchema),
+  committedMilestones: z.array(powerCommittedMilestoneSchema),
   balanceRationale: z.string().trim().min(1),
 }).strict().superRefine((power, context) => {
   if (power.powerLevel !== pointDerivedLevel(power.pp)) {
