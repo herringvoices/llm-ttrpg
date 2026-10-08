@@ -1547,7 +1547,7 @@ describe("desktop playable session integration", () => {
     expect(engine.planningBasis()).toEqual(basisAfterCommit);
     expect(await engine.eventHistory()).toEqual(historyAfterCommit);
     expect(play.recentPerformance()).toHaveLength(2);
-    expect(play.recentPerformance()[1]?.turnId).toMatch(/^narration-retry\\./);
+    expect(play.recentPerformance()[1]?.turnId).toMatch(/^narration-retry\./);
     expect(play.recentPerformance()[1]?.modelCallCount).toBeGreaterThan(0);
     expect(play.recentPerformance()[1]?.outcome).toBe("resolved");
   });
