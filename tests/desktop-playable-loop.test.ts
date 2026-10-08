@@ -1611,10 +1611,11 @@ describe("desktop playable session integration", () => {
       ],
     });
     const { database } = await createMigratedSqlitePersistence();
+    let eventSerial = 0;
     const app = createDesktopApplication(createSqlJsClient(database), {
       modelRuntime: model,
       now: () => generatedStart,
-      randomId: () => "conversation-progress",
+      randomId: () => `conversation-progress-${++eventSerial}`,
       nextSeed: () => 0x1919_1919,
     });
     const play = await app.createWorld({
