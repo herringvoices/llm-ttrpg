@@ -463,9 +463,6 @@ describe("desktop playable session integration", () => {
     ]);
     const play = new DesktopPlaySession(engine, model, "campaign.entity.amelia", undefined);
     const view = await play.performTurn("I search for Jonny all morning.");
-    if (view.error) console.info("LM03-pressure-diagnostic", JSON.stringify({
-      error: view.error, trace: view.diagnostics?.actionTrace, calls: model.invocations,
-    }));
     expect(view.error).toBeUndefined();
     expect(Date.parse(engine.snapshot().fictionalTime) - beforeTime).toBe(5_000);
     const events = await engine.eventHistory({ types: ["test.contract-resolution-recorded"] });
