@@ -870,6 +870,10 @@ export class DesktopPlaySession {
       if (meaningfulTurn) {
         try {
           await this.advanceOpeningProgression(openingEvidenceEventIds, onProgress);
+          if (this.openingProgression?.manifestationNarrationPending) {
+            narrationStatus = "failed";
+            turnOutcome = "committed-presentation-failed";
+          }
         } catch (error) {
           const message = errorMessage(error);
           this.lastError =
@@ -952,6 +956,9 @@ export class DesktopPlaySession {
           [this.openingProgression.manifestationEvidenceEventId],
           onProgress,
         );
+        if (this.openingProgression?.manifestationNarrationPending) {
+          throw new Error("Awakening narration is still unavailable; the committed power was not replayed");
+        }
       } catch (error) {
         this.lastError = errorMessage(error);
       } finally {
