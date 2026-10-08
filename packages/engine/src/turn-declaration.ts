@@ -4,6 +4,7 @@ import { stableIdSchema } from "./identity.js";
 import { semanticActionModeSchema } from "./semantic-action.js";
 import { fictionalDurationMsSchema } from "./time.js";
 import { prepareModelBrief, resolveBriefReference } from "./model-brief.js";
+import type { ContinuitySummary } from "./continuity.js";
 import type { ContextPackage } from "./context-contracts.js";
 import type { ModelRuntime } from "./model-runtime.js";
 
@@ -133,6 +134,8 @@ export async function classifyTurnDeclaration(input: {
   readonly declaration: string;
   readonly actorId: string;
   readonly context: ContextPackage;
+  /** Source-checked perspective-specific continuity, never canonical history. */
+  readonly continuity?: ContinuitySummary;
   readonly modelRuntime: ModelRuntime;
   readonly worldRevision: number;
   readonly eventSequence: number;
@@ -144,6 +147,7 @@ export async function classifyTurnDeclaration(input: {
   const fast = deterministicTurnClassification(input.declaration, input.context);
   if (fast) return fast;
   const brief = prepareModelBrief({
+    ...(input.continuity ? { continuity: input.continuity } : {}),
     purpose: "action-interpretation",
     perspective: { kind: "actor", id: input.actorId },
     context: input.context,
