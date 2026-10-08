@@ -53,7 +53,6 @@ const DEFAULT_BUDGET: Record<ModelBriefPurpose, number> = {
 
 /** Oversized *required* context is not silently cut down to fit a soft budget. */
 const HARD_REQUIRED_LIMIT = 16_000;
-const MODEL_VISIBLE_ID_PATTERN = /\b(?:scene|tool)\.\d{3}\b/g;
 
 function jsonLength(value: unknown): number {
   return JSON.stringify(value).length;
@@ -118,6 +117,8 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
   const forbidden = [...new Set(Object.values(context.diagnostics.localReferences))];
   const requiredIds = new Set(request.requiredEntityIds ?? []);
   const focalRef = context.situation.focalActorRef;
+  // Current location is also an indispensable spatial anchor.
+  const requiredRefs = new Set([focalRef, context.situation.locationRef].filter(Boolean));
   // A brief can only bind entities actually included in this authorized scene.
   const candidates = context.situation.scene.filter((element) =>
     !element.access.privileged &&
@@ -136,12 +137,21 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
     };
     return {
       element: projected,
-      required: essential(element, requiredIds, canonicalId, focalRef),
+      required: requiredRefs.has(element.localRef) ||
+        essential(element, requiredIds, canonicalId, focalRef),
       canonicalId,
     };
   });
 
   const situation = context.situation;
+  const recentQueryResults = context.retrieved
+    .filter((item) => item.provenance.sourceKind === "tool-result" &&
+      item.access.audience.includes("actor") &&
+      !item.access.privileged &&
+      samePerspective(item.access.perspective, perspective))
+    .slice(0, 2)
+    .map((item) => cleanText(JSON.stringify(item.content), forbidden))
+    .filter((text) => text.length <= 1_200);
   const base = {
     situation: {
       fictionalTime: situation.fictionalTime,
@@ -167,6 +177,7 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
           cleanText(summary, forbidden)
         ) }
       : {}),
+    ...(recentQueryResults.length ? { recentQueryResults } : {}),
     note: "Unmentioned details are unknown, not absent. Never invent new canonical facts.",
   };
   // Fail safely if indispensable text cannot fit even the explicit hard ceiling.
