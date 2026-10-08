@@ -99,6 +99,42 @@ describe("LM-07 continuity source selection and perspective", () => {
     expect(first.summary.summaryText).toContain("Keep steady hours");
   });
 
+  it("keeps player-established backstory without treating an omniscient entity summary as actor knowledge", async () => {
+    serial++;
+    const { world } = await fixture();
+    world.entities.find((item) => item.id === nina)!.summary =
+      "GM secret: Nina's suspicions are wrong and she is unknowingly watched.";
+    const realization = world.mechanicalRealizations.find((item) => item.entityId === nina);
+    if (realization) {
+      realization.constraints.push({
+        id: "constraint.nina.player-established-background",
+        sourceKind: "player-established",
+        sourceId: "fact.player-established-nina",
+        summary: "Nina grew up helping her grandfather repair bicycles.",
+      });
+    } else {
+      world.mechanicalRealizations.push({
+        entityId: nina,
+        level: "constrained",
+        constraints: [{
+          id: "constraint.nina.player-established-background",
+          sourceKind: "player-established",
+          sourceId: "fact.player-established-nina",
+          summary: "Nina grew up helping her grandfather repair bicycles.",
+        }],
+        history: [],
+      });
+    }
+    const summary = projectContinuity(input(world)).summary;
+    expect(summary.summaryText).toContain("repair bicycles");
+    expect(summary.summaryText).not.toContain("GM secret");
+    expect(summary.summaryText).not.toContain("suspicions are wrong");
+    expect(summary.sourceRefs).toContainEqual({
+      kind: "player-established",
+      id: "constraint.nina.player-established-background",
+    });
+  });
+
   it("caps high-value obligations ahead of trivial recency and retains established backstory", async () => {
     serial++;
     const { world } = await fixture();
