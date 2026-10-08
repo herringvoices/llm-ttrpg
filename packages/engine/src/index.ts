@@ -14,6 +14,7 @@ export * from "./contracts.js";
 export * from "./identity.js";
 export * from "./model-runtime.js";
 export * from "./model-diagnostics.js";
+export * from "./model-brief.js";
 export * from "./player-action-contracts.js";
 export * from "./presentation.js";
 export * from "./time.js";
