@@ -7,6 +7,7 @@ import {
   observeModelRuntime,
   classifyTurnDeclaration,
   projectContinuity,
+  recallContinuity,
   performConversationTurn,
   renderContextForModel,
   runPlannerPass,
@@ -35,6 +36,8 @@ export interface TranscriptEntry {
   readonly id: string;
   readonly speaker: "player" | "narrator" | "npc" | "system";
   readonly text: string;
+  /** Visible speaker label for player-accessible historical dialogue (not canon). */
+  readonly speakerName?: string;
 }
 
 export type TurnProgressPhase =
@@ -170,6 +173,11 @@ export interface TurnDiagnostics {
   readonly performance: TurnPerformanceDiagnostic;
   /** Derived memory-work diagnostics. Actual provider tokens are in performance. */
   readonly continuity?: ReturnType<typeof projectContinuity>["diagnostics"];
+  readonly continuityBoundary?: {
+    readonly reason: "scene-transition" | "time-jump";
+    readonly scope: "location" | "actor";
+    readonly diagnostics: ReturnType<typeof projectContinuity>["diagnostics"];
+  };
 }
 
 export interface PlaySessionView {
@@ -208,6 +216,31 @@ const ROUTING_CONTEXT_BUDGET_UNITS = 8_000;
 const ACTION_CONTEXT_BUDGET_UNITS = 12_000;
 const ACTION_MAX_MODEL_TURNS = 6;
 
+/** A tightly scoped recollection request, never an instruction to change the world.
+ * Addressed speech ("I ask Mara...") is not intercepted. */
+function historicalRecallQuestion(declaration: string):
+  | { readonly speakerName?: string; readonly query: string; readonly topic?: string }
+  | undefined {
+  const trimmed = declaration.trim().replace(/[?.!]$/, "").trim();
+  const withoutPreface = trimmed.replace(
+    /^(?:(?:please |can you )?remind me |do you remember )/i, "",
+  );
+  const spoken = withoutPreface.match(
+    /^what did ([a-z][a-z0-9 .'-]{0,75}?) (?:say|tell me|mention)(?: (?:about|regarding) (.+?))?(?: (?:yesterday|earlier|last night|last week|last time))?$/i,
+  ) ?? withoutPreface.match(
+    /^what ([a-z][a-z0-9 .'-]{0,75}?) (?:said|told me|mentioned)(?: (?:about|regarding) (.+?))?$/i,
+  );
+  if (spoken) return {
+    speakerName: spoken[1]!.trim(),
+    query: trimmed,
+    ...(spoken[2] ? { topic: spoken[2].trim() } : {}),
+  };
+  if (/^what happened (?:to|at|with) .+/i.test(withoutPreface)) {
+    return { query: withoutPreface };
+  }
+  return undefined;
+}
+
 function nowMs(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
 }
@@ -230,6 +263,7 @@ export class DesktopPlaySession {
   private lastError?: string;
   private lastDiagnostics?: TurnDiagnostics;
   private lastContinuityDiagnostics?: ReturnType<typeof projectContinuity>["diagnostics"];
+  private lastBoundaryContinuityDiagnostics?: TurnDiagnostics["continuityBoundary"];
   private readonly observedModelRuntime?: ModelRuntime;
   private activeCalls?: ModelCallDiagnostic[];
   private readonly recentPerformanceEntries: TurnPerformanceDiagnostic[] = [];
@@ -362,12 +396,74 @@ export class DesktopPlaySession {
     return this.view();
   }
 
-  private add(speaker: TranscriptEntry["speaker"], text: string): void {
+  private add(speaker: TranscriptEntry["speaker"], text: string, speakerName?: string): void {
     this.transcriptEntries.push({
       id: `transcript.${crypto.randomUUID()}`,
       speaker,
       text,
+      ...(speaker === "npc" && speakerName ? { speakerName } : {}),
     });
+  }
+
+  /** Only established actor-visible records and saved player-visible NPC replies
+   * are eligible. No free-text answer generation or world mutation occurs. */
+  private async answerHistoricalRecall(declaration: string): Promise<string | undefined> {
+    const request = historicalRecallQuestion(declaration);
+    if (!request) return undefined;
+    const world = this.session.snapshot();
+    const speakers = request.speakerName
+      ? world.entities.filter((entity) =>
+          entity.name.toLowerCase() === request.speakerName!.toLowerCase())
+      : [];
+    // Do not silently attribute dialogue to the wrong character.
+    if (request.speakerName && speakers.length !== 1) {
+      return `I can't identify a unique established speaker named ${request.speakerName}. I won't guess about their words.`;
+    }
+    const speaker = speakers[0];
+    const topic = request.topic?.toLowerCase();
+    const savedReplies = speaker ? this.transcriptEntries.filter((entry) =>
+      entry.speaker === "npc" &&
+      entry.speakerName?.toLowerCase() === speaker.name.toLowerCase() &&
+      (!topic || entry.text.toLowerCase().includes(topic))
+    ).slice(-2) : [];
+    const history = await this.session.eventHistory({
+      access: ["public"], relatedEntityId: this.playerActorId,
+      direction: "descending", limit: 100,
+    });
+    const relevant = speaker ? history.filter((event) =>
+      event.relatedEntityIds.includes(speaker.id)
+    ) : history;
+    const basis = this.session.planningBasis();
+    const projection = recallContinuity({
+      worldId: this.session.worldId, world,
+      worldRevision: basis.worldRevision, eventSequence: basis.eventSequence,
+      perspective: { kind: "actor", id: this.playerActorId },
+      scope: speaker ? { kind: "relationship", id: speaker.id }
+        : { kind: "actor", id: this.playerActorId },
+      events: relevant,
+      query: request.topic ?? request.query,
+      limit: 4,
+    });
+    const pieces: string[] = [];
+    if (savedReplies.length) {
+      pieces.push(`From your saved conversation with ${speaker!.name}:\n${savedReplies.map(
+        (entry) => entry.text
+      ).join("\n")}`);
+    }
+    if (projection.summaryText) {
+      pieces.push(`Other established context (not a verbatim quote):\n${projection.summaryText}`);
+    }
+    if (pieces.length === 0) {
+      return "I don't have an authorized, preserved account of that earlier exchange or event. I won't invent the details.";
+    }
+    this.lastContinuityDiagnostics = {
+      refreshed: false, trigger: "cache-hit",
+      selectedSourceCount: projection.points.length,
+      omittedSourceCount: 0,
+      serializedCharacters: projection.summaryText.length,
+      modelRefreshCalls: 0,
+    };
+    return pieces.join("\n\n");
   }
 
   private requireModel(): ModelRuntime {
@@ -791,12 +887,14 @@ export class DesktopPlaySession {
     this.lastError = undefined;
     this.lastDiagnostics = undefined;
     this.lastContinuityDiagnostics = undefined;
+    this.lastBoundaryContinuityDiagnostics = undefined;
     const startedAt = nowMs();
     const turnId = `turn.${crypto.randomUUID()}`;
     const calls: ModelCallDiagnostic[] = [];
     if (this.diagnosticsEnabled) this.activeCalls = calls;
     let beforeWorld: ReturnType<GameSession["snapshot"]> | undefined;
     let beforeBasis: ReturnType<GameSession["planningBasis"]> | undefined;
+    const locationBeforeTurn = this.view().currentLocationId;
     let routeKind: "action" | "conversation" = "action";
     let actionTrace: JsonValue | undefined;
     let narrationStatus: "complete" | "failed" = "complete";
@@ -822,7 +920,15 @@ export class DesktopPlaySession {
       await Promise.resolve();
       let meaningfulTurn = false;
       let openingEvidenceEventIds: string[] = [];
-      const classified = pendingClarification
+      const recallAnswer = pendingClarification
+        ? undefined
+        : await this.answerHistoricalRecall(declaration);
+      if (recallAnswer !== undefined) {
+        this.reportTurnProgress("presenting", onProgress);
+        this.add("narrator", recallAnswer);
+        turnOutcome = "resolved";
+      }
+      const classified = recallAnswer !== undefined || pendingClarification
         ? undefined
         : await this.classifyDeclaration(declaration);
       if (classified?.kind === "player-decision-required") {
@@ -924,7 +1030,11 @@ export class DesktopPlaySession {
           }
           turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
           if (result.narration) {
-            this.add("npc", result.narration);
+            const npcName = recipientIds.length === 1
+              ? this.session.snapshot().entities.find((entity) =>
+                  entity.id === recipientIds[0])?.name
+              : undefined;
+            this.add("npc", result.narration, npcName);
             // The ordinary NPC path makes no canonical communication event.
             // Persist its finished speech before a first-power threshold can
             // anchor this turn as successfully completed.
@@ -1041,11 +1151,47 @@ export class DesktopPlaySession {
           );
         }
       }
-      planner = await this.replanIfInvalidated(onProgress)
-        .catch((error: unknown) => ({ error: errorMessage(error) }));
+      if (recallAnswer === undefined) {
+        planner = await this.replanIfInvalidated(onProgress)
+          .catch((error: unknown) => ({ error: errorMessage(error) }));
+      }
     } catch (error) {
       this.lastError = errorMessage(error);
     } finally {
+      // Foreground boundary: warm the next authorized, place-scoped projection
+      // after a genuine scene change or meaningful fictional-time jump. No
+      // summarizer is invoked, and no derived record becomes world canon.
+      if (beforeWorld && beforeBasis && turnOutcome !== "failed" && turnOutcome !== "needs-player-input") {
+        try {
+          const after = this.session.snapshot();
+          const locationAfterTurn = this.view().currentLocationId;
+          const sceneChanged = locationAfterTurn !== locationBeforeTurn;
+          const elapsedMs = Date.parse(after.fictionalTime) - Date.parse(beforeWorld.fictionalTime);
+          if (sceneChanged || elapsedMs >= 3_600_000) {
+            const basis = this.session.planningBasis();
+            const history = await this.session.eventHistory({
+              relatedEntityId: this.playerActorId, access: ["public"],
+              direction: "descending", limit: 48,
+            });
+            const projection = projectContinuity({
+              worldId: this.session.worldId, world: after,
+              worldRevision: basis.worldRevision, eventSequence: basis.eventSequence,
+              perspective: { kind: "actor", id: this.playerActorId },
+              scope: locationAfterTurn
+                ? { kind: "location", id: locationAfterTurn }
+                : { kind: "actor", id: this.playerActorId },
+              events: history, maxCharacters: 1_000,
+            });
+            this.lastBoundaryContinuityDiagnostics = {
+              reason: sceneChanged ? "scene-transition" : "time-jump",
+              scope: locationAfterTurn ? "location" : "actor",
+              diagnostics: projection.diagnostics,
+            };
+          }
+        } catch {
+          // Projection errors never alter or invalidate an otherwise committed turn.
+        }
+      }
       this.active = false;
       this.turnProgress = undefined;
       await this.persistPresentation().catch((error: unknown) => {
@@ -1083,6 +1229,9 @@ export class DesktopPlaySession {
             performance,
             ...(this.lastContinuityDiagnostics
               ? { continuity: this.lastContinuityDiagnostics }
+              : {}),
+            ...(this.lastBoundaryContinuityDiagnostics
+              ? { continuityBoundary: this.lastBoundaryContinuityDiagnostics }
               : {}),
           };
           this.recordPerformance(performance);
