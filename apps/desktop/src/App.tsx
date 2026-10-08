@@ -344,7 +344,10 @@ export function App({ application }: { readonly application: DesktopApplication 
         {import.meta.env.DEV && playView.diagnostics && (
           <details className="diagnostics">
             <summary>Development diagnostics</summary>
-            <pre>{JSON.stringify(playView.diagnostics, null, 2)}</pre>
+            <pre>{JSON.stringify({
+              lastTurn: playView.diagnostics,
+              recentPerformance: playView.recentPerformance,
+            }, null, 2)}</pre>
           </details>
         )}
       </main>
