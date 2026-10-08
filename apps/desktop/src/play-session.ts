@@ -5,6 +5,8 @@ import {
   deriveSceneRegister,
   jsonValueSchema,
   observeModelRuntime,
+  prepareModelBrief,
+  resolveBriefReference,
   performConversationTurn,
   renderContextForModel,
   runPlannerPass,
@@ -424,12 +426,17 @@ export class DesktopPlaySession {
   private async routeDeclaration(declaration: string) {
     const model = this.requireModel();
     const context = this.session.assembleContext({
-      role: "orchestrator",
-      perspective: { kind: "canonical" },
+      role: "actor",
+      perspective: { kind: "actor", id: this.playerActorId },
       focalActorId: this.playerActorId,
       ...(this.view().currentLocationId ? { locationId: this.view().currentLocationId } : {}),
       declaration,
       budget: { maxUnits: ROUTING_CONTEXT_BUDGET_UNITS },
+    });
+    const brief = prepareModelBrief({
+      purpose: "routing",
+      perspective: { kind: "actor", id: this.playerActorId },
+      context,
     });
     const result = await model.generate({
       prompt: {
@@ -437,14 +444,14 @@ export class DesktopPlaySession {
           "Route the declaration as conversation only when speech or communicative behavior targets an available actor.",
           "Use only local references from the authorized scene context. Otherwise choose action.",
         ],
-        context: renderContextForModel(context),
+        context: brief.modelText,
         input: declaration,
       },
       output: { kind: "structured", schemaId: "desktop.turn-route.v1", schema: turnRouteSchema },
       trace: { operation: "desktop-turn-route", invocationId: `turn-route.${crypto.randomUUID()}` },
     });
     if (!result.ok) throw new Error(`Unable to interpret the turn safely: ${result.error.message}`);
-    return { route: result.output.value, context };
+    return { route: result.output.value, brief };
   }
 
   private async persistPresentation(): Promise<void> {
@@ -775,9 +782,9 @@ export class DesktopPlaySession {
       const route = routed?.route ?? { kind: "action" as const };
       routeKind = route.kind;
       if (route.kind === "conversation") {
-        const recipientIds = route.recipientRefs
-          .map((ref) => routed!.context.diagnostics.localReferences[ref])
-          .filter((id): id is string => Boolean(id && id !== this.playerActorId));
+        const recipientIds = route.recipientRefs.map((ref) =>
+          resolveBriefReference(routed!.brief, ref, this.session.planningBasis())
+        ).filter((id) => id !== this.playerActorId);
         if (recipientIds.length === 0) throw new Error("No authorized conversation recipient was available");
         const player = before.entities.find((entity) => entity.id === this.playerActorId);
         const result = await performConversationTurn({
