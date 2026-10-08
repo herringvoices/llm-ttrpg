@@ -133,7 +133,7 @@ export function changedPlanningSources(
   });
 }
 
-const materialEventTypes = /(?:manifested|discovered|revealed|killed|destroyed|resolved|pledged|committed|betrayed|refused|accepted|agreement|relationship-changed|status-changed|opening-incident-realized)$/;
+const materialEventTypes = /(?:first-power-manifested|opening-incident-realized|material-disclosure|commitment-created|agreement-reached|goal-adopted|goal-refused|relationship-changed|status-changed|mystery-discovered|secret-revealed)$/;
 const horizonOrder: readonly PlanningHorizon[] = ["low", "medium", "high"];
 
 /** A cheap deterministic review gate; event receipts are already bounded by
