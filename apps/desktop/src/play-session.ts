@@ -906,8 +906,13 @@ export class DesktopPlaySession {
             break;
           }
           turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
-          if (result.narration) this.add("npc", result.narration);
-          else {
+          if (result.narration) {
+            this.add("npc", result.narration);
+            // The ordinary NPC path makes no canonical communication event.
+            // Persist its finished speech before a first-power threshold can
+            // anchor this turn as successfully completed.
+            await this.persistPresentation();
+          } else {
             narrationStatus = "failed";
             this.add("system", result.narrationError ??
               "The conversation committed, but narration was unavailable.");
