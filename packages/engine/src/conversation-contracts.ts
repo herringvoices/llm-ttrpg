@@ -224,6 +224,31 @@ export const npcDecisionSchema = z.object({
 });
 export type NpcDecision = z.infer<typeof npcDecisionSchema>;
 
+/**
+ * LM-05: final dialogue or an explicit request for authoritative escalation.
+ * No canonical entity IDs, numeric social effects, operation arguments, or
+ * invented facts are part of an ordinary reply.
+ */
+export const npcReplySchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("ordinary"),
+    speech: z.string().max(900),
+    visibleManner: z.string().trim().min(1).max(160).optional(),
+    continueConversation: z.boolean(),
+    materialSignal: z.literal("none"),
+  }).strict(),
+  z.object({
+    kind: z.literal("escalate"),
+    reason: z.enum([
+      "commitment", "disclosure", "social-conflict", "npc-action",
+      "trade", "other",
+    ]),
+    proposedSpeech: z.string().max(900).optional(),
+    proposedActionSummary: z.string().max(250).optional(),
+  }).strict(),
+]);
+export type NpcReply = z.infer<typeof npcReplySchema>;
+
 export const conversationTranscriptEntrySchema = z.object({
   beat: z.number().int().positive(),
   speakerId: stableIdSchema,
