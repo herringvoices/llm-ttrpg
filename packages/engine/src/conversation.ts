@@ -38,6 +38,7 @@ import type { WorldState } from "./world.js";
 import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
 import { tryOrdinaryNpcConversation } from "./conversation-ordinary.js";
 import { projectContinuity, type ContinuitySummary } from "./continuity.js";
+import { redactModelBriefText } from "./model-brief.js";
 
 export interface ConversationAuthorityBindings {
   readonly recordCommunicationOperationId: string;
