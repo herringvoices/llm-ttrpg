@@ -824,7 +824,8 @@ describe("NPC interaction and conversation", () => {
       if (request.output.schemaId === "conversation.npc-decision.v1") {
         const context = request.prompt.context ?? "";
         const input = JSON.parse(request.prompt.input) as { actorRef: string };
-        if (context.includes("goal.bob.keep-clinic-open")) {
+        // LM-07 exposes relevant prose, never a canonical goal record ID.
+        if (context.includes("Keep the neighborhood clinic supplied.")) {
           return npcDecision(request, {
             actorId: input.actorRef,
             interpretation: "Mara treats the report as an emergency.",
