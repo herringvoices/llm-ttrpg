@@ -343,6 +343,7 @@ const transcriptEntrySchema = z.object({
   id: z.string().min(1),
   speaker: z.enum(["player", "narrator", "npc", "system"]),
   text: z.string().min(1),
+  speakerName: z.string().min(1).max(120).optional(),
 }).strict();
 
 interface DesktopSessionRow {

@@ -441,6 +441,132 @@ function actionModel(narration: "success" | "fail" = "success") {
 }
 
 describe("desktop playable session integration", () => {
+  it("recalls only saved, player-visible historical NPC replies without a model call or world mutation", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Scoped historical recall");
+    const nina = engine.snapshot().entities.find((entity) =>
+      entity.id === "campaign.entity.nina"
+    );
+    expect(nina).toBeDefined();
+    const model = actionModel();
+    const play = new DesktopPlaySession(
+      engine, model, "campaign.entity.amelia", undefined,
+      { transcript: [
+        { id: "transcript.before-1", speaker: "npc", speakerName: nina!.name,
+          text: "The old gate rattled shortly before sunrise." },
+        { id: "transcript.before-2", speaker: "npc", speakerName: nina!.name,
+          text: "We still need medicine from the clinic." },
+        { id: "transcript.before-3", speaker: "narrator",
+          text: "Behind the closed door, the manager hid the real map." },
+      ] },
+    );
+    const worldBefore = engine.snapshot();
+    const historyBefore = await engine.eventHistory();
+    const view = await play.performTurn(`What did ${nina!.name} say about the gate?`);
+    expect(view.error).toBeUndefined();
+    expect(view.transcript.at(-1)).toEqual(expect.objectContaining({
+      speaker: "narrator",
+      text: expect.stringContaining("old gate rattled"),
+    }));
+    expect(view.transcript.at(-1)?.text).not.toContain("medicine from the clinic");
+    expect(view.transcript.at(-1)?.text).not.toContain("manager hid the real map");
+    expect(view.diagnostics?.performance.modelCallCount).toBe(0);
+    expect(model.invocations).toHaveLength(0);
+    expect(engine.snapshot()).toEqual(worldBefore);
+    expect(await engine.eventHistory()).toEqual(historyBefore);
+
+    const unknown = await play.performTurn("What did the Unknown Historian tell me yesterday?");
+    expect(unknown.transcript.at(-1)?.text).toContain("won't guess");
+    expect(model.invocations).toHaveLength(0);
+    expect(engine.snapshot()).toEqual(worldBefore);
+  });
+
+  it("does not invent missing recorded speech and preserves quoted historical context verbatim", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Missing recall");
+    const model = actionModel();
+    const speaker = engine.snapshot().entities.find((entity) =>
+      entity.id === "campaign.entity.nina"
+    )!;
+    const play = new DesktopPlaySession(engine, model, "campaign.entity.amelia", undefined, {
+      transcript: [
+        { id: "transcript.old", speaker: "npc", text: "Untyped older NPC response." },
+      ],
+    });
+    const view = await play.performTurn(`What did ${speaker.name} tell me yesterday?`);
+    expect(view.error).toBeUndefined();
+    expect(view.transcript.at(-1)?.text).toContain("won't invent");
+    expect(view.diagnostics?.performance.modelCallCount).toBe(0);
+    expect(model.invocations).toHaveLength(0);
+  });
+  it("reopens a saved transcript with optional speaker labels and safely handles older unlabeled rows", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    const client = createSqlJsClient(database);
+    const first = await createDesktopApplication(client).createWorld("Historical transcript");
+    const npc = first.engineSession().snapshot().entities.find((entity) =>
+      entity.id === "campaign.entity.nina"
+    )!;
+    const transcript = [
+      { id: "transcript.legacy", speaker: "npc", text: "Older unlabelled reply." },
+      { id: "transcript.named", speaker: "npc", speakerName: npc.name,
+        text: "The clock tower bell rang at noon." },
+    ];
+    await client.execute(
+      "UPDATE desktop_play_sessions SET transcript_json = ? WHERE world_id = ?",
+      [JSON.stringify(transcript), first.view().worldId],
+    );
+    const reopened = await createDesktopApplication(
+      createSqlJsClient(database)
+    ).openWorld(first.view().worldId);
+    expect(reopened.view().transcript).toEqual(transcript);
+    const worldBefore = reopened.engineSession().snapshot();
+    const recalled = await reopened.performTurn(`What did ${npc.name} say about the clock tower?`);
+    expect(recalled.error).toBeUndefined();
+    expect(recalled.transcript.at(-1)?.text).toContain(
+      "The clock tower bell rang at noon.",
+    );
+    expect(recalled.transcript.at(-1)?.text).not.toContain("Older unlabelled reply.");
+    expect(recalled.diagnostics?.performance.modelCallCount).toBe(0);
+    expect(reopened.engineSession().snapshot()).toEqual(worldBefore);
+  });
+
+  it("refreshes derived continuity at a meaningful foreground time boundary without a summary call", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Continuity time boundary");
+    await engine.applyActionPressureAssessment({ level: 1 });
+    const model = new ScriptedModelRuntime([
+      { id: "classify", match: { schemaId: "turn.declaration.v1" },
+        result: { kind: "structured", value: { kind: "interpreted", segments: [{
+          kind: "action", goal: "sort paperwork for one hour",
+          targetRefs: [], modes: ["manipulation"], statedMeans: ["sort paperwork"],
+          pressureLevel: 1, requestedHorizonMs: 7_200_000,
+        }] } } },
+      { id: "arguments", match: { schemaId: "player-action.tool-arguments.v1" },
+        result: { kind: "structured", value: {
+          base: 8, modifier: 2, difficulty: 9, durationMs: 3_600_000,
+        } } },
+      { id: "stop", match: { schemaId: "player-action.execution-decision.v1" },
+        result: { kind: "structured", value: { kind: "stop", reason: "goal-achieved" } } },
+      { id: "narrate", match: { operation: "player-action.narration.v1" },
+        result: { kind: "text", text: "You finish your hour of sorting paperwork." } },
+    ]);
+    const play = new DesktopPlaySession(engine, model, "campaign.entity.amelia", undefined);
+    const startTime = engine.snapshot().fictionalTime;
+    const view = await play.performTurn("I spend an hour sorting paperwork.");
+    expect(view.error).toBeUndefined();
+    expect(Date.parse(view.fictionalTime) - Date.parse(startTime)).toBeGreaterThanOrEqual(3_600_000);
+    expect(view.diagnostics?.continuityBoundary).toEqual(expect.objectContaining({
+      reason: "time-jump",
+      diagnostics: expect.objectContaining({
+        serializedCharacters: expect.any(Number),
+        selectedSourceCount: expect.any(Number),
+        modelRefreshCalls: 0,
+      }),
+    }));
+    expect(model.invocations.map((invocation) => invocation.schemaId))
+      .not.toContain("continuity.select.v1");
+  });
+
   it("bounds a long creative search to pressure 9 through a registered general handler", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Pressure-bound creative action");
