@@ -651,6 +651,14 @@ describe("NPC interaction and conversation", () => {
         },
       ),
     });
+    console.info("Phone-call fixture diagnostics", JSON.stringify({
+      stopReason: result.stopReason,
+      narrationError: result.narrationError,
+      modelSchemas: model.requests.map((candidate) =>
+        candidate.output.kind === "structured" ? candidate.output.schemaId : candidate.trace?.operation
+      ),
+      committedActionCount: result.committedActions.length,
+    }));
     expect(result.act.containsNonSpeechAction).toBe(true);
     expect(result.committedActions).toEqual([
       expect.objectContaining({
