@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalEventSchema,
+  assessContinuityFreshness,
+  condenseContinuityAtBoundary,
   createGameRuntime,
   createInMemoryPersistence,
   fictionalInstant,
@@ -9,6 +11,7 @@ import {
   recallContinuity,
   type WorldState,
   type ContinuityRequest,
+  type ModelRuntime,
 } from "@llm-ttrpg/engine";
 import { referenceGameDefinition } from "@llm-ttrpg/reference-game";
 
@@ -175,6 +178,86 @@ describe("LM-07 continuity source selection and perspective", () => {
     expect(recalled.sourceRefs.some((ref) => ref.id === privateEvent.id)).toBe(false);
     const noMatches = recallContinuity({ ...input(world), query: "unrecorded password" });
     expect(noMatches.summaryText).toBe("");
+  });
+
+  it("marks contradicted held summaries stale without leaking their previous text", async () => {
+    serial++;
+    const { world } = await fixture();
+    const req = input(world);
+    const original = projectContinuity(req).summary;
+    expect(assessContinuityFreshness(original, { ...req, worldRevision: 9 }).status).toBe("current");
+    world.actorSocialStates.find((item) => item.actorId === nina)!.goals[0]!.description =
+      "A new material goal replaces the old one.";
+    const old = assessContinuityFreshness(original, { ...req, worldRevision: 10 });
+    expect(old.status).toBe("stale");
+    expect(old.summaryText).toBe("");
+    expect(old.points).toEqual([]);
+    const current = projectContinuity({ ...req, worldRevision: 10 }).summary;
+    expect(current.summaryText).toContain("new material goal");
+  });
+
+  it("rejects fabricated model positions and retains mandatory obligations on optional condensation", async () => {
+    serial++;
+    const { world } = await fixture();
+    const social = world.actorSocialStates.find((item) => item.actorId === nina)!;
+    social.commitments.push({
+      id: "commitment.continuity.doctor",
+      label: "Bring the doctor's medicine",
+      start: world.fictionalTime,
+      end: fictionalInstant("2026-04-12T18:00:00.000Z"),
+      availabilityImpact: "occupied",
+      relatedEntityIds: [location],
+      tags: [],
+    });
+    for (let i = 0; i < 10; i++) {
+      social.memories.push({
+        id: `memory.continuity.condense-${i}`,
+        summary: `A different authorized errand ${i}`,
+        formedAt: world.fictionalTime,
+        salience: 0.5,
+        relatedEntityIds: [location],
+        sourceEventIds: [], tags: [],
+      });
+    }
+    const original = projectContinuity(input(world, nina, { kind: "actor", id: nina })).summary;
+    expect(original.points.length).toBeGreaterThan(6);
+    let invocations = 0;
+    const malicious = {
+      async generate() {
+        invocations++;
+        return { ok: true, output: { kind: "structured", value: { selectedPositions: [999] } } };
+      },
+    } as unknown as ModelRuntime;
+    const refused = await condenseContinuityAtBoundary({
+      summary: original, modelRuntime: malicious, trigger: "material-event",
+    });
+    expect(invocations).toBe(1);
+    expect(refused.summary).toEqual(original);
+    expect(refused.diagnostics.fallbackReason).toBe("unauthorized-source-position");
+
+    const required = original.points.flatMap((point, i) =>
+      /^(?:Active obligation:|Established personal history:)/.test(point.text) ? [i] : []);
+    const safeModel = {
+      async generate(request: { prompt: { input: string } }) {
+        invocations++;
+        expect(request.prompt.input).not.toContain("commitment.continuity.doctor");
+        return {
+          ok: true,
+          output: { kind: "structured", value: { selectedPositions: required } },
+        };
+      },
+    } as unknown as ModelRuntime;
+    const accepted = await condenseContinuityAtBoundary({
+      summary: original, modelRuntime: safeModel,
+      trigger: "scene-transition", maxCharacters: 900,
+    });
+    expect(accepted.diagnostics.usedModel).toBe(true);
+    expect(accepted.summary.summaryText).toContain("doctor's medicine");
+    expect(accepted.summary.points.length).toBe(required.length);
+    expect(accepted.summary.sourceRefs).toEqual(
+      accepted.summary.points.flatMap((point) => point.sourceRefs),
+    );
+    expect(invocations).toBe(2);
   });
 
   it("recreates a matching summary from saved authoritative state without storing the projection in canon", async () => {
