@@ -1499,6 +1499,156 @@ describe("desktop playable session integration", () => {
     expect(calls.some((call) => call.phase === "responding")).toBe(true);
   });
 
+  it("preserves action before speech and uses updated state for NPC response", async () => {
+    const model = generatedCampaignModel({
+      turnSteps: [
+        {
+          id: "route-conversation",
+          match: { schemaId: "turn.declaration.v1" },
+          result: (request: ModelRequest<unknown>) => {
+            const context = JSON.parse(request.prompt.context!) as {
+              situation: {
+                scene: Array<{ localRef: string; displayIdentity: string }>;
+              };
+            };
+            const recipientRef = context.situation.scene
+              .find((item) => item.displayIdentity !== "Rowan")?.localRef;
+            if (!recipientRef) throw new Error("Conversation recipient was absent from the authorized scene");
+            return { kind: "structured", value: { kind: "interpreted", segments: [
+              { kind: "action", text: "I check my footing", goal: "check footing",
+                modes: ["manipulation"], targetRefs: [], statedMeans: [],
+                pressureLevel: 3, requestedHorizonMs: 30_000 },
+              { kind: "communication", text: "ask what is happening at the loading dock",
+                recipientRefs: [recipientRef] },
+            ] } };
+          },
+        },
+        {
+          id: "approach-operation",
+          match: { schemaId: "player-action.execution-decision.v1" },
+          result: { kind: "structured", value: {
+            kind: "invoke-tool", toolId: "rules.actions.complete-routine-task",
+          } },
+        },
+        {
+          id: "approach-arguments",
+          match: { schemaId: "player-action.tool-arguments.v1" },
+          result: { kind: "structured", value: {
+            actionSummary: "Check footing before speaking", durationMs: 1_000,
+          } },
+        },
+        {
+          id: "approach-stop",
+          match: { schemaId: "player-action.execution-decision.v1" },
+          result: { kind: "structured", value: { kind: "stop", reason: "goal-achieved" } },
+        },
+        {
+          id: "approach-narration",
+          match: { operation: "player-action.narration.v1" },
+          result: { kind: "text", text: "You test your footing before speaking." },
+        },
+        {
+          id: "interpret-conversation",
+          match: { schemaId: "conversation.player-communication.v1" },
+          result: {
+            kind: "structured",
+            value: {
+              inputMode: "described",
+              exactQuoteFragments: [],
+              semanticKinds: ["question"],
+              authorizedContent: "Ask what is happening at the loading dock.",
+              testimonyIds: [],
+              materialCommitments: [],
+              deliveryIntent: "honest",
+              containsNonSpeechAction: false,
+              estimatedDurationMs: 1_000,
+              pressureLevel: 3,
+            },
+          },
+        },
+        {
+          id: "npc-response",
+          match: { schemaId: "conversation.npc-decision.v1" },
+          result: (request: ModelRequest<unknown>) => {
+            const input = JSON.parse(request.prompt.input) as { actorRef: string };
+            return {
+              kind: "structured",
+              value: {
+                actorId: input.actorRef,
+                interpretation: "The player asks about the immediate danger.",
+                responseKind: "speak",
+                intendedSpeechSemantics: "The NPC warns the player to stay back.",
+                speechSemanticKinds: ["assertion"],
+                estimatedSpeechDurationMs: 500,
+                disclosure: { mode: "none" },
+                sceneState: {
+                  actorId: input.actorRef,
+                  interpretation: "The danger at the loading dock has everyone's attention.",
+                  attention: ["the player", "the loading dock"],
+                  immediatePriorities: ["keep people safe"],
+                  stance: "worried",
+                  wants: ["avoid escalation"],
+                  reluctantToRevealIds: [],
+                  considering: ["whether to call for help"],
+                  unresolvedQuestions: ["what caused the frost"],
+                },
+                requiresAuthoritativeResolution: false,
+                stopReason: "answer-expected",
+              },
+            };
+          },
+        },
+        {
+          id: "extract-conversation",
+          match: { schemaId: "conversation.durable-extraction.v1" },
+          result: { kind: "structured", value: { proposals: [] } },
+        },
+        {
+          id: "narrate-conversation",
+          match: { operation: "conversation.narration.v1" },
+          result: { kind: "text", text: "The NPC looks toward the frost and tells you to stay back." },
+        },
+      ],
+    });
+    const { database } = await createMigratedSqlitePersistence();
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: model,
+      now: () => generatedStart,
+      randomId: () => "conversation-progress",
+      nextSeed: () => 0x1919_1919,
+    });
+    const play = await app.createWorld({
+      characterName: "Rowan",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      allowGeneratedDetails: true,
+    });
+    const phases: string[] = [];
+    const invocationsBeforeTurn = model.invocations.length;
+
+    const view = await play.performTurn("I check my footing, then ask what is happening at the loading dock.", (update) => {
+      if (update.turnProgress) phases.push(update.turnProgress.phase);
+    });
+
+    expect(phases).toContain("responding");
+    expect(view.error).toBeUndefined();
+    expect(view.transcript.map((entry) => entry.speaker)).toEqual([
+      "player", "narrator", "npc",
+    ]);
+    expect(await play.engineSession().eventHistory({
+      types: ["rules.routine-task-completed"],
+    })).toHaveLength(1);
+    expect((await play.engineSession().eventHistory({
+      types: ["rules.communication-recorded"],
+    })).length).toBeGreaterThan(0);
+    expect(view.turnProgress).toBeUndefined();
+    expect(view.busy).toBe(false);
+    const calls = view.diagnostics?.performance.calls ?? [];
+    expect(calls).toHaveLength(model.invocations.length - invocationsBeforeTurn);
+    expect(calls.filter((call) => call.schemaId === "turn.declaration.v1")).toHaveLength(1);
+    expect(calls.some((call) => call.schemaId === "conversation.npc-decision.v1")).toBe(true);
+    expect(calls.some((call) => call.phase === "responding")).toBe(true);
+  });
+
   it("infers an omitted investigation location instead of making the player answer a questionnaire", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Clarification continuation");
