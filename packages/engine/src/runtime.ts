@@ -1609,7 +1609,7 @@ function openSession(
           // Package-authored general fallbacks are selected by metadata,
           // never by guessed operation identifiers or tool-tree exploration.
           candidates = dependencies.game.operationRegistry.listAll()
-            .filter((operation) => operation.applicability?.generalFallback)
+            .filter((operation) => operation.generalFallback || operation.applicability?.generalFallback)
             .flatMap((operation) => {
               try {
                 return [dependencies.game.toolCatalog.inspectTool(
