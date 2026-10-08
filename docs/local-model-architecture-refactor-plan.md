@@ -52,7 +52,8 @@ Do not automatically label a GitHub issue Ready for Dev merely because it has be
 
 - **Batch 1 (specified):** [LM-01 — Turn diagnostics](https://github.com/herringvoices/llm-ttrpg/issues/46), [LM-02 — Compact model briefs](https://github.com/herringvoices/llm-ttrpg/issues/47), [LM-03 — Unified routing](https://github.com/herringvoices/llm-ttrpg/issues/48). GitHub issues are the authoritative, detailed ticket specifications; no separate ticket Markdown is maintained.
 - **Batch 2 (specified):** [LM-04 — Engine-owned mechanical derivation](https://github.com/herringvoices/llm-ttrpg/issues/49), [LM-05 — Lightweight NPC conversations](https://github.com/herringvoices/llm-ttrpg/issues/50), [LM-06 — Durable state materiality](https://github.com/herringvoices/llm-ttrpg/issues/51). Specifications are in the issues, not separate Markdown files.
-- **Next batch:** LM-07, LM-08, LM-09. Flesh these out directly as GitHub issues.
+- **Batch 3 (specified):** [LM-07 — Bounded continuity memory](https://github.com/herringvoices/llm-ttrpg/issues/52), [LM-08 — Boundary-driven campaign planning](https://github.com/herringvoices/llm-ttrpg/issues/53), [LM-09 — Compact campaign seed](https://github.com/herringvoices/llm-ttrpg/issues/54). These are the authoritative specifications; no parallel Markdown ticket file.
+- **Next batch:** LM-10, LM-11, LM-12. Flesh these out directly as GitHub issues.
 
 ## Backlog overview (high-level only)
 
@@ -206,6 +207,7 @@ Some work can run in parallel once shared contracts are agreed. Final implementa
 - **2026-10-08:** Baseline measurement and compact context contracts precede hot-path rewrite.
 - **2026-10-08:** Detailed specifications for LM-01 through LM-03 moved to GitHub issues #46–#48; the separate ticket Markdown file was retired. Future tickets should be authored directly as issues.
 - **2026-10-08:** Specified LM-04 through LM-06 directly as GitHub issues #49–#51, preserving ruleset authority, NPC knowledge boundaries, and event-dependent opening progression as explicit constraints.
+- **2026-10-08:** Specified LM-07 through LM-09 directly as GitHub issues #52–#54, distinguishing derived perspective-safe memory, sparse foreground planner triggers, and versioned compact campaign generation.
 
 ## Next discussion
 
