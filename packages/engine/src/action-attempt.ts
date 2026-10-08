@@ -49,10 +49,31 @@ export type PreparedActionAttempt =
 export type ActionAttemptPreparer =
   (request: PrepareActionAttemptRequest) => PreparedActionAttempt;
 
+const preparedActionAttemptSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("not-applicable") }).strict(),
+  z.object({
+    status: z.literal("ready"),
+    operationId: stableIdSchema,
+    input: z.unknown(),
+    derivation: jsonValueSchema,
+  }).strict(),
+  z.object({
+    status: z.literal("missing-required-data"),
+    required: z.array(z.string().trim().min(1)).min(1),
+    reason: z.string().trim().min(1),
+  }).strict(),
+  z.object({
+    status: z.literal("cannot-attempt"),
+    reason: z.string().trim().min(1),
+  }).strict(),
+]);
+
 export function validatePreparedActionAttempt(
   result: PreparedActionAttempt,
   requestedOperationId: string,
 ): PreparedActionAttempt {
+  // Registration alone does not grant authority to return arbitrary shapes.
+  preparedActionAttemptSchema.parse(result);
   if (result.status === "ready") {
     if (result.operationId !== requestedOperationId) {
       throw new Error("Ruleset preparer returned an unauthorized operation ID");
