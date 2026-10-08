@@ -12,6 +12,7 @@ import {
   type TextModelResult,
 } from "@llm-ttrpg/engine";
 import { contractTestGameDefinition } from "./support/contract-game.js";
+import { referenceGameDefinition, referenceSceneSource } from "@llm-ttrpg/reference-game";
 import { createMigratedSqlitePersistence } from "./support/sqlite.js";
 
 type QueuedAnswer = unknown | { failure: "invalid-output" | "timeout" };
@@ -664,5 +665,71 @@ describe("player action execution pipeline", () => {
     expect(resumeModel.requests).toHaveLength(0);
     expect((await persistence.actionRuns.load(session.worldId, actionRequest.actionId))?.status)
       .toBe("stopped");
+  });
+});
+
+describe("LM-04 reference ruleset mechanics without model-authored inputs", () => {
+  it("commits an improvised generic attempt with no mechanical-planning model call", async () => {
+    const persistence = createInMemoryPersistence();
+    let id = 0;
+    const runtime = createGameRuntime({
+      persistence,
+      wallClock: { now: () => "2042-01-01T00:00:00.000Z" },
+      idGenerator: { next: (kind) => `${kind}.attempt-${++id}` },
+      worldSeedSource: { nextSeed: () => 0x13579bdf },
+      game: loadGameDefinition(referenceGameDefinition),
+      context: { sceneSource: referenceSceneSource },
+    });
+    const session = await runtime.createWorld("Trusted improvised mechanics");
+    const basis = session.planningBasis();
+    const declaration = "I attempt a strange improvised signal.";
+    // For a registered generic handler, this fixture supplies only the stop
+    // choice and post-commit narration. No structured mechanics are authored.
+    const model = new QueueModelRuntime([
+      { kind: "stop", reason: "goal-achieved" },
+      "You try your improvised signal. The world responds.",
+    ]);
+    const result = await session.performPlayerAction({
+      actionId: "action.lm04.signal",
+      actorId: "campaign.entity.amelia",
+      declaration,
+      budget: { maxUnits: 50_000 },
+    }, {
+      modelRuntime: model,
+      registeredOnly: true,
+      preinterpreted: {
+        declaration,
+        goal: "Attempt an improvised signal",
+        targetIds: [],
+        modes: ["other"],
+        statedMeans: [],
+        pressureLevel: 6,
+        requestedHorizonMs: 10_000,
+        ...basis,
+      },
+    });
+    expect(result.kind).toBe("resolved");
+    if (result.kind !== "resolved") return;
+    expect(result.run.receipts).toHaveLength(1);
+    expect(result.run.receipts[0]?.toolId).toBe("rules.actions.resolve-action");
+    expect(result.trace.entries).toContainEqual(expect.objectContaining({
+      phase: "intent",
+      detail: expect.objectContaining({ stage: "ruleset-derived-mechanics" }),
+    }));
+    expect(model.requests.filter((entry) => entry.output.kind === "structured" &&
+      entry.output.schemaId === "player-action.tool-arguments.v1")).toHaveLength(0);
+    expect(model.requests.filter((entry) => entry.output.kind === "structured" &&
+      entry.output.schemaId === "player-action.intent-interpretation.v1")).toHaveLength(0);
+
+    const before = session.snapshot().randomness;
+    const again = await session.performPlayerAction({
+      actionId: "action.lm04.signal",
+      actorId: "campaign.entity.amelia",
+      declaration,
+      budget: { maxUnits: 50_000 },
+    }, { modelRuntime: new QueueModelRuntime([]), registeredOnly: true });
+    expect(again.kind).toBe("resolved");
+    expect(session.snapshot().randomness).toEqual(before);
+    expect(await session.eventHistory({ types: ["rules.action-resolved"] })).toHaveLength(1);
   });
 });
