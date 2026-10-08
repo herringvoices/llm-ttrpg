@@ -657,6 +657,9 @@ export async function performConversationTurn(
       act,
       durationMs: act.durationMs,
       scopeIds: [],
+      ...(request.extractDurableConsequences
+        ? { retainForConsequences: true }
+        : {}),
     },
   );
   let allEvents = await input.session.eventHistory();
@@ -812,6 +815,9 @@ export async function performConversationTurn(
           act: npcAct,
           durationMs: decision.estimatedSpeechDurationMs,
           scopeIds: [],
+          ...(request.extractDurableConsequences
+            ? { retainForConsequences: true }
+            : {}),
         },
       );
     }
