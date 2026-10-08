@@ -255,6 +255,8 @@ export function validatePlanningAssumptions(input: {
   readonly history?: readonly CanonicalEvent[];
   readonly worldRevision: number;
   readonly eventSequence: number;
+  /** When supplied, only assumptions on these changed authoritative sources are reevaluated. */
+  readonly changedReferences?: readonly GroundingReference[];
 }): AssumptionValidationResult {
   const plan = campaignPlanDocumentSchema.parse(input.plan);
   const catalog = createAuthoritativeGroundingCatalog(input.world, input.history ?? []);
@@ -265,6 +267,15 @@ export function validatePlanningAssumptions(input: {
     ...thread,
     assumptions: thread.assumptions.map((assumption) => {
       if (assumption.validation.kind === "heuristic") return assumption;
+      const reference = assumption.validation.reference;
+      if (input.changedReferences && !input.changedReferences.some((changed) =>
+        changed.kind === reference.kind && changed.id === reference.id
+      )) return assumption;
+      // Missing event data in a bounded query means unknown, not disproved.
+      if (input.changedReferences && reference.kind === "event" &&
+          !(input.history ?? []).some((event) => event.id === reference.id)) {
+        return { ...assumption, status: "unknown" as const };
+      }
       evaluatedIds.push(assumption.id);
       const resolved = catalog.resolve(assumption.validation.reference);
       const valid = assumption.validation.kind === "exists"
