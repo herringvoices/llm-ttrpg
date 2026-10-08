@@ -160,7 +160,9 @@ export async function classifyTurnDeclaration(input: {
           ? [...instructions, "The previous attempt was rejected for invalid local references, fidelity, or ordering. Correct the classification without inventing new information."]
           : instructions,
         context: brief.modelText,
-        input: input.declaration,
+        input: lastError
+          ? JSON.stringify({ declaration: input.declaration, rejectedClarification: lastError })
+          : input.declaration,
       },
       output: { kind: "structured", schemaId: "turn.declaration.v1", schema: interpretedTurnSchema },
       trace: { operation: "turn.declaration.v1" },
@@ -173,6 +175,15 @@ export async function classifyTurnDeclaration(input: {
       continue;
     }
     if (result.output.value.kind === "player-decision-required") {
+      const question = result.output.value.question;
+      // A concrete investigation is already actionable from the current
+      // visible scene; never ask the player to decide what the world reveals.
+      const unnecessary = /\\b(which|what) (?:location|place|room|object|tool)\\b/i.test(question) &&
+        /\\b(?:investigate|look|search|inspect|examine)\\b/i.test(input.declaration);
+      if (unnecessary && attempt === 0) {
+        lastError = question;
+        continue;
+      }
       return result.output.value;
     }
     try {
