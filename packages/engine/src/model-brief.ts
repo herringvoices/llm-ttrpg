@@ -131,7 +131,9 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
       localRef: element.localRef,
       displayIdentity: cleanText(element.displayIdentity, forbidden),
       category: element.category,
-      ...(element.summary
+      // Entity-authored summaries may mention a name the observer does not
+      // recognize. A masked identity gets only its authorized display label.
+      ...(element.summary && element.access.identityRecognized
         ? { summary: cleanText(element.summary, forbidden) }
         : {}),
     };
