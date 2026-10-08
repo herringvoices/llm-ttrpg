@@ -74,7 +74,7 @@ export const recordOpeningTurnEvidenceOperation: RulesOperation<
         causedByEventIds: [],
         origin: { kind: "rules-operation", id: "rules.progression.record-opening-turn-evidence" },
         payload: result,
-        access: "private",
+        access: "gm-only",
       }],
     };
   },
