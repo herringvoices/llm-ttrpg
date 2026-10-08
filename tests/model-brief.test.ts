@@ -92,6 +92,9 @@ describe("LM-02 compact model-facing briefs", () => {
       perspective: { kind: "actor" as const, id: bobId },
     };
     const brief = prepareModelBrief(request);
+    console.info(
+      `LM-02 scripted brief sample: before=${renderContextForModel(context).length} characters; after=${brief.modelText.length} characters`,
+    );
     expect(prepareModelBrief(request)).toEqual(brief);
     expect(brief.modelText.length).toBeLessThan(renderContextForModel(context).length);
     expect(brief.modelText).toContain("masked figure");
