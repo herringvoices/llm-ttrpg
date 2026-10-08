@@ -70,6 +70,9 @@ function cleanText(text: string, forbidden: readonly string[]): string {
   for (const id of forbidden) {
     if (id) safe = safe.split(id).join("[unavailable]");
   }
+  // Structured canonical identifiers have no business in player-facing prose,
+  // even when a receipt mentions an entity omitted from this particular scene.
+  safe = safe.replace(/\\b(?:campaign|generated|state|fixture|world|actor|npc|event|fact|document|source)\\.[a-z0-9][a-z0-9.-]*\\b/g, "[unavailable]");
   return safe.trim();
 }
 
@@ -102,6 +105,7 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
   const context = request.context;
   const perspective = request.perspective;
   if (
+    (purpose !== "npc-response" && perspective.kind !== "actor") ||
     (perspective.kind !== "actor" && perspective.kind !== "group") ||
     context.bootstrap.role !== "actor" ||
     context.situation.role !== "actor" ||
@@ -113,6 +117,13 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
   const maxCharacters = request.maxCharacters ?? DEFAULT_BUDGET[purpose];
   if (!Number.isInteger(maxCharacters) || maxCharacters <= 0) {
     throw new Error("Model brief budget must be a positive integer");
+  }
+  const focalCanonicalId = context.situation.focalActorRef
+    ? context.diagnostics.localReferences[context.situation.focalActorRef]
+    : undefined;
+  if (perspective.kind === "actor" && focalCanonicalId &&
+      focalCanonicalId !== perspective.id) {
+    throw new Error("Model brief focal actor must match its knowledge perspective");
   }
   const forbidden = [...new Set(Object.values(context.diagnostics.localReferences))];
   const requiredIds = new Set(request.requiredEntityIds ?? []);
