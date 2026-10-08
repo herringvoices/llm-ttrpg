@@ -824,6 +824,7 @@ export class DesktopPlaySession {
           : [];
       const segmentTraces: JsonValue[] = [];
       for (const [index, segment] of segments.entries()) {
+        const segmentStartingLocationId = this.view().currentLocationId;
         // IDs are derived from the persisted player transcript identity, not
         // random per-operation IDs. Each segment is a distinct action run.
         const segmentId = `action.${playerMessageId}.segment.${index + 1}`;
@@ -918,6 +919,11 @@ export class DesktopPlaySession {
               "The conversation committed, but narration was unavailable.");
             break;
           }
+          if (this.view().currentLocationId !== segmentStartingLocationId) {
+            // Scene-local cognition/remarks cannot follow the player into
+            // a different canonical place; durable world state is untouched.
+            this.workingConversation = undefined;
+          }
           continue;
         }
 
@@ -981,6 +987,9 @@ export class DesktopPlaySession {
           result.developmentSignal.operationIds.length > 0 ||
           result.developmentSignal.eventIds.length > 0;
         openingEvidenceEventIds.push(...result.developmentSignal.eventIds);
+        if (this.view().currentLocationId !== segmentStartingLocationId) {
+          this.workingConversation = undefined;
+        }
         turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
         if (result.narration) this.add("narrator", result.narration);
         else {
