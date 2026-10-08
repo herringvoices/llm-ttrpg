@@ -41,7 +41,7 @@ import {
   type ResolutionEnvelope,
   type ResolutionRequest,
 } from "./resolution.js";
-import { prepareModelBrief, resolveBriefReference } from "./model-brief.js";
+import { prepareModelBrief, redactModelBriefText, resolveBriefReference } from "./model-brief.js";
 import type { JsonValue } from "./json.js";
 import { jsonValueSchema } from "./json.js";
 import {
@@ -1378,7 +1378,7 @@ function openSession(
           elapsedMs: receipt.advanceTimeByMs,
           publicEvents: receipt.events
             .filter((event) => event.access === "public")
-            .map((event) => ({ type: event.type, summary: event.summary })),
+            .map((event) => ({ type: event.type, summary: redactModelBriefText(event.summary) })),
         }));
         const narrationBrief = prepareModelBrief({
           purpose: "narration",
@@ -1701,7 +1701,7 @@ function openSession(
                   advanceTimeByMs: receipt.advanceTimeByMs,
                   eventSummaries: receipt.events
                     .filter((event) => event.access === "public")
-                    .map((event) => project(event.summary)),
+                    .map((event) => redactModelBriefText(event.summary)),
                 };
               }),
             }),
