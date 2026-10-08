@@ -6,6 +6,7 @@ import {
   jsonValueSchema,
   observeModelRuntime,
   classifyTurnDeclaration,
+  projectContinuity,
   performConversationTurn,
   renderContextForModel,
   runPlannerPass,
@@ -424,10 +425,20 @@ export class DesktopPlaySession {
       declaration,
       budget: { maxUnits: ROUTING_CONTEXT_BUDGET_UNITS },
     });
+    const continuity = projectContinuity({
+      worldId: this.session.worldId,
+      world: this.session.snapshot(),
+      worldRevision: basis.worldRevision,
+      eventSequence: basis.eventSequence,
+      perspective: { kind: "actor", id: this.playerActorId },
+      scope: { kind: "actor", id: this.playerActorId },
+      maxCharacters: 1_000,
+    });
     return classifyTurnDeclaration({
       declaration,
       actorId: this.playerActorId,
       context,
+      continuity: continuity.summary,
       modelRuntime: this.requireModel(),
       ...basis,
     });
