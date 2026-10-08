@@ -60,6 +60,7 @@ export const operationMetadataSchema = z
     description: z.string().min(1),
     category: operationCategorySchema,
     applicability: operationApplicabilitySchema.optional(),
+    generalFallback: z.boolean().optional(),
   })
   .strict();
 export type OperationMetadata = z.infer<typeof operationMetadataSchema>;
