@@ -75,6 +75,8 @@ import {
   createContextQueryExecutionOptions,
   queryAuthorizationFromContext,
   renderContextForModel,
+  prepareModelBrief,
+  resolveBriefReference,
   type SceneSourceProvider,
 } from "./context.js";
 import type {
@@ -1129,9 +1131,9 @@ function openSession(
         );
       }
 
-      const orchestratorRequest = {
-        role: "orchestrator" as const,
-        perspective: { kind: "canonical" as const },
+      const actorModelRequest = {
+        role: "actor" as const,
+        perspective: { kind: "actor" as const, id: request.actorId },
         focalActorId: request.actorId,
         ...(request.locationId ? { locationId: request.locationId } : {}),
         declaration: request.declaration,
@@ -1146,13 +1148,24 @@ function openSession(
           world: state,
           worldRevision: revision,
           eventSequence,
-          request: orchestratorRequest,
+          request: actorModelRequest,
           ...(dependencies.context?.sceneSource
             ? { sceneSource: dependencies.context.sceneSource }
             : {}),
           ...(options.toolPolicy ? { toolPolicy: options.toolPolicy } : {}),
         });
-        record("context", { stage: "interpretation", usedUnits: context.diagnostics.usedUnits }, { worldRevision: revision });
+        const interpretationBrief = prepareModelBrief({
+          purpose: "action-interpretation",
+          perspective: { kind: "actor", id: request.actorId },
+          context,
+        });
+        record("context", {
+          stage: "interpretation",
+          projector: interpretationBrief.diagnostics.projector,
+          serializedCharacters: interpretationBrief.diagnostics.serializedCharacters,
+          requiredOverflow: interpretationBrief.diagnostics.requiredOverflow,
+          usedUnits: context.diagnostics.usedUnits,
+        }, { worldRevision: revision });
         let decision = await structuredModelDecision(
           options.modelRuntime,
           "player-action.intent-interpretation.v1",
@@ -1168,7 +1181,7 @@ function openSession(
               "Never ask the player to author an external outcome, sensory result, NPC response, creature reaction, or environmental change. Determining what the world does in response is the game engine's job.",
               "Never ask for confirmation, permission to begin, preferred ordering, preparation, or a choice whose answer the player already stated. Honor explicit sequencing words such as first, now, before, and then.",
             ],
-            context: renderContextForModel(context),
+            context: interpretationBrief.modelText,
             input: request.declaration,
           },
         );
@@ -1198,7 +1211,7 @@ function openSession(
                 "The focal actor reference identifies who is acting, not the target. Never return it as a target unless the declaration explicitly targets the actor themself.",
                 "Include every applicable action mode. A declaration that moves to a place and then performs a task normally has both movement and task modes.",
               ],
-              context: renderContextForModel(context),
+              context: interpretationBrief.modelText,
               input: JSON.stringify({
                 declaration: request.declaration,
                 rejectedClarification,
@@ -1235,9 +1248,10 @@ function openSession(
         let targetIds: string[];
         try {
           targetIds = interpretedDecision.targetRefs.map((reference) => {
-            const id = context.diagnostics.localReferences[reference];
-            if (!id) throw new Error(`Unknown or stale target reference: ${reference}`);
-            return id;
+            return resolveBriefReference(
+              interpretationBrief, reference,
+              { worldRevision: revision, eventSequence },
+            );
           });
         } catch (error) {
           record("rejection", { reason: error instanceof Error ? error.message : "Invalid target reference" });
@@ -1368,6 +1382,14 @@ function openSession(
             .filter((event) => event.access === "public")
             .map((event) => ({ type: event.type, summary: event.summary })),
         }));
+        const narrationBrief = prepareModelBrief({
+          purpose: "narration",
+          perspective: { kind: "actor", id: completed.actorId },
+          context: actorContext,
+          requiredEntityIds: completed.executableIntent.targetIds,
+          committedOutcomes: outcomes.flatMap((outcome) =>
+            outcome.publicEvents.map((event) => event.summary)),
+        });
         const narrationKind = completed.executableIntent.pressureLevel >= 7
           ? "immediate-danger"
           : completed.elapsedMs >= 10 * 60 * 1_000
@@ -1409,6 +1431,8 @@ function openSession(
           targetBand: narrationBand,
           targetCharacters: { minimum: minimumCharacters, maximum: maximumCharacters },
           sourceCategories: ["actor-visible-context", "committed-outcomes", "player-declaration"],
+          briefCharacters: narrationBrief.diagnostics.serializedCharacters,
+          briefOverflow: narrationBrief.diagnostics.requiredOverflow,
           contextOmissions: actorContext.diagnostics.decisions
             .filter((decision) => decision.decision !== "included")
             .map((decision) => ({
@@ -1430,7 +1454,7 @@ function openSession(
               "Use second person for the focal actor. If the committed outcomes are sparse, be concise instead of padding with invented attempts, complications, or details.",
               `Aim for at most ${maximumCharacters} characters (${narrationPreference}/${narrationBand}). The nominal ${minimumCharacters}-character lower bound is optional when the authoritative outcomes do not support that much detail.`,
             ],
-            context: renderContextForModel(actorContext),
+            context: narrationBrief.modelText,
             input: JSON.stringify({
               declaration: completed.declaration,
               goal: completed.executableIntent.goal,
@@ -1505,7 +1529,7 @@ function openSession(
           return narrate(run);
         }
         const contextRequest = {
-          ...orchestratorRequest,
+          ...actorModelRequest,
           executableIntent: run.executableIntent,
         };
         const coveredModes = new Set<SemanticActionMode>();
@@ -1584,7 +1608,20 @@ function openSession(
           ...(retrieved.length ? { retrieved } : {}),
           ...(options.toolPolicy ? { toolPolicy: options.toolPolicy } : {}),
         });
-        record("context", { stage: "execution", turn, usedUnits: context.diagnostics.usedUnits }, { worldRevision: revision });
+        const executionBrief = prepareModelBrief({
+          purpose: "operation-selection",
+          perspective: { kind: "actor", id: run.actorId },
+          context,
+          requiredEntityIds: run.executableIntent.targetIds,
+        });
+        record("context", {
+          stage: "execution",
+          turn,
+          projector: executionBrief.diagnostics.projector,
+          serializedCharacters: executionBrief.diagnostics.serializedCharacters,
+          requiredOverflow: executionBrief.diagnostics.requiredOverflow,
+          usedUnits: context.diagnostics.usedUnits,
+        }, { worldRevision: revision });
         const singleCandidateArgumentSchema = candidates.length === 1
           ? modelOperationInputSchema(
               dependencies.game.operationRegistry.get(candidates[0]!.id).inputSchema,
@@ -1625,7 +1662,7 @@ function openSession(
                 : []),
               `The action has ${Math.max(0, run.executableIntent.authorizedHorizonMs - run.elapsedMs)}ms of authorized fictional time remaining.`,
             ],
-            context: renderContextForModel(context),
+            context: executionBrief.modelText,
             input: JSON.stringify({
               declaration: run.declaration,
               goal: run.executableIntent.goal,
@@ -1645,7 +1682,7 @@ function openSession(
               pendingDeclaredModes,
               committedReceipts: run.receipts.map((receipt) => {
                 const reverse = new Map(
-                  Object.entries(context.diagnostics.localReferences)
+                  Object.entries(executionBrief.localReferences)
                     .map(([local, canonical]) => [canonical, local]),
                 );
                 const entityIds = new Set(state.entities.map((entity) => entity.id));
@@ -1662,9 +1699,11 @@ function openSession(
                 return {
                   sequence: receipt.sequence,
                   toolId: receipt.toolId,
-                  result: project(receipt.result),
+                  // Numerical receipt internals and non-public events stay engine-only.
                   advanceTimeByMs: receipt.advanceTimeByMs,
-                  eventSummaries: receipt.events.map((event) => event.summary),
+                  eventSummaries: receipt.events
+                    .filter((event) => event.access === "public")
+                    .map((event) => project(event.summary)),
                 };
               }),
             }),
@@ -1724,7 +1763,7 @@ function openSession(
                 "Return only arguments that satisfy the capability input schema; do not reconsider the tool choice or narrate.",
                 "Any action summary must restate only the submitted declaration and goal. Do not add later movement, an exit, dialogue, thoughts, failed attempts, or undeclared equipment.",
               ],
-              context: renderContextForModel(context),
+              context: executionBrief.modelText,
               input: JSON.stringify({
                 declaration: run.declaration,
                 goal: run.executableIntent.goal,
@@ -1845,9 +1884,15 @@ function openSession(
             decision.arguments,
             new Set(state.entities.map((entity) => entity.id)),
           );
+          for (const [alias] of Object.entries(executionBrief.localReferences)) {
+            // The alias table is scoped to the exact model-input snapshot.
+            resolveBriefReference(
+              executionBrief, alias, { worldRevision: revision, eventSequence },
+            );
+          }
           argumentsValue = replaceLocalReferences(
             decision.arguments,
-            context.diagnostics.localReferences,
+            executionBrief.localReferences,
           );
           if (binding.kind !== "engine-query") {
             argumentsValue = injectActor(argumentsValue, run.actorId);
