@@ -816,6 +816,7 @@ export class DesktopPlaySession {
             session: this.session,
             modelRuntime: this.requireModel(),
             bindings: referenceConversationBindings,
+            ordinaryFastPath: true,
             request: {
               turnId: `conversation.${playerMessageId}.segment.${index + 1}`,
               interactionId: this.workingConversation?.interactionId ?? `interaction.${playerMessageId}`,
