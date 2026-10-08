@@ -61,6 +61,8 @@ export const operationMetadataSchema = z
     category: operationCategorySchema,
     applicability: operationApplicabilitySchema.optional(),
     generalFallback: z.boolean().optional(),
+    /** Default retention expectation; validated mutations/events remain canonical. */
+    retentionClass: z.enum(["ephemeral", "continuity", "canonical"]).optional(),
   })
   .strict();
 export type OperationMetadata = z.infer<typeof operationMetadataSchema>;
@@ -485,6 +487,19 @@ function validateOperationResult<TResult>(
   const proposedEvents = z
     .array(proposedEventSchema)
     .parse(outcome.proposedEvents);
+
+  // A package cannot label a result as transient and also write canonical
+  // effects. This is an assertion, never automatic event deletion.
+  const retentionClass = "metadata" in operation &&
+    typeof operation.metadata === "object" && operation.metadata !== null
+    ? (operation.metadata as OperationMetadata).retentionClass
+    : undefined;
+  if (retentionClass === "ephemeral" &&
+    (proposedMutations.length > 0 || proposedEvents.length > 0)) {
+    throw new OperationValidationError(
+      "An ephemeral operation cannot emit canonical mutations or events",
+    );
+  }
 
   return {
     result,
