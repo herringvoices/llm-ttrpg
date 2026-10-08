@@ -40,6 +40,10 @@ const rulesetBoundarySchema = z
     identity: componentIdentitySchema,
     description: z.string().min(1),
     operations: z.array(z.unknown()),
+    prepareActionAttempt: z.custom<import("./action-attempt.js").ActionAttemptPreparer>(
+      (value) => typeof value === "function",
+      "Ruleset action preparer must be a function",
+    ).optional(),
     eventTypes: z.array(z.unknown()),
     toolCatalog: z.unknown().optional(),
     worldSimulation: worldSimulationBoundarySchema.optional(),
