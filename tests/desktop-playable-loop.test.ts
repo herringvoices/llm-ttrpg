@@ -1501,6 +1501,7 @@ describe("desktop playable session integration", () => {
 
   it("preserves action before speech and uses updated state for NPC response", async () => {
     const model = generatedCampaignModel({
+      openingSituation: { manifestationTargetTurn: 3, manifestationDeadlineTurns: 3 },
       turnSteps: [
         {
           id: "route-conversation",
