@@ -102,6 +102,47 @@ function recordDelta(before: WorldRecordCounts, after: WorldRecordCounts): World
   };
 }
 
+function aggregatePerformance(
+  turnId: string,
+  startedAt: number,
+  calls: readonly ModelCallDiagnostic[],
+  turnOutcome: TurnPerformanceDiagnostic["outcome"],
+): TurnPerformanceDiagnostic {
+    const totalWallMs = Math.max(0, nowMs() - startedAt);
+    const modelWorkMs = calls.reduce((sum, call) => sum + call.elapsedWallMs, 0);
+    const countsByPhase: Record<string, number> = {};
+    const attempts = new Map<string, number>();
+    const measuredCalls = calls.map((call) => {
+      countsByPhase[call.phase] = (countsByPhase[call.phase] ?? 0) + 1;
+      const key = `${call.phase}:${call.operation ?? ""}:${call.schemaId ?? ""}`;
+      const attemptIndex = (attempts.get(key) ?? 0) + 1;
+      attempts.set(key, attemptIndex);
+      return { ...call, attemptIndex };
+    });
+    const reportedInput = calls.filter((call) => call.inputTokens !== undefined);
+    const reportedOutput = calls.filter((call) => call.outputTokens !== undefined);
+    const performance: TurnPerformanceDiagnostic = {
+      turnId,
+      totalWallMs,
+      modelWorkMs,
+      modelCallCount: calls.length,
+      failedModelCallCount: calls.filter((call) => call.status !== "ok").length,
+      callsByPhase: countsByPhase,
+      calls: measuredCalls,
+      ...(reportedInput.length
+        ? { reportedInputTokens: reportedInput.reduce((sum, call) => sum + call.inputTokens!, 0) }
+        : {}),
+      ...(reportedOutput.length
+        ? { reportedOutputTokens: reportedOutput.reduce((sum, call) => sum + call.outputTokens!, 0) }
+        : {}),
+      callsMissingInputTokens: calls.length - reportedInput.length,
+      callsMissingOutputTokens: calls.length - reportedOutput.length,
+      promptCharacters: calls.reduce((sum, call) => sum + call.promptCharacters, 0),
+      outcome: turnOutcome,
+    };
+    return performance;
+}
+
 export interface TurnDiagnostics {
   readonly declaration: string;
   readonly route: "action" | "conversation";
@@ -142,6 +183,7 @@ export interface PlaySessionView {
   readonly canRetryOpeningManifestation: boolean;
   readonly error?: string;
   readonly diagnostics?: TurnDiagnostics;
+  readonly recentPerformance?: readonly TurnPerformanceDiagnostic[];
   readonly openingProgression?: {
     readonly playerTurnsSinceStart: number;
     readonly manifestationDeadlineTurns: 3;
@@ -244,6 +286,34 @@ export class DesktopPlaySession {
     return [...this.recentPerformanceEntries];
   }
 
+  private recordPerformance(performance: TurnPerformanceDiagnostic): void {
+    try {
+      this.recentPerformanceEntries.push(performance);
+      if (this.recentPerformanceEntries.length > 20) this.recentPerformanceEntries.shift();
+    } catch {
+      // Observer-only; do not affect the caller.
+    }
+  }
+
+  private recordRetryPerformance(
+    turnId: string,
+    startedAt: number,
+    calls: readonly ModelCallDiagnostic[],
+  ): void {
+    this.activeCalls = undefined;
+    if (!this.diagnosticsEnabled) return;
+    try {
+      this.recordPerformance(aggregatePerformance(
+        turnId,
+        startedAt,
+        calls,
+        this.lastError ? "failed" : "resolved",
+      ));
+    } catch {
+      // Instrumentation must not affect narration retry.
+    }
+  }
+
   engineSession(): GameSession {
     return this.session;
   }
@@ -277,6 +347,7 @@ export class DesktopPlaySession {
       ...(this.turnProgress ? { turnProgress: this.turnProgress } : {}),
       ...(this.lastError ? { error: this.lastError } : {}),
       ...(this.lastDiagnostics ? { diagnostics: this.lastDiagnostics } : {}),
+      ...(this.diagnosticsEnabled ? { recentPerformance: this.recentPerformance() } : {}),
       ...(this.openingProgression
         ? {
             openingProgression: {
@@ -827,38 +898,7 @@ export class DesktopPlaySession {
           const afterBasis = this.session.planningBasis();
           const beforeCounts = recordCounts(beforeWorld, beforeBasis.eventSequence);
           const afterCounts = recordCounts(after, afterBasis.eventSequence);
-          const totalWallMs = Math.max(0, nowMs() - startedAt);
-          const modelWorkMs = calls.reduce((sum, call) => sum + call.elapsedWallMs, 0);
-          const countsByPhase: Record<string, number> = {};
-          const attempts = new Map<string, number>();
-          const measuredCalls = calls.map((call) => {
-            countsByPhase[call.phase] = (countsByPhase[call.phase] ?? 0) + 1;
-            const key = `${call.phase}:${call.operation ?? ""}:${call.schemaId ?? ""}`;
-            const attemptIndex = (attempts.get(key) ?? 0) + 1;
-            attempts.set(key, attemptIndex);
-            return { ...call, attemptIndex };
-          });
-          const reportedInput = calls.filter((call) => call.inputTokens !== undefined);
-          const reportedOutput = calls.filter((call) => call.outputTokens !== undefined);
-          const performance: TurnPerformanceDiagnostic = {
-            turnId,
-            totalWallMs,
-            modelWorkMs,
-            modelCallCount: calls.length,
-            failedModelCallCount: calls.filter((call) => call.status !== "ok").length,
-            callsByPhase: countsByPhase,
-            calls: measuredCalls,
-            ...(reportedInput.length
-              ? { reportedInputTokens: reportedInput.reduce((sum, call) => sum + call.inputTokens!, 0) }
-              : {}),
-            ...(reportedOutput.length
-              ? { reportedOutputTokens: reportedOutput.reduce((sum, call) => sum + call.outputTokens!, 0) }
-              : {}),
-            callsMissingInputTokens: calls.length - reportedInput.length,
-            callsMissingOutputTokens: calls.length - reportedOutput.length,
-            promptCharacters: calls.reduce((sum, call) => sum + call.promptCharacters, 0),
-            outcome: turnOutcome,
-          };
+          const performance = aggregatePerformance(turnId, startedAt, calls, turnOutcome);
           this.lastDiagnostics = {
             declaration,
             route: routeKind,
@@ -882,8 +922,7 @@ export class DesktopPlaySession {
             },
             performance,
           };
-          this.recentPerformanceEntries.push(performance);
-          if (this.recentPerformanceEntries.length > 20) this.recentPerformanceEntries.shift();
+          this.recordPerformance(performance);
         } catch {
           // Diagnostics are not authoritative; never convert a successful turn
           // into an error because measurement failed.
@@ -895,6 +934,10 @@ export class DesktopPlaySession {
 
   async retryNarration(onProgress?: TurnProgressListener): Promise<PlaySessionView> {
     if (this.active) throw new Error("A player turn is already running");
+    const startedAt = nowMs();
+    const retryId = `narration-retry.${crypto.randomUUID()}`;
+    const calls: ModelCallDiagnostic[] = [];
+    if (this.diagnosticsEnabled) this.activeCalls = calls;
     if (
       this.openingProgression &&
       !this.openingProgression.firstPowerManifested &&
@@ -915,6 +958,7 @@ export class DesktopPlaySession {
         this.active = false;
         this.turnProgress = undefined;
         await this.persistPresentation().catch(() => undefined);
+        this.recordRetryPerformance(retryId, startedAt, calls);
       }
       return this.view();
     }
@@ -934,10 +978,14 @@ export class DesktopPlaySession {
         this.active = false;
         this.turnProgress = undefined;
         await this.persistPresentation().catch(() => undefined);
+        this.recordRetryPerformance(retryId, startedAt, calls);
       }
       return this.view();
     }
-    if (!this.lastActionRequest) throw new Error("There is no action narration to retry");
+    if (!this.lastActionRequest) {
+      this.activeCalls = undefined;
+      throw new Error("There is no action narration to retry");
+    }
     this.active = true;
     this.lastError = undefined;
     this.reportTurnProgress("presenting", onProgress);
@@ -953,6 +1001,7 @@ export class DesktopPlaySession {
     } finally {
       this.active = false;
       this.turnProgress = undefined;
+      this.recordRetryPerformance(retryId, startedAt, calls);
     }
     return this.view();
   }
