@@ -62,6 +62,7 @@ export const completeRoutineTaskOperation: RulesOperation<
       proposedMutations: [],
       // Ordinary no-effect work consumes time and has a committed execution
       // receipt. It is not itself a durable narrative world event.
-      proposedEvents: [],    };
+      proposedEvents: [],
+    };
   },
 };
