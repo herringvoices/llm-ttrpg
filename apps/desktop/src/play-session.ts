@@ -608,7 +608,12 @@ export class DesktopPlaySession {
       throw new Error("The player has no grounded skill available for Level 1 allocation");
     }
     const historyBefore = await this.session.eventHistory();
-    const evidenceIdSet = new Set(evidenceEventIds);
+    const evidenceIdSet = new Set([
+      ...evidenceEventIds,
+      ...(state.manifestationEvidenceEventId
+        ? [state.manifestationEvidenceEventId]
+        : []),
+    ]);
     const evidence = [...historyBefore].reverse().find((event) =>
       evidenceIdSet.has(event.id)
     );
@@ -667,7 +672,13 @@ export class DesktopPlaySession {
       ...(evidenceEventId ? { manifestationEvidenceEventId: evidenceEventId } : {}),
     });
     await this.persistPresentation();
-    if (nextTurns >= state.manifestationTargetTurn) {
+    if (
+      nextTurns >= state.manifestationTargetTurn &&
+      (evidenceEventIds.length > 0 || Boolean(state.manifestationEvidenceEventId))
+    ) {
+      // Routine speech has no material event. An opening turn with no
+      // authoritative evidence cannot be used to force an Awakening.
+      // An earlier opening event remains available through persisted state.
       await this.ensureOpeningManifestation(evidenceEventIds, listener);
     }
   }
