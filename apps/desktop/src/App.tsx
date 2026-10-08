@@ -27,6 +27,10 @@ export function App({ application }: { readonly application: DesktopApplication 
   const [generationProgress, setGenerationProgress] = useState<CampaignCreationProgress>();
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const [openingWorldId, setOpeningWorldId] = useState<string>();
+  const [openError, setOpenError] = useState<{
+    readonly worldId: string;
+    readonly message: string;
+  }>();
   const [deletingWorldId, setDeletingWorldId] = useState<string>();
   const [playSession, setPlaySession] = useState<DesktopPlaySession>();
   const [playView, setPlayView] = useState<PlaySessionView>();
@@ -129,6 +133,7 @@ export function App({ application }: { readonly application: DesktopApplication 
   async function openWorld(worldId: string) {
     if (openingWorldId || deletingWorldId) return;
     setOpeningWorldId(worldId);
+    setOpenError(undefined);
     setMessage("Opening campaign…");
     try {
       const session = await application.openWorld(worldId);
@@ -138,7 +143,11 @@ export function App({ application }: { readonly application: DesktopApplication 
       setPlayView(session.view());
       setPlayView(await pending);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to open campaign");
+      const errorMessage = error instanceof Error
+        ? error.message
+        : "Unable to open campaign";
+      setMessage(errorMessage);
+      setOpenError({ worldId, message: errorMessage });
     } finally {
       setOpeningWorldId(undefined);
     }
@@ -325,8 +334,10 @@ export function App({ application }: { readonly application: DesktopApplication 
 
         <div className="secondary-actions">
           <button disabled={playView.busy} onClick={() => void run(() => playSession.passThreeDaysAndCatchUp())}>Pass three days and catch up</button>
-          {playView.diagnostics?.narrationStatus === "failed" && (
-            <button disabled={playView.busy} onClick={() => void run(() => playSession.retryNarration(setPlayView))}>Retry narration</button>
+          {(playView.diagnostics?.narrationStatus === "failed" || playView.canRetryOpeningManifestation) && (
+            <button disabled={playView.busy} onClick={() => void run(() => playSession.retryNarration(setPlayView))}>
+              {playView.canRetryOpeningManifestation ? "Retry Awakening" : "Retry narration"}
+            </button>
           )}
         </div>
 
@@ -537,6 +548,11 @@ export function App({ application }: { readonly application: DesktopApplication 
                   >
                     {deletingWorldId === world.id ? "Deleting…" : "Delete"}
                   </button>
+                  {openError?.worldId === world.id && (
+                    <small className="draft-error" role="alert">
+                      Unable to open: {openError.message}
+                    </small>
+                  )}
                 </div>
               </li>
             ))}

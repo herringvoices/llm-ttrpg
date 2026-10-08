@@ -15,20 +15,24 @@ import { resolutionPathSchema } from "./resolution.js";
 import { semanticActionModeSchema, semanticActionSchema } from "./semantic-action.js";
 import { fictionalDurationMsSchema } from "./time.js";
 
+export const interpretedIntentDecisionSchema = z.object({
+  kind: z.literal("interpreted"),
+  goal: z.string().trim().min(1),
+  targetRefs: z.array(stableIdSchema),
+  modes: z.array(semanticActionModeSchema).min(1).default(["other"]),
+  statedMeans: z.array(z.string().trim().min(1)).max(8).default([]),
+  requestedHorizonMs: fictionalDurationMsSchema,
+  pressureLevel: actionPressureLevelSchema,
+}).strict();
+
+export const playerDecisionRequiredSchema = z.object({
+  kind: z.literal("player-decision-required"),
+  question: z.string().trim().min(1),
+}).strict();
+
 export const intentInterpretationDecisionSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("interpreted"),
-    goal: z.string().trim().min(1),
-    targetRefs: z.array(stableIdSchema),
-    modes: z.array(semanticActionModeSchema).min(1).default(["other"]),
-    statedMeans: z.array(z.string().trim().min(1)).max(8).default([]),
-    requestedHorizonMs: fictionalDurationMsSchema,
-    pressureLevel: actionPressureLevelSchema,
-  }).strict(),
-  z.object({
-    kind: z.literal("player-decision-required"),
-    question: z.string().trim().min(1),
-  }).strict(),
+  interpretedIntentDecisionSchema,
+  playerDecisionRequiredSchema,
 ]);
 export type IntentInterpretationDecision = z.infer<
   typeof intentInterpretationDecisionSchema

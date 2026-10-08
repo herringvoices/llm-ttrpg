@@ -643,9 +643,12 @@ mechanical constraints. The engine assigns stable IDs and deterministically cons
 persisted entity, actor-social-state, timestamps, constraint ownership, and provenance records.
 NPC generation receives only the accepted locality, institutions, normalized player material, and
 the concise player context it needs; it does not re-serialize the full accumulated working state.
-This stage has a bounded 1,536-token response and no automatic second model pass. A timeout or bad
-proposal therefore returns to the durable checkpoint at the NPC step instead of spending another
-long attempt or discarding the already accepted world.
+This stage has a bounded 1,024-token response and creates only one or two seed NPCs. Each seed
+contains a name, a short summary, one or two simulation reasons, and one or two immediate goals.
+Relationships, memories, commitments, and further mechanical detail remain sparse until actual
+play establishes them through interaction. If the response still reaches its token limit, a
+smaller recovery request runs once and then falls back to one deterministic local contact rather
+than discarding the already accepted world.
 
 Draft resume includes a narrowly scoped compatibility normalization for early generated drafts
 whose pressure/process `scopeId` values used the generation schema identifiers

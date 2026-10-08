@@ -10,10 +10,12 @@ import {
   loadGameDefinition,
   renderContextForModel,
   type CampaignPlanDocument,
+  type ContextPackage,
   type DeleteWorldResult,
   type GameSession,
   type ModelRuntime,
   type PersistencePorts,
+  type WorldState,
   type WorldMetadata,
 } from "@llm-ttrpg/engine";
 import {
@@ -22,6 +24,7 @@ import {
   createStartingRegionProposalModel,
   ensureOpeningCreature,
   generateStartingRegion,
+  normalizeOpeningSituationCandidate,
   openingBriefFromCampaign,
   openingIncidentProposalSchema,
   openingProgressionStateSchema,
@@ -39,6 +42,7 @@ import {
   type StartingRegionRequest,
   type StartingRegionSeed,
   type StartingRegionWorkingState,
+  type OpeningIncidentProposal,
 } from "@llm-ttrpg/reference-game";
 import { openApplicationDatabase } from "./database.js";
 import {
@@ -192,6 +196,114 @@ const generatedPackageDescriptorSchema = z.object({
   openingProposal: openingIncidentProposalSchema.optional(),
 }).strict();
 type GeneratedPackageDescriptor = z.infer<typeof generatedPackageDescriptorSchema>;
+
+function parseGeneratedPackageDescriptor(value: unknown): GeneratedPackageDescriptor {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return generatedPackageDescriptorSchema.parse(value);
+  }
+  const descriptor = value as Record<string, unknown>;
+  if (!descriptor.seed || typeof descriptor.seed !== "object" || Array.isArray(descriptor.seed)) {
+    return generatedPackageDescriptorSchema.parse(value);
+  }
+  const seed = descriptor.seed as Record<string, unknown>;
+  const normalizedOpening = normalizeOpeningSituationCandidate(
+    seed.openingSituation,
+    {
+      creatures: Array.isArray(seed.creatures)
+        ? seed.creatures as StartingRegionSeed["creatures"]
+        : undefined,
+      pressures: Array.isArray(seed.pressures)
+        ? seed.pressures as StartingRegionSeed["pressures"]
+        : undefined,
+    },
+  );
+  return generatedPackageDescriptorSchema.parse({
+    ...descriptor,
+    seed: { ...seed, openingSituation: normalizedOpening },
+  });
+}
+
+function rebindOpeningIncidentReferences(
+  proposalValue: OpeningIncidentProposal,
+  context: ContextPackage,
+  seed: StartingRegionSeed,
+  world: WorldState,
+): OpeningIncidentProposal {
+  const proposal = openingIncidentProposalSchema.parse(proposalValue);
+  const referenceByEntityId = new Map(
+    Object.entries(context.diagnostics.localReferences).map(([ref, entityId]) => [
+      entityId,
+      ref,
+    ]),
+  );
+  const validRef = (ref: string): boolean =>
+    Boolean(context.diagnostics.localReferences[ref]);
+  const requireEntityRef = (entityId: string | undefined, label: string): string => {
+    const ref = entityId ? referenceByEntityId.get(entityId) : undefined;
+    if (!ref) throw new Error(`Generated opening cannot resolve its ${label}`);
+    return ref;
+  };
+  const creatureId = seed.creatures.find((creature) =>
+    creature.nearTermPlayerFacing && creature.threatEnvelope
+  )?.entity.id ?? seed.creatures[0]?.entity.id;
+  const creatureEntity = world.entities.find((entity) => entity.id === creatureId);
+  const creatureContext = creatureEntity?.data.context &&
+      typeof creatureEntity.data.context === "object" &&
+      !Array.isArray(creatureEntity.data.context)
+    ? creatureEntity.data.context as Record<string, unknown>
+    : undefined;
+  const currentLocationValue = world.facts.find((fact) =>
+    fact.subjectId === seed.playerContext.entity.id &&
+    fact.predicate === "actor.current-location"
+  )?.value;
+  const currentLocationId = typeof creatureContext?.locationId === "string"
+    ? creatureContext.locationId
+    : typeof currentLocationValue === "string"
+      ? currentLocationValue
+      : seed.playerContext.homeLocationId;
+  const locationRef = validRef(proposal.incident.locationRef)
+    ? proposal.incident.locationRef
+    : requireEntityRef(currentLocationId, "incident location");
+  const playerRef = requireEntityRef(seed.playerContext.entity.id, "player actor");
+  const creatureRef = validRef(proposal.creature.entityRef)
+    ? proposal.creature.entityRef
+    : requireEntityRef(creatureId, "opening creature");
+  const uniqueRefs = (refs: readonly string[], required: readonly string[]) =>
+    [...new Set([...refs.filter(validRef), ...required])];
+
+  return openingIncidentProposalSchema.parse({
+    ...proposal,
+    incident: {
+      ...proposal.incident,
+      locationRef,
+      involvedRefs: uniqueRefs(proposal.incident.involvedRefs, [
+        playerRef,
+        creatureRef,
+      ]),
+      groundingRefs: uniqueRefs(proposal.incident.groundingRefs, [
+        locationRef,
+        creatureRef,
+      ]),
+      contactObject: {
+        ...proposal.incident.contactObject,
+        wielderRef: validRef(proposal.incident.contactObject.wielderRef)
+          ? proposal.incident.contactObject.wielderRef
+          : playerRef,
+      },
+    },
+    creature: { ...proposal.creature, entityRef: creatureRef },
+    ...(proposal.gateFixture
+      ? {
+          gateFixture: {
+            ...proposal.gateFixture,
+            entranceRef: validRef(proposal.gateFixture.entranceRef)
+              ? proposal.gateFixture.entranceRef
+              : locationRef,
+          },
+        }
+      : {}),
+  });
+}
 
 const campaignGenerationStages = [
   ["normalize", "Understanding your setup"],
@@ -399,7 +511,7 @@ async function rebuildGeneratedGame(
     persistence: PersistencePorts,
   ) => Parameters<typeof createGameRuntime>[0],
 ) {
-  const descriptor = generatedPackageDescriptorSchema.parse(descriptorValue);
+  const descriptor = parseGeneratedPackageDescriptor(descriptorValue);
   const baseCampaign = compileStartingRegionCampaign(
     descriptor.request,
     descriptor.seed,
@@ -432,7 +544,12 @@ async function rebuildGeneratedGame(
       setting: referenceGameDefinition.setting,
       world: temporary.snapshot(),
       context,
-      proposal: descriptor.openingProposal,
+      proposal: rebindOpeningIncidentReferences(
+        descriptor.openingProposal,
+        context,
+        descriptor.seed,
+        temporary.snapshot(),
+      ),
     });
   } else if (
     opening.openingMode === "supernatural-inciting-incident" &&
@@ -653,12 +770,24 @@ export function createDesktopApplication(
     session: GameSession,
     row: DesktopSessionRow,
   ): Promise<DesktopPlaySession> {
+    const generatedDescriptor = row.generated_package_json
+      ? parseGeneratedPackageDescriptor(JSON.parse(row.generated_package_json))
+      : undefined;
     const transcript = z.array(transcriptEntrySchema).parse(
       JSON.parse(row.transcript_json),
     ) as TranscriptEntry[];
-    const openingProgression = row.opening_progression_json
-      ? openingProgressionStateSchema.parse(JSON.parse(row.opening_progression_json))
+    const rawOpeningProgression = row.opening_progression_json
+      ? JSON.parse(row.opening_progression_json) as unknown
       : undefined;
+    const openingProgression = rawOpeningProgression && generatedDescriptor
+      ? openingProgressionStateSchema.parse({
+          ...(rawOpeningProgression as Record<string, unknown>),
+          manifestationOpportunity:
+            generatedDescriptor.seed.openingSituation.manifestationOpportunity,
+        })
+      : rawOpeningProgression
+        ? openingProgressionStateSchema.parse(rawOpeningProgression)
+        : undefined;
     return new DesktopPlaySession(
       session,
       options.modelRuntime,
@@ -670,11 +799,11 @@ export function createDesktopApplication(
         ...(openingProgression ? { openingProgression } : {}),
       },
       presentationPersistence,
-      row.generated_package_json
+      generatedDescriptor
         ? () => createOpeningNarration(
             session,
             row,
-            generatedPackageDescriptorSchema.parse(JSON.parse(row.generated_package_json!)),
+            generatedDescriptor,
           )
         : undefined,
     );
@@ -962,7 +1091,7 @@ export function createDesktopApplication(
       const session = await createGameRuntime(dependencies(game)).createWorld(stored.name);
       const playerActorId = completed.seed.playerContext.entity.id;
       const localityScopeId = `scope.${completed.seed.locality.id}`;
-      const descriptor = generatedPackageDescriptorSchema.parse({
+      const descriptor = parseGeneratedPackageDescriptor({
         request,
         seed: completed.seed,
         diagnostics: completed.diagnostics,
@@ -1102,7 +1231,7 @@ export function createDesktopApplication(
       }
       const game = row.generated_package_json
         ? await rebuildGeneratedGame(
-            generatedPackageDescriptorSchema.parse(
+            parseGeneratedPackageDescriptor(
               JSON.parse(row.generated_package_json),
             ),
             dependencies,

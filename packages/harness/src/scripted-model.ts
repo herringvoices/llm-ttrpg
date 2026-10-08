@@ -146,7 +146,7 @@ export class ScriptedModelRuntime implements ModelRuntime {
         ok: false,
         error: {
           kind: "runtime-unavailable",
-          message: "No scripted model step matched this invocation",
+          message: `No scripted model step matched this invocation (${request.output.kind === "structured" ? request.output.schemaId : request.trace?.operation ?? "text"})`,
         },
         metadata,
       };

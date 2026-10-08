@@ -85,6 +85,173 @@ const request = {
 } as const;
 
 describe("player action execution pipeline", () => {
+  it("rejects a clarification that merely reconfirms an explicit committed action", async () => {
+    const { runtime } = makeRuntime();
+    const session = await runtime.createWorld("Committed action clarification guard");
+    const model = new QueueModelRuntime([
+      {
+        kind: "player-decision-required",
+        question: "Do you want to fix the shower now, or get parts first?",
+      },
+      {
+        kind: "interpreted",
+        goal: "fix the shower now",
+        targetRefs: [],
+        modes: ["manipulation"],
+        statedMeans: ["maintenance tools"],
+        requestedHorizonMs: 60_000,
+        pressureLevel: 3,
+      },
+      {
+        kind: "invoke-tool",
+        toolId: "test.actions.resolve-effort",
+        arguments: { base: 8, modifier: 2, difficulty: 7, durationMs: 1_000 },
+      },
+      { kind: "stop", reason: "goal-achieved" },
+      "You tighten the fitting and the leak stops.",
+    ]);
+
+    const result = await session.performPlayerAction({
+      ...request,
+      actionId: "action.explicit-commitment",
+      declaration: "I decide to fix the leaking shower now.",
+    }, { modelRuntime: model });
+
+    expect(result.kind).toBe("resolved");
+    if (result.kind !== "resolved") throw new Error("Expected resolved action");
+    expect(result.narration).toBe("You tighten the fitting and the leak stops.");
+    expect(result.run.receipts).toHaveLength(1);
+    expect(model.requests.filter((entry) =>
+      entry.output.kind === "structured" &&
+      entry.output.schemaId === "player-action.intent-interpretation.v1"
+    )).toHaveLength(2);
+    expect(result.trace.entries).toContainEqual(expect.objectContaining({
+      phase: "model",
+      detail: expect.objectContaining({
+        forcedExecutableInterpretation: true,
+        rejectedClarification: "Do you want to fix the shower now, or get parts first?",
+      }),
+    }));
+  });
+
+  it("rejects a clarification that asks the player to author the world's response", async () => {
+    const { runtime } = makeRuntime();
+    const session = await runtime.createWorld("World-outcome clarification guard");
+    const delegatedQuestion =
+      "What specific response or action do you observe from the slime upon being illuminated and addressed?";
+    const model = new QueueModelRuntime([
+      {
+        kind: "player-decision-required",
+        question: delegatedQuestion,
+      },
+      {
+        kind: "interpreted",
+        goal: "illuminate the slime and call out to it",
+        targetRefs: [],
+        modes: ["manipulation"],
+        statedMeans: ["my light", "my voice"],
+        requestedHorizonMs: 60_000,
+        pressureLevel: 6,
+      },
+      {
+        kind: "invoke-tool",
+        toolId: "test.actions.resolve-effort",
+        arguments: { base: 8, modifier: 2, difficulty: 7, durationMs: 1_000 },
+      },
+      { kind: "stop", reason: "goal-achieved" },
+      "Your beam crosses the slime, and the world supplies its response.",
+    ]);
+
+    const result = await session.performPlayerAction({
+      ...request,
+      actionId: "action.shine-and-call",
+      declaration: "I shine my light on the slime. \"Hello?\" I call.",
+    }, { modelRuntime: model });
+
+    expect(result.kind).toBe("resolved");
+    if (result.kind !== "resolved") throw new Error("Expected resolved action");
+    expect(result.narration).toContain("world supplies its response");
+    expect(result.run.semanticAction?.modes).toEqual([
+      "manipulation",
+      "observation",
+      "communication",
+      "interaction",
+    ]);
+    expect(result.trace.entries).toContainEqual(expect.objectContaining({
+      phase: "model",
+      detail: expect.objectContaining({
+        forcedExecutableInterpretation: true,
+        rejectedClarification: delegatedQuestion,
+      }),
+    }));
+  });
+
+  it("keeps an explicit player question eligible for clarification", async () => {
+    const { runtime } = makeRuntime();
+    const session = await runtime.createWorld("Player question clarification guard");
+    const model = new QueueModelRuntime([{
+      kind: "player-decision-required",
+      question: "Which marked object do you mean?",
+    }]);
+
+    const result = await session.performPlayerAction({
+      ...request,
+      actionId: "action.player-question",
+      declaration: "What do I see when I look at the marked objects?",
+    }, { modelRuntime: model });
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: "needs-player-input",
+      question: "Which marked object do you mean?",
+    }));
+    expect(model.requests.filter((entry) =>
+      entry.output.kind === "structured" &&
+      entry.output.schemaId === "player-action.intent-interpretation.v1"
+    )).toHaveLength(1);
+  });
+
+  it("normalizes an explicitly declared move-and-repair action and rejects an empty execution stop", async () => {
+    const { runtime } = makeRuntime();
+    const session = await runtime.createWorld("Move and repair execution invariants");
+    const model = new QueueModelRuntime([
+      {
+        kind: "interpreted",
+        goal: "repair the leaky pipe in the shower facility",
+        targetRefs: [],
+        modes: ["other"],
+        statedMeans: ["maintenance tools"],
+        requestedHorizonMs: 60_000,
+        pressureLevel: 3,
+      },
+      { kind: "stop", reason: "player-decision-required" },
+      {
+        kind: "invoke-tool",
+        toolId: "test.actions.resolve-effort",
+        arguments: { base: 8, modifier: 2, difficulty: 7, durationMs: 1_000 },
+      },
+      { kind: "stop", reason: "goal-achieved" },
+      "You reach the shower and complete the repair.",
+    ]);
+
+    const result = await session.performPlayerAction({
+      ...request,
+      actionId: "action.move-and-repair",
+      declaration: "I'm heading to the showers first. There's a leaky pipe that should be a quick fix.",
+    }, { modelRuntime: model });
+
+    expect(result.kind).toBe("resolved");
+    if (result.kind !== "resolved") throw new Error("Expected resolved action");
+    expect(result.run.semanticAction?.modes).toEqual(["movement", "manipulation"]);
+    expect(result.run.receipts).toHaveLength(1);
+    expect(result.trace.entries).toContainEqual(expect.objectContaining({
+      phase: "rejection",
+      detail: expect.objectContaining({
+        reason: "execution-cannot-request-player-decision",
+        proposedStopReason: "player-decision-required",
+      }),
+    }));
+  });
+
   it("uses deterministic candidates without catalog discovery", async () => {
     const { runtime } = makeRuntime();
     const session = await runtime.createWorld("Bounded candidate selection");

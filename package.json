@@ -12,6 +12,7 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm run test && npm run build",
     "harness": "npm run build --workspace @llm-ttrpg/harness --workspace @llm-ttrpg/harness-cli && npm run start --workspace @llm-ttrpg/harness-cli",
+    "replay:live": "tsup scripts/live-replay-session.ts --format esm --platform node --out-dir node_modules/.cache/llm-ttrpg-live-replay --clean && node node_modules/.cache/llm-ttrpg-live-replay/live-replay-session.js",
     "bundle:windows": "npm run bundle:windows --workspace @llm-ttrpg/desktop",
     "prepare:llama": "npm run prepare:llama --workspace @llm-ttrpg/desktop"
   },

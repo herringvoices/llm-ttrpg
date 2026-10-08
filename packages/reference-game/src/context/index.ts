@@ -58,6 +58,14 @@ export const referenceSceneSource: SceneSourceProvider = {
       const parsed = referenceSceneMetadataSchema.safeParse(entity.data.context);
       if (!parsed.success) return [];
       const context = parsed.data;
+      const currentLocation = entity.kind === "actor"
+        ? [...world.facts].reverse().find((fact) =>
+            fact.subjectId === entity.id && fact.predicate === "actor.current-location"
+          )?.value
+        : undefined;
+      const projectedLocationId = typeof currentLocation === "string"
+        ? currentLocation
+        : context.locationId;
       const activeInteraction = Boolean(
         request.workingContext?.activeEntityIds.includes(entity.id) ||
         request.workingContext?.currentConversationEntityId === entity.id ||
@@ -65,7 +73,7 @@ export const referenceSceneSource: SceneSourceProvider = {
       );
       return [sceneSourceElementSchema.parse({
         canonicalEntityId: entity.id,
-        locationId: context.locationId,
+        locationId: projectedLocationId,
         displayIdentity: entity.name,
         ...(context.unrecognizedIdentity
           ? { unrecognizedIdentity: context.unrecognizedIdentity }

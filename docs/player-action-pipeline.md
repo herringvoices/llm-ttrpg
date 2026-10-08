@@ -6,6 +6,12 @@ Issue #11 connects freeform player declarations to the existing pressure, contex
 
 A new caller-supplied action ID receives one structured interpretation. The engine resolves context-local targets, injects the caller's actor, persists the accepted pressure assessment, bounds the existing intent, and creates a versioned `ActionRun`. A clarification result creates no run and changes no authoritative state.
 
+Clarification is reserved for genuinely missing, materially different commitments. A declaration that already commits to movement or work (for example, "I decide to go," "I'm heading there," or "I fix it now") must advance. If the model merely asks the player to reconfirm that stated action, the engine rejects the question and requests an executable interpretation with the named target and ordering preserved. Minor implementation details are inferred as the smallest reasonable first step; the engine does not ask about preparation or offer an alternative the player did not choose.
+
+## Diagnostic replay logging
+
+`npm run replay:live` reopens a persisted world against the configured local model and records every model prompt, structured result, timing, action receipt, event, and mutable location fact in one JSON report. `REPLAY_DATABASE_PATH`, `REPLAY_ENDPOINT`, `REPLAY_API_KEY`, and `REPLAY_TRACE_PATH` are required; `REPLAY_WORLD_ID` and `REPLAY_DECLARATION` select the session and turn. Set `REPLAY_RESUME_OPENING=1` to retry only a pending first-power generation or narration without replaying the player action. The API key is used only to connect to the local runtime and is not written to the report.
+
 Execution never stores or runs a future operation list. Each model turn chooses one catalog discovery, inspection, read-only query, authoritative operation, or stop. Context is rebuilt after each committed operation. The original goal and authorized horizon remain fixed; exact committed durations accumulate in `elapsedMs`, and reaching the horizon deterministically stops the run.
 
 ## Authority and transactions

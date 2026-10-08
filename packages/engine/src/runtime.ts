@@ -95,6 +95,7 @@ import type {
 import {
   actionRunSchema,
   executionDecisionSchema,
+  interpretedIntentDecisionSchema,
   intentInterpretationDecisionSchema,
   playerActionRequestSchema,
   type ActionRun,
@@ -114,6 +115,7 @@ import {
   narrationPreferenceSchema,
   type NarrationPreference,
 } from "./conversation-contracts.js";
+import type { SemanticActionMode } from "./semantic-action.js";
 
 export interface WallClock {
   now(): string;
@@ -233,6 +235,28 @@ function injectActor(value: JsonValue, actorId: string): JsonValue {
   return { ...value, actorId };
 }
 
+function clampOperationDurationFields(
+  value: JsonValue,
+  remainingMs: number,
+): { readonly value: JsonValue; readonly clampedKeys: readonly string[] } {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return { value, clampedKeys: [] };
+  }
+  const durationKeys = new Set([
+    "durationMs",
+    "travelDurationMs",
+  ]);
+  const clampedKeys: string[] = [];
+  const next = Object.fromEntries(Object.entries(value).map(([key, item]) => {
+    if (durationKeys.has(key) && typeof item === "number" && item > remainingMs) {
+      clampedKeys.push(key);
+      return [key, remainingMs];
+    }
+    return [key, item];
+  }));
+  return { value: jsonValueSchema.parse(next), clampedKeys };
+}
+
 function rejectModelAuthoredCanonicalEntityIds(
   value: JsonValue,
   entityIds: ReadonlySet<string>,
@@ -254,20 +278,39 @@ function rejectModelAuthoredCanonicalEntityIds(
   }
 }
 
-function constrainedExecutionDecisionSchema(candidateIds: readonly string[]) {
+function constrainedExecutionDecisionSchema(
+  candidateIds: readonly string[],
+  singleCandidateArgumentSchema?: z.ZodType<unknown>,
+) {
   if (candidateIds.length === 0) return executionDecisionSchema;
   const toolIdSchema = candidateIds.length === 1
     ? z.literal(candidateIds[0]!)
     : z.enum(candidateIds as [string, ...string[]]);
   return z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("invoke-tool"),
-      toolId: toolIdSchema,
-      arguments: jsonValueSchema,
-    }).strict(),
+    candidateIds.length === 1
+      ? z.object({
+          kind: z.literal("invoke-tool"),
+          toolId: toolIdSchema,
+          arguments: singleCandidateArgumentSchema ?? jsonValueSchema,
+        }).strict()
+      : z.object({
+          kind: z.literal("invoke-tool"),
+          toolId: toolIdSchema,
+        }),
     z.object({ kind: z.literal("stop"), reason: intentStopReasonSchema }).strict(),
   ]);
 }
+
+function modelOperationInputSchema(schema: z.ZodType<unknown>): z.ZodType<unknown> {
+  if (!(schema instanceof z.ZodObject) || !("actorId" in schema.shape)) return schema;
+  const { actorId: _actorId, ...modelShape } = schema.shape;
+  return z.object(modelShape).strict();
+}
+
+const completedModesStopDecisionSchema = z.object({
+  kind: z.literal("stop"),
+  reason: intentStopReasonSchema,
+}).strict();
 
 async function structuredModelDecision<T>(
   modelRuntime: ModelRuntime,
@@ -305,6 +348,59 @@ async function structuredModelDecision<T>(
     };
   }
   throw new Error("Unreachable structured model retry state");
+}
+
+function declarationCommitsToAction(declaration: string): boolean {
+  const trimmed = declaration.trim();
+  const asksPlayerFacingQuestion = /^(?:what|where|when|who|why|how|should|could|can|would|may|do|does|did|is|are|am)(?:\s|$)/i
+    .test(trimmed);
+  const expressesUncertainty = /\b(?:i|we)\s+(?:(?:do not|don't|cannot|can't)\s+know|(?:am|are)\s+(?:unsure|uncertain)|wonder(?:ing)?\b)/i
+    .test(trimmed);
+  if (asksPlayerFacingQuestion || expressesUncertainty) return false;
+  if (/\b(?:i|we)\s+[a-z][a-z'-]*\b/i.test(trimmed)) return true;
+  return [
+    /\b(?:i|we)\s+(?:decide|choose|intend|plan)\s+to\b/i,
+    /\b(?:i|we)\s+(?:want|would like)\s+to\b/i,
+    /\b(?:i'd|we'd)\s+like\s+to\b/i,
+    /\b(?:i|we)\s+(?:(?:just|carefully|quickly|quietly|immediately|now)\s+){0,2}(?:go|head|walk|run|travel|move|enter|leave|approach|return|start|begin|fix|repair|tighten|adjust|install|remove|use|work|attempt|open|take|grab|pick|check|look|inspect|examine|search|find|investigate|observe|ask|tell|say|announce|speak)\b/i,
+    /\b(?:i(?:'m| am)|we(?:'re| are))\s+(?:(?:just|carefully|quickly|quietly|immediately|now)\s+){0,2}(?:going|heading|walking|running|traveling|moving|entering|leaving|approaching|returning|starting|beginning|fixing|repairing|tightening|adjusting|installing|removing|using|working|attempting|opening|taking|grabbing|picking|checking|looking|inspecting|examining|searching|finding|investigating|observing|asking|telling|saying|announcing|speaking)\b/i,
+  ].some((pattern) => pattern.test(declaration));
+}
+
+function clarificationDelegatesWorldOutcome(question: string): boolean {
+  return [
+    /\bwhat\s+(?:specific\s+)?(?:response|reaction|action|result|effect|change|sound|sight)\b/i,
+    /\bwhat\s+(?:do|does|did|would)\s+(?:you\s+)?observe\b/i,
+    /\bwhat\s+happens?\b/i,
+    /\bhow\s+(?:do|does|did|would)\s+(?:the\s+)?(?:npc|creature|target|environment|world|it|they|he|she)\s+(?:respond|react|behave|change)\b/i,
+    /\bdescribe\s+(?:what|how)\s+(?:the\s+)?(?:npc|creature|target|environment|world|it|they|he|she)\b/i,
+    /\bwhat\s+(?:do|does|did|would)\s+(?:the\s+)?(?:npc|creature|target|environment|world|it|they|he|she)\s+do\b/i,
+  ].some((pattern) => pattern.test(question));
+}
+
+function inferredDeclaredActionModes(declaration: string): SemanticActionMode[] {
+  const inferred = new Set<SemanticActionMode>();
+  if (/\b(?:go|goes|going|head|heads|heading|walk|walks|walking|run|runs|running|travel|travels|traveling|move|moves|moving|enter|enters|entering|leave|leaves|leaving|approach|approaches|approaching|return|returns|returning)\b/i.test(declaration)) {
+    inferred.add("movement");
+  }
+  if (/\b(?:fix|fixes|fixing|repair|repairs|repairing|tighten|tightens|tightening|adjust|adjusts|adjusting|install|installs|installing|remove|removes|removing|use|uses|using|work|works|working|open|opens|opening|take|takes|taking|grab|grabs|grabbing|pick|picks|picking|build|builds|building)\b/i.test(declaration)) {
+    inferred.add("manipulation");
+  }
+  if (/\b(?:look|looks|looking|inspect|inspects|inspecting|examine|examines|examining|search|searches|searching|find|finds|finding|check|checks|checking|investigate|investigates|investigating|observe|observes|observing|shine|shines|shining|illuminate|illuminates|illuminating|light|lights|lighting)\b/i.test(declaration)) {
+    inferred.add("observation");
+  }
+  if (/\b(?:ask|asks|asking|call|calls|calling|greet|greets|greeting|tell|tells|telling|say|says|saying|announce|announces|announcing|speak|speaks|speaking|talk|talks|talking)\b/i.test(declaration)) {
+    inferred.add("communication");
+    inferred.add("interaction");
+  }
+  if (/\b(?:attack|attacks|attacking|strike|strikes|striking|shoot|shoots|shooting|fight|fights|fighting)\b/i.test(declaration)) {
+    inferred.add("attack");
+  }
+  return [...inferred];
+}
+
+function declarationExplicitlyTargetsSelf(declaration: string): boolean {
+  return /\b(?:myself|ourselves|on me|on us|my own body|our own bodies)\b/i.test(declaration);
 }
 
 function openSession(
@@ -1057,7 +1153,7 @@ function openSession(
           ...(options.toolPolicy ? { toolPolicy: options.toolPolicy } : {}),
         });
         record("context", { stage: "interpretation", usedUnits: context.diagnostics.usedUnits }, { worldRevision: revision });
-        const decision = await structuredModelDecision(
+        let decision = await structuredModelDecision(
           options.modelRuntime,
           "player-action.intent-interpretation.v1",
           intentInterpretationDecisionSchema,
@@ -1065,16 +1161,60 @@ function openSession(
             instructions: [
               "Interpret the player's declaration once. Do not plan an operation chain.",
               "Use only context-local scene references for targets. Assess current action pressure from 1 (low) to 9 (immediate).",
-              "Request a player choice only when materially different commitments cannot be reasonably inferred from the declaration, current location, or named target. A stated investigation at a known place is actionable: choose a reasonable first observation instead of asking which aspect to inspect.",
+              "The focal actor reference identifies who is acting, not the target. Never return it as a target unless the declaration explicitly targets the actor themself.",
+              "Include every applicable action mode. A declaration that moves to a place and then performs a task normally has both movement and task modes.",
+              "Treat omitted implementation details as intentionally delegated to the game. Infer the smallest reasonable detail from the declaration and current fiction; do not ask the player to specify a room, object instance, route, tool, order, or method they did not care to specify.",
+              "Request a player choice only when proceeding would materially replace the player's intent, usually because the declared action is impossible as stated and multiple genuinely different alternatives require the player's choice. A stated investigation is actionable: begin with the most relevant reasonable observation.",
+              "Never ask the player to author an external outcome, sensory result, NPC response, creature reaction, or environmental change. Determining what the world does in response is the game engine's job.",
+              "Never ask for confirmation, permission to begin, preferred ordering, preparation, or a choice whose answer the player already stated. Honor explicit sequencing words such as first, now, before, and then.",
             ],
             context: renderContextForModel(context),
             input: request.declaration,
           },
         );
+        let rejectedClarification: string | undefined;
+        let interpretationAttempts = decision.attempts;
+        if (
+          decision.ok &&
+          decision.value.kind === "player-decision-required" &&
+          (
+            declarationCommitsToAction(request.declaration) ||
+            clarificationDelegatesWorldOutcome(decision.value.question)
+          )
+        ) {
+          rejectedClarification = decision.value.question;
+          const forced = await structuredModelDecision(
+            options.modelRuntime,
+            "player-action.intent-interpretation.v1",
+            interpretedIntentDecisionSchema,
+            {
+              instructions: [
+                "The player has already committed to a concrete action. Interpret it as executable now.",
+                "Do not ask a question and do not substitute an alternative action. Honor the named target, stated order, and stated means.",
+                "If a minor implementation detail is unstated, choose the smallest reasonable first step from the authorized scene context.",
+                "Assume omitted detail was intentionally delegated. Never ask the player to choose a room, object instance, route, tool, order, or method unless proceeding would materially replace their declared intent.",
+                "Never ask the player to author an external outcome, sensory result, NPC response, creature reaction, or environmental change. Interpret the declared attempt; the rules and simulation determine the response.",
+                "Use only context-local scene references for targets and assess current action pressure from 1 (low) to 9 (immediate).",
+                "The focal actor reference identifies who is acting, not the target. Never return it as a target unless the declaration explicitly targets the actor themself.",
+                "Include every applicable action mode. A declaration that moves to a place and then performs a task normally has both movement and task modes.",
+              ],
+              context: renderContextForModel(context),
+              input: JSON.stringify({
+                declaration: request.declaration,
+                rejectedClarification,
+              }),
+            },
+          );
+          interpretationAttempts += forced.attempts;
+          decision = forced;
+        }
         record("model", {
           stage: "interpretation",
           ok: decision.ok,
-          attempts: decision.attempts,
+          attempts: interpretationAttempts,
+          ...(rejectedClarification
+            ? { rejectedClarification, forcedExecutableInterpretation: true }
+            : {}),
           ...(decision.ok
             ? { metadata: jsonValueSchema.parse(clone(decision.metadata)) }
             : { failure: jsonValueSchema.parse(clone(decision.failure)) }),
@@ -1091,9 +1231,10 @@ function openSession(
             trace: resultTrace(),
           };
         }
+        const interpretedDecision = interpretedIntentDecisionSchema.parse(decision.value);
         let targetIds: string[];
         try {
-          targetIds = decision.value.targetRefs.map((reference) => {
+          targetIds = interpretedDecision.targetRefs.map((reference) => {
             const id = context.diagnostics.localReferences[reference];
             if (!id) throw new Error(`Unknown or stale target reference: ${reference}`);
             return id;
@@ -1102,14 +1243,42 @@ function openSession(
           record("rejection", { reason: error instanceof Error ? error.message : "Invalid target reference" });
           return fail("proposal", error instanceof Error ? error.message : "Invalid target reference");
         }
+        if (!declarationExplicitlyTargetsSelf(request.declaration)) {
+          const withoutActor = targetIds.filter((id) => id !== request.actorId);
+          if (withoutActor.length !== targetIds.length) {
+            record("rejection", {
+              reason: "acting-actor-removed-from-targets",
+              removedTargetId: request.actorId,
+            });
+            targetIds = withoutActor;
+          }
+        }
+        const inferredModes = inferredDeclaredActionModes(request.declaration);
+        const normalizedModes = [
+          ...new Set<SemanticActionMode>([
+            ...interpretedDecision.modes,
+            ...inferredModes,
+          ]),
+        ].filter((mode) => mode !== "other" || interpretedDecision.modes.length + inferredModes.length === 1);
+        if (
+          normalizedModes.length !== interpretedDecision.modes.length ||
+          normalizedModes.some((mode, index) => mode !== interpretedDecision.modes[index])
+        ) {
+          record("intent", {
+            normalization: "semantic-action-modes",
+            modelModes: interpretedDecision.modes,
+            inferredModes,
+            normalizedModes,
+          });
+        }
         const interpretedIntent = {
           actorId: request.actorId,
-          goal: decision.value.goal,
+          goal: interpretedDecision.goal,
           targetIds,
-          requestedHorizonMs: fictionalDurationMs(decision.value.requestedHorizonMs),
+          requestedHorizonMs: fictionalDurationMs(interpretedDecision.requestedHorizonMs),
         };
         const candidate = clone(state);
-        candidate.actionPressure = { status: "assessed", level: decision.value.pressureLevel };
+        candidate.actionPressure = { status: "assessed", level: interpretedDecision.pressureLevel };
         const executableIntent = boundInterpretedIntent(
           interpretedIntent,
           candidate.actionPressure,
@@ -1122,8 +1291,8 @@ function openSession(
           declaration: request.declaration,
           interpretedIntent,
           semanticAction: {
-            modes: decision.value.modes,
-            statedMeans: decision.value.statedMeans,
+            modes: normalizedModes,
+            statedMeans: interpretedDecision.statedMeans,
           },
           executableIntent,
           status: "active",
@@ -1134,7 +1303,7 @@ function openSession(
         try {
           await commitCandidate(candidate, [], newRun);
           run = newRun;
-          record("pressure", { level: decision.value.pressureLevel }, { worldRevision: revision });
+          record("pressure", { level: interpretedDecision.pressureLevel }, { worldRevision: revision });
           record("intent", {
             goal: executableIntent.goal,
             requestedHorizonMs: executableIntent.requestedHorizonMs,
@@ -1159,6 +1328,14 @@ function openSession(
       });
 
       const narrate = async (completed: ActionRun): Promise<PlayerActionResult> => {
+        if (completed.receipts.length === 0) {
+          record("rejection", { reason: "narration-requires-committed-outcome" });
+          return fail(
+            "proposal",
+            "The action produced no committed outcome, so narration was withheld",
+            completed,
+          );
+        }
         if (completed.narration) {
           record("narration", { ok: true, reused: true });
           return {
@@ -1178,7 +1355,6 @@ function openSession(
             role: "actor",
             perspective: { kind: "actor", id: completed.actorId },
             focalActorId: completed.actorId,
-            ...(request.locationId ? { locationId: request.locationId } : {}),
             declaration: completed.declaration,
             budget: request.budget,
           },
@@ -1250,8 +1426,9 @@ function openSession(
               "Do not reveal canonical IDs, hidden state, rejected proposals, private events, mechanics not exposed by the presentation, or GM reasoning.",
               "Do not invent additional world changes. The supplied committed outcomes are authoritative.",
               "Do not invent player thoughts, feelings, dialogue, decisions, or voluntary actions beyond the submitted declaration.",
-              "Do not invent actionable objects, routes, hazards, witnesses, resources, or clues. Harmless transient color must not create a future affordance.",
-              `Target ${minimumCharacters}-${maximumCharacters} characters (${narrationPreference}/${narrationBand}); this is guidance, never a truncation limit.`,
+              "Do not invent specific tools, equipment, actionable objects, routes, hazards, witnesses, resources, or clues. Harmless transient color must not create a future affordance.",
+              "Use second person for the focal actor. If the committed outcomes are sparse, be concise instead of padding with invented attempts, complications, or details.",
+              `Aim for at most ${maximumCharacters} characters (${narrationPreference}/${narrationBand}). The nominal ${minimumCharacters}-character lower bound is optional when the authoritative outcomes do not support that much detail.`,
             ],
             context: renderContextForModel(actorContext),
             input: JSON.stringify({
@@ -1304,6 +1481,7 @@ function openSession(
           : 24
       );
       reportProgress("resolving");
+      let rejectedPrematureStops = 0;
       for (let turn = 1; turn <= maxTurns; turn += 1) {
         const persistedWorld = await currentPersisted();
         if (!persistedWorld || persistedWorld.revision !== revision || run.lastWorldRevision !== revision) {
@@ -1330,12 +1508,62 @@ function openSession(
           ...orchestratorRequest,
           executableIntent: run.executableIntent,
         };
-        const candidates = run.semanticAction
+        const coveredModes = new Set<SemanticActionMode>();
+        for (const receipt of run.receipts) {
+          const applicability = dependencies.game.operationRegistry.get(receipt.toolId)
+            .metadata.applicability;
+          for (const mode of applicability?.actionModes ?? []) coveredModes.add(mode);
+        }
+        const supportedModes = new Set<SemanticActionMode>(
+          dependencies.game.operationRegistry.listAll().flatMap((operation) =>
+            operation.applicability?.actionModes ?? []
+          ),
+        );
+        const pendingDeclaredModes = (run.semanticAction?.modes ?? [])
+          .filter((mode) =>
+            mode !== "other" && supportedModes.has(mode) && !coveredModes.has(mode)
+          );
+        const hasTrackableDeclaredModes = (run.semanticAction?.modes ?? []).some((mode) =>
+          mode !== "other" && supportedModes.has(mode)
+        );
+        let candidates = run.semanticAction
           ? dependencies.game.toolCatalog.listActionCandidates(
               run.semanticAction.modes,
               options.toolPolicy,
-            )
+            ).filter((candidate) => {
+              if (run!.receipts.length === 0 || !hasTrackableDeclaredModes) return true;
+              const modes = dependencies.game.operationRegistry.get(candidate.id)
+                .metadata.applicability?.actionModes ?? [];
+              return modes.some((mode) => pendingDeclaredModes.includes(mode));
+            })
           : [];
+        const explicitlyRoutine = run.executableIntent.pressureLevel <= 4 &&
+          /\b(?:quick|simple|routine|straightforward|easy|ordinary)\b/i.test(run.declaration);
+        const routineCandidate = candidates.find((candidate) => {
+          const metadata = dependencies.game.operationRegistry.get(candidate.id).metadata;
+          const modes = new Set(metadata.applicability?.actionModes ?? []);
+          return metadata.category.tags.includes("routine") &&
+            pendingDeclaredModes.every((mode) => modes.has(mode));
+        });
+        if (explicitlyRoutine && routineCandidate) {
+          const beforeIds = candidates.map((candidate) => candidate.id);
+          candidates = candidates.filter((candidate) =>
+            dependencies.game.operationRegistry.get(candidate.id).metadata.kind !== "resolution"
+          );
+          const afterIds = candidates.map((candidate) => candidate.id);
+          if (afterIds.length !== beforeIds.length) {
+            record("catalog", {
+              stage: "routine-task-fast-path",
+              routineCandidateId: routineCandidate.id,
+              removedCandidateIds: beforeIds.filter((id) => !afterIds.includes(id)),
+            }, { worldRevision: revision });
+          }
+        }
+        const modelCandidates = candidates.map(({ outputSchema: _outputSchema, ...candidate }) =>
+          candidate
+        );
+        const requireStopDecision = run.receipts.length > 0 &&
+          hasTrackableDeclaredModes && pendingDeclaredModes.length === 0;
         const candidateIds = new Set(candidates.map((candidate) => candidate.id));
         if (candidates.length) {
           record("catalog", {
@@ -1357,14 +1585,26 @@ function openSession(
           ...(options.toolPolicy ? { toolPolicy: options.toolPolicy } : {}),
         });
         record("context", { stage: "execution", turn, usedUnits: context.diagnostics.usedUnits }, { worldRevision: revision });
-        const decisionSchema = constrainedExecutionDecisionSchema([...candidateIds]);
-        const decisionResult = await structuredModelDecision(
+        const singleCandidateArgumentSchema = candidates.length === 1
+          ? modelOperationInputSchema(
+              dependencies.game.operationRegistry.get(candidates[0]!.id).inputSchema,
+            )
+          : undefined;
+        const decisionSchema = requireStopDecision
+          ? completedModesStopDecisionSchema
+          : constrainedExecutionDecisionSchema(
+              [...candidateIds],
+              singleCandidateArgumentSchema,
+            );
+        const decisionResult = await structuredModelDecision<unknown>(
           options.modelRuntime,
           "player-action.execution-decision.v1",
-          decisionSchema,
+          decisionSchema as z.ZodType<unknown>,
           {
             instructions: [
-              ...(candidates.length
+              ...(requireStopDecision
+                ? ["Every supported mode in the declared action has a committed outcome. Stop now with the reason that best matches those outcomes."]
+                : candidates.length
                 ? candidates.length === 1
                   ? [
                     "The engine has selected the only applicable capability. Supply its model-safe arguments, or stop if the goal is already complete.",
@@ -1376,6 +1616,13 @@ function openSession(
                   ]
                 : ["Choose exactly one next action: discover subsystems/tools, inspect a tool, invoke one tool, or stop."]),
               "Do not produce an execution plan. Tool invocations must use context-local scene references; the engine injects the actor and bounded intent.",
+              "Do not stop for player input during execution. The interpretation stage has already established an executable intent.",
+              ...(run.receipts.length === 0
+                ? ["No outcome has been committed yet. Invoke an applicable capability before stopping."]
+                : []),
+              ...(pendingDeclaredModes.length > 0
+                ? [`The declared action still has unresolved modes: ${pendingDeclaredModes.join(", ")}. Do not claim the goal is achieved until each is covered by a committed capability.`]
+                : []),
               `The action has ${Math.max(0, run.executableIntent.authorizedHorizonMs - run.elapsedMs)}ms of authorized fictional time remaining.`,
             ],
             context: renderContextForModel(context),
@@ -1383,8 +1630,19 @@ function openSession(
               declaration: run.declaration,
               goal: run.executableIntent.goal,
               semanticAction: run.semanticAction,
-              ...(candidates.length ? { candidates } : {}),
+              ...(!requireStopDecision && modelCandidates.length
+                ? {
+                    candidates: candidates.length > 1
+                      ? modelCandidates.map(({ inputSchema: _inputSchema, ...candidate }) =>
+                          candidate
+                        )
+                      : modelCandidates,
+                  }
+                : {}),
               elapsedMs: run.elapsedMs,
+              ...(rejectedPrematureStops > 0 ? { rejectedPrematureStops } : {}),
+              coveredDeclaredModes: [...coveredModes],
+              pendingDeclaredModes,
               committedReceipts: run.receipts.map((receipt) => {
                 const reverse = new Map(
                   Object.entries(context.diagnostics.localReferences)
@@ -1424,12 +1682,83 @@ function openSession(
         if (!decisionResult.ok) {
           return fail("model", decisionResult.failure.error.message, run, decisionResult.failure);
         }
-        const decision: ExecutionDecision = decisionResult.value;
+        let decision = decisionResult.value as
+          | ExecutionDecision
+          | { readonly kind: "invoke-tool"; readonly toolId: string };
         if (decision.kind === "stop") {
+          if (
+            decision.reason === "player-decision-required" ||
+            run.receipts.length === 0 ||
+            (decision.reason === "goal-achieved" && pendingDeclaredModes.length > 0)
+          ) {
+            rejectedPrematureStops += 1;
+            record("rejection", {
+              reason: decision.reason === "player-decision-required"
+                ? "execution-cannot-request-player-decision"
+                : decision.reason === "goal-achieved" && pendingDeclaredModes.length > 0
+                  ? "goal-achieved-before-declared-modes-resolved"
+                : "stop-requires-committed-outcome",
+              proposedStopReason: decision.reason,
+              ...(pendingDeclaredModes.length > 0 ? { pendingDeclaredModes } : {}),
+              rejectedPrematureStops,
+            }, { worldRevision: revision });
+            continue;
+          }
           run = actionRunSchema.parse({ ...run, status: "stopped", stopReason: decision.reason });
           await dependencies.persistence.actionRuns.update(run);
           record("stop", { reason: decision.reason }, { worldRevision: revision });
           return narrate(run);
+        }
+
+        if (decision.kind === "invoke-tool" && !("arguments" in decision)) {
+          const selectedToolId = decision.toolId;
+          const operation = dependencies.game.operationRegistry.get(selectedToolId);
+          const argumentResult = await structuredModelDecision(
+            options.modelRuntime,
+            "player-action.tool-arguments.v1",
+            modelOperationInputSchema(operation.inputSchema),
+            {
+              instructions: [
+                `Supply arguments for the already-selected capability ${selectedToolId}.`,
+                "Use only context-local scene references for entities. The engine injects the acting actor and the bounded intent.",
+                "Return only arguments that satisfy the capability input schema; do not reconsider the tool choice or narrate.",
+                "Any action summary must restate only the submitted declaration and goal. Do not add later movement, an exit, dialogue, thoughts, failed attempts, or undeclared equipment.",
+              ],
+              context: renderContextForModel(context),
+              input: JSON.stringify({
+                declaration: run.declaration,
+                goal: run.executableIntent.goal,
+                selectedCapability: {
+                  id: selectedToolId,
+                  description: candidates.find((candidate) =>
+                    candidate.id === selectedToolId
+                  )?.description,
+                },
+                elapsedMs: run.elapsedMs,
+                remainingAuthorizedTimeMs: Math.max(
+                  0,
+                  run.executableIntent.authorizedHorizonMs - run.elapsedMs,
+                ),
+              }),
+            },
+          );
+          record("model", {
+            stage: "execution-arguments",
+            turn,
+            toolId: selectedToolId,
+            ok: argumentResult.ok,
+            attempts: argumentResult.attempts,
+            ...(argumentResult.ok
+              ? { metadata: jsonValueSchema.parse(clone(argumentResult.metadata)) }
+              : { failure: jsonValueSchema.parse(clone(argumentResult.failure)) }),
+          });
+          if (!argumentResult.ok) {
+            return fail("model", argumentResult.failure.error.message, run, argumentResult.failure);
+          }
+          decision = {
+            ...decision,
+            arguments: jsonValueSchema.parse(argumentResult.value),
+          };
         }
 
         if (candidates.length && decision.kind !== "invoke-tool") {
@@ -1501,6 +1830,10 @@ function openSession(
           record("rejection", { reason: "Catalog decision produced no result" });
           continue;
         }
+        if (!("arguments" in decision)) {
+          record("rejection", { reason: "Tool invocation omitted validated arguments" });
+          continue;
+        }
 
         let argumentsValue: JsonValue;
         try {
@@ -1518,6 +1851,22 @@ function openSession(
           );
           if (binding.kind !== "engine-query") {
             argumentsValue = injectActor(argumentsValue, run.actorId);
+          }
+          if (binding.kind === "ordinary-operation") {
+            const remainingMs = Math.max(
+              0,
+              run.executableIntent.authorizedHorizonMs - run.elapsedMs,
+            );
+            const clamped = clampOperationDurationFields(argumentsValue, remainingMs);
+            argumentsValue = clamped.value;
+            if (clamped.clampedKeys.length > 0) {
+              record("intent", {
+                normalization: "operation-duration-bounded-by-authorized-horizon",
+                toolId: decision.toolId,
+                clampedKeys: [...clamped.clampedKeys],
+                remainingMs,
+              }, { worldRevision: revision });
+            }
           }
           if (binding.kind === "engine-query") {
             const queryOptions = dependencies.context?.sceneSource

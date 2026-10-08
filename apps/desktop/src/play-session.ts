@@ -86,6 +86,7 @@ export interface PlaySessionView {
   readonly busy: boolean;
   readonly preparingOpening: boolean;
   readonly turnProgress?: TurnProgress;
+  readonly canRetryOpeningManifestation: boolean;
   readonly error?: string;
   readonly diagnostics?: TurnDiagnostics;
   readonly openingProgression?: {
@@ -211,6 +212,13 @@ export class DesktopPlaySession {
       transcript: [...this.transcriptEntries],
       busy: this.active,
       preparingOpening: this.preparingOpening,
+      canRetryOpeningManifestation: Boolean(
+        this.openingProgression &&
+        !this.openingProgression.firstPowerManifested &&
+        this.openingProgression.playerTurnsSinceStart >=
+          this.openingProgression.manifestationTargetTurn &&
+        this.openingProgression.manifestationEvidenceEventId,
+      ),
       ...(this.turnProgress ? { turnProgress: this.turnProgress } : {}),
       ...(this.lastError ? { error: this.lastError } : {}),
       ...(this.lastDiagnostics ? { diagnostics: this.lastDiagnostics } : {}),
@@ -374,6 +382,9 @@ export class DesktopPlaySession {
     const manifestationEvent = state.manifestationEventId
       ? history.find((event) => event.id === state.manifestationEventId)
       : [...history].reverse().find((event) => event.type === "rules.first-power-manifested");
+    const manifestationEvidenceEvent = state.manifestationEvidenceEventId
+      ? history.find((event) => event.id === state.manifestationEvidenceEventId)
+      : undefined;
     const result = await this.requireModel().generate({
       prompt: {
         protectedContext: [directive.protectedContext],
@@ -381,12 +392,21 @@ export class DesktopPlaySession {
           "Present the already-committed first-power manifestation using the protected narration profile.",
           "The rules operation has already made the power authoritative. Narration may describe only observable consequences of that committed state.",
           "Do not invent additional functions, costs, mechanics, choices, player speech, player thoughts, or a second triggering action.",
+          "Use second person for the focal actor. Treat the triggering evidence event as already completed: do not replay, undo, contradict, prolong, or replace it.",
+          "Begin at the final instant of the triggering evidence event or immediately afterward. Do not invent earlier failed attempts, tools, or complications.",
           "Make the moment legible as the character's first personal Awakening, then return control.",
         ],
         context: renderContextForModel(context),
         input: JSON.stringify({
           manifestationEvent: manifestationEvent
             ? { id: manifestationEvent.id, summary: manifestationEvent.summary }
+            : undefined,
+          triggeringEvidenceEvent: manifestationEvidenceEvent
+            ? {
+                id: manifestationEvidenceEvent.id,
+                type: manifestationEvidenceEvent.type,
+                summary: manifestationEvidenceEvent.summary,
+              }
             : undefined,
           power: {
             name: power.name,
@@ -422,6 +442,7 @@ export class DesktopPlaySession {
   }
 
   private async ensureOpeningManifestation(
+    evidenceEventIds: readonly string[],
     listener?: TurnProgressListener,
   ): Promise<void> {
     const state = this.openingProgression;
@@ -475,10 +496,13 @@ export class DesktopPlaySession {
       throw new Error("The player has no grounded skill available for Level 1 allocation");
     }
     const historyBefore = await this.session.eventHistory();
-    const evidence = historyBefore.at(-1);
+    const evidenceIdSet = new Set(evidenceEventIds);
+    const evidence = [...historyBefore].reverse().find((event) =>
+      evidenceIdSet.has(event.id)
+    );
     if (!evidence) {
       throw new Error(
-        "First-power manifestation requires an authoritative event from the opening turn",
+        "First-power manifestation requires an authoritative event committed by the current opening turn",
       );
     }
 
@@ -515,6 +539,7 @@ export class DesktopPlaySession {
   }
 
   private async advanceOpeningProgression(
+    evidenceEventIds: readonly string[],
     listener?: TurnProgressListener,
   ): Promise<void> {
     const state = this.openingProgression;
@@ -523,13 +548,15 @@ export class DesktopPlaySession {
       state.manifestationDeadlineTurns,
       state.playerTurnsSinceStart + 1,
     );
+    const evidenceEventId = evidenceEventIds.at(-1);
     this.openingProgression = openingProgressionStateSchema.parse({
       ...state,
       playerTurnsSinceStart: nextTurns,
+      ...(evidenceEventId ? { manifestationEvidenceEventId: evidenceEventId } : {}),
     });
     await this.persistPresentation();
     if (nextTurns >= state.manifestationTargetTurn) {
-      await this.ensureOpeningManifestation(listener);
+      await this.ensureOpeningManifestation(evidenceEventIds, listener);
     }
   }
 
@@ -588,22 +615,6 @@ export class DesktopPlaySession {
     if (this.active) throw new Error("A player turn is already running");
     this.active = true;
     this.lastError = undefined;
-    try {
-      if (
-        this.openingProgression &&
-        !this.openingProgression.firstPowerManifested &&
-        this.openingProgression.playerTurnsSinceStart >=
-          this.openingProgression.manifestationDeadlineTurns
-      ) {
-        await this.ensureOpeningManifestation(onProgress);
-      }
-    } catch (error) {
-      this.lastError = errorMessage(error);
-      this.active = false;
-      this.turnProgress = undefined;
-      await this.persistPresentation().catch(() => undefined);
-      return this.view();
-    }
     const pendingClarification = this.pendingActionClarification;
     this.pendingActionClarification = undefined;
     const declaration = pendingClarification
@@ -618,6 +629,7 @@ export class DesktopPlaySession {
       const startedAt = nowMs();
       let routeKind: "action" | "conversation" = "action";
       let meaningfulTurn = false;
+      let openingEvidenceEventIds: string[] = [];
       const routed = !pendingClarification && mayBeConversation(declaration)
         ? await this.routeDeclaration(declaration)
         : undefined;
@@ -658,6 +670,10 @@ export class DesktopPlaySession {
         });
         this.workingConversation = result.workingState;
         meaningfulTurn = true;
+        openingEvidenceEventIds = [
+          ...result.communicationEventIds,
+          ...result.extractionEventIds,
+        ];
         if (result.narration) this.add("npc", result.narration);
         else {
           narrationStatus = "failed";
@@ -696,12 +712,16 @@ export class DesktopPlaySession {
         }
         else if (result.kind === "failed") {
           if (result.developmentSignal) {
-            meaningfulTurn = true;
+            meaningfulTurn = result.developmentSignal.operationIds.length > 0 ||
+              result.developmentSignal.eventIds.length > 0;
+            openingEvidenceEventIds = [...result.developmentSignal.eventIds];
             narrationStatus = "failed";
             this.add("system", "The action changed the world, but presentation failed. You may retry narration without replaying it.");
           } else throw new Error(result.failure.message);
         } else {
-          meaningfulTurn = true;
+          meaningfulTurn = result.developmentSignal.operationIds.length > 0 ||
+            result.developmentSignal.eventIds.length > 0;
+          openingEvidenceEventIds = [...result.developmentSignal.eventIds];
           if (result.narration) this.add("narrator", result.narration);
           else {
             narrationStatus = "failed";
@@ -710,7 +730,18 @@ export class DesktopPlaySession {
         }
       }
       if (meaningfulTurn) {
-        await this.advanceOpeningProgression(onProgress);
+        try {
+          await this.advanceOpeningProgression(openingEvidenceEventIds, onProgress);
+        } catch (error) {
+          const message = errorMessage(error);
+          this.lastError =
+            `The action completed, but your first Awakening could not be prepared: ${message}. ` +
+            "Retry Awakening safely; the completed action will not replay.";
+          this.add(
+            "system",
+            "The action is complete, but your first Awakening needs another attempt. Retry Awakening safely; the completed action will not replay.",
+          );
+        }
       }
       const planner = await this.replanIfInvalidated(onProgress)
         .catch((error: unknown) => ({ error: errorMessage(error) }));
@@ -759,6 +790,29 @@ export class DesktopPlaySession {
 
   async retryNarration(onProgress?: TurnProgressListener): Promise<PlaySessionView> {
     if (this.active) throw new Error("A player turn is already running");
+    if (
+      this.openingProgression &&
+      !this.openingProgression.firstPowerManifested &&
+      this.openingProgression.playerTurnsSinceStart >=
+        this.openingProgression.manifestationTargetTurn &&
+      this.openingProgression.manifestationEvidenceEventId
+    ) {
+      this.active = true;
+      this.lastError = undefined;
+      try {
+        await this.ensureOpeningManifestation(
+          [this.openingProgression.manifestationEvidenceEventId],
+          onProgress,
+        );
+      } catch (error) {
+        this.lastError = errorMessage(error);
+      } finally {
+        this.active = false;
+        this.turnProgress = undefined;
+        await this.persistPresentation().catch(() => undefined);
+      }
+      return this.view();
+    }
     if (this.openingProgression?.manifestationNarrationPending) {
       this.active = true;
       this.lastError = undefined;

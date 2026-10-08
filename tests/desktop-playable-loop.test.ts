@@ -261,6 +261,7 @@ function openingActionSteps(
   prefix: string,
   options: {
     readonly includePowerManifestation?: boolean;
+    readonly failFirstPowerProposalOnce?: boolean;
     readonly failFirstPowerNarrationOnce?: boolean;
   } = {},
 ): ScriptedModelStep[] {
@@ -274,8 +275,36 @@ function openingActionSteps(
           kind: "interpreted",
           goal: "continue a harmless ordinary action",
           targetRefs: [],
+          modes: ["manipulation"],
           requestedHorizonMs: 30_000,
           pressureLevel: 2,
+        },
+      },
+    },
+    {
+      id: `${prefix}-invoke-action`,
+      match: { schemaId: "player-action.execution-decision.v1" },
+      result: {
+        kind: "structured",
+        value: {
+          kind: "invoke-tool",
+          toolId: "rules.actions.complete-routine-task",
+          arguments: {
+            actorId: "scene.001",
+            actionSummary: "Continue the stated ordinary task.",
+            durationMs: 1_000,
+          },
+        },
+      },
+    },
+    {
+      id: `${prefix}-action-arguments`,
+      match: { schemaId: "player-action.tool-arguments.v1" },
+      result: {
+        kind: "structured",
+        value: {
+          actionSummary: "Continue the stated ordinary task.",
+          durationMs: 1_000,
         },
       },
     },
@@ -298,6 +327,17 @@ function openingActionSteps(
   ];
 
   if (options.includePowerManifestation) {
+    if (options.failFirstPowerProposalOnce) {
+      steps.push({
+        id: `${prefix}-power-proposal-failure`,
+        match: { schemaId: "awakening-earth.power-proposal.v1" },
+        result: {
+          kind: "failure",
+          failureKind: "timeout",
+          message: "simulated power generation timeout",
+        },
+      });
+    }
     steps.push({
       id: `${prefix}-power-proposal`,
       match: { schemaId: "awakening-earth.power-proposal.v1" },
@@ -581,6 +621,22 @@ describe("desktop playable session integration", () => {
     );
     const descriptor = JSON.parse(sessionRows[0]!.generated_package_json) as {
       request: { player: { name?: string; description: string } };
+      seed: {
+        openingSituation: {
+          awakeningEvent: string;
+          manifestationOpportunity: string;
+        };
+        pressures: Array<{ id: string; category: string }>;
+      };
+      openingProposal: {
+        incident: {
+          locationRef: string;
+          involvedRefs: string[];
+          groundingRefs: string[];
+          contactObject: { wielderRef: string };
+        };
+        creature: { entityRef: string };
+      };
     };
     expect(descriptor.request.player.name).toBe("Rowan");
     expect(descriptor.request.player.description).toContain("Sex/Gender: nonbinary");
@@ -604,10 +660,35 @@ describe("desktop playable session integration", () => {
     await play.save("Generated save");
 
     // A campaign created by an older desktop build receives its missing opening
-    // on first reopen, without rebuilding or replaying the world.
-    database.run(
-      "UPDATE desktop_play_sessions SET transcript_json = '[]' WHERE world_id = ?",
+    // on first reopen, without rebuilding or replaying the world. Reopen also
+    // repairs legacy ID-valued guidance and stale opaque scene references.
+    const supernaturalPressureId = descriptor.seed.pressures.find((pressure) =>
+      pressure.category === "supernatural"
+    )!.id;
+    descriptor.seed.openingSituation.awakeningEvent = supernaturalPressureId;
+    descriptor.seed.openingSituation.manifestationOpportunity = supernaturalPressureId;
+    descriptor.openingProposal.incident.locationRef = "scene.999";
+    descriptor.openingProposal.incident.involvedRefs = ["scene.999"];
+    descriptor.openingProposal.incident.groundingRefs = ["scene.999"];
+    descriptor.openingProposal.incident.contactObject.wielderRef = "scene.999";
+    descriptor.openingProposal.creature.entityRef = "scene.999";
+    const presentationRows = await client.select<Array<{
+      opening_progression_json: string;
+    }>>(
+      "SELECT opening_progression_json FROM desktop_play_sessions WHERE world_id = ?",
       [play.view().worldId],
+    );
+    const legacyOpeningProgression = JSON.parse(
+      presentationRows[0]!.opening_progression_json,
+    ) as Record<string, unknown>;
+    legacyOpeningProgression.manifestationOpportunity = supernaturalPressureId;
+    await client.execute(
+      "UPDATE desktop_play_sessions SET generated_package_json = ?, transcript_json = '[]', opening_progression_json = ? WHERE world_id = ?",
+      [
+        JSON.stringify(descriptor),
+        JSON.stringify(legacyOpeningProgression),
+        play.view().worldId,
+      ],
     );
     const compatibilityModel = generatedCampaignModel();
 
@@ -645,7 +726,7 @@ describe("desktop playable session integration", () => {
   });
 
 
-  it("starts mundanely and commits the first power through the real rules path on turn 1", async () => {
+  it("starts with an inciting phenomenon and commits the first power through the real rules path on turn 1", async () => {
     const { database } = await createMigratedSqlitePersistence();
     let id = 0;
     const model = generatedCampaignModel({
@@ -680,12 +761,10 @@ describe("desktop playable session integration", () => {
       manifestationDeadlineTurns: 3,
       firstPowerManifested: false,
     });
-    expect(play.view().transcript[0]?.text).toContain("ordinary afternoon rhythm");
-    expect(play.view().transcript[0]?.text).not.toContain("frost");
+    expect(play.view().transcript[0]?.text).toContain("impossible");
     expect((await play.engineSession().eventHistory()).some((event) =>
-      event.type === "campaign.opening-incident-realized" ||
       event.type === "campaign.opening-phenomenon-realized"
-    )).toBe(false);
+    )).toBe(true);
 
     const afterTurn = await play.performTurn("I check the delivery list and keep working.");
     expect(afterTurn.error).toBeUndefined();
@@ -710,7 +789,7 @@ describe("desktop playable session integration", () => {
     expect(afterTurn.transcript.at(-1)?.text).toContain("weight");
   });
 
-  it("preserves the original three-turn Awakening window across save/reload and adapts to sideways choices", async () => {
+  it("preserves a first-turn Awakening across save/reload and later sideways choices", async () => {
     const { database } = await createMigratedSqlitePersistence();
     let id = 0;
     const firstModel = generatedCampaignModel({
@@ -722,7 +801,9 @@ describe("desktop playable session integration", () => {
         manifestationTargetTurn: 3,
         manifestationDeadlineTurns: 3,
       },
-      turnSteps: openingActionSteps("deadline-turn-1"),
+      turnSteps: openingActionSteps("deadline-turn-1", {
+        includePowerManifestation: true,
+      }),
     });
     const options = {
       now: () => generatedStart,
@@ -744,16 +825,13 @@ describe("desktop playable session integration", () => {
     expect(play.view().openingProgression).toEqual({
       playerTurnsSinceStart: 1,
       manifestationDeadlineTurns: 3,
-      firstPowerManifested: false,
+      firstPowerManifested: true,
     });
     await play.save("Before Awakening");
 
     const reopenedModel = generatedCampaignModel({
       turnSteps: [
         ...openingActionSteps("deadline-turn-2"),
-        ...openingActionSteps("deadline-turn-3", {
-          includePowerManifestation: true,
-        }),
       ],
     });
     const reopened = await createDesktopApplication(
@@ -764,18 +842,11 @@ describe("desktop playable session integration", () => {
     expect(reopened.view().openingProgression).toEqual({
       playerTurnsSinceStart: 1,
       manifestationDeadlineTurns: 3,
-      firstPowerManifested: false,
-    });
-    await reopened.performTurn("I check the time and keep working.");
-    expect(reopened.view().openingProgression?.playerTurnsSinceStart).toBe(2);
-    expect(reopened.view().openingProgression?.firstPowerManifested).toBe(false);
-
-    await reopened.performTurn("I finish stocking the next shelf.");
-    expect(reopened.view().openingProgression).toEqual({
-      playerTurnsSinceStart: 3,
-      manifestationDeadlineTurns: 3,
       firstPowerManifested: true,
     });
+    await reopened.performTurn("I check the time and keep working.");
+    expect(reopened.view().openingProgression?.playerTurnsSinceStart).toBe(1);
+    expect(reopened.view().openingProgression?.firstPowerManifested).toBe(true);
     expect((await reopened.engineSession().eventHistory()).filter((event) =>
       event.type === "rules.first-power-manifested"
     )).toHaveLength(1);
@@ -860,6 +931,60 @@ describe("desktop playable session integration", () => {
       event.type === "rules.first-power-manifested"
     )).toHaveLength(1);
     expect(await play.engineSession().eventHistory()).toEqual(historyAfterCommit);
+  });
+
+  it("retries timed-out first-power generation without replaying the completed action", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    let id = 0;
+    const model = generatedCampaignModel({
+      openingSituation: {
+        openingMode: "mundane-manifestation",
+        supernaturalFocus: "none",
+        awakeningEvent: "Rowan's first personal Awakening emerges from an ordinary task.",
+        manifestationOpportunity: "The first power surfaces after the completed grounded turn.",
+        manifestationTargetTurn: 1,
+        manifestationDeadlineTurns: 3,
+      },
+      turnSteps: openingActionSteps("awakening-generation-retry", {
+        includePowerManifestation: true,
+        failFirstPowerProposalOnce: true,
+      }),
+    });
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: model,
+      now: () => generatedStart,
+      randomId: () => `awakening-generation-retry-${++id}`,
+      nextSeed: () => 0x4545_0005,
+    });
+    const play = await app.createWorld({
+      characterName: "Rowan",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      allowGeneratedDetails: true,
+    });
+
+    const timedOut = await play.performTurn("I finish the delivery paperwork.");
+    const historyAfterAction = await play.engineSession().eventHistory();
+    expect(timedOut.error).toContain("completed");
+    expect(timedOut.canRetryOpeningManifestation).toBe(true);
+    expect(timedOut.openingProgression?.firstPowerManifested).toBe(false);
+    expect(timedOut.transcript.at(-1)?.text).toContain("Retry Awakening safely");
+    expect(historyAfterAction.filter((event) =>
+      event.type === "rules.first-power-manifested"
+    )).toHaveLength(0);
+
+    const retried = await play.retryNarration();
+    expect(retried.error).toBeUndefined();
+    expect(retried.canRetryOpeningManifestation).toBe(false);
+    expect(retried.openingProgression?.firstPowerManifested).toBe(true);
+    expect(retried.transcript.at(-1)?.text).toContain("weight");
+    expect((await play.engineSession().eventHistory()).filter((event) =>
+      event.type === "rules.first-power-manifested"
+    )).toHaveLength(1);
+    expect((await play.engineSession().eventHistory()).filter((event) =>
+      event.type === "rules.routine-task-completed"
+    )).toHaveLength(
+      historyAfterAction.filter((event) => event.type === "rules.routine-task-completed").length,
+    );
   });
 
   it("accepts the minimal structured questionnaire and preserves the supplied character name", async () => {
@@ -1264,7 +1389,7 @@ describe("desktop playable session integration", () => {
     expect(view.busy).toBe(false);
   });
 
-  it("continues an action after a clarification without treating the answer as a new action", async () => {
+  it("infers an omitted investigation location instead of making the player answer a questionnaire", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Clarification continuation");
     const model = new ScriptedModelRuntime([
@@ -1280,18 +1405,19 @@ describe("desktop playable session integration", () => {
         },
       },
       {
-        id: "interpret-clarification",
+        id: "interpret-with-inferred-detail",
         match: {
           schemaId: "player-action.intent-interpretation.v1",
           predicate: (request) => request.prompt.input.includes("I investigate the incident") &&
-            request.prompt.input.includes("Central Square"),
+            request.prompt.input.includes("Which location do you want to investigate?"),
         },
         result: {
           kind: "structured",
           value: {
             kind: "interpreted",
-            goal: "investigate the incident at Central Square",
+            goal: "begin investigating the incident from the current location",
             targetRefs: [],
+            modes: ["manipulation"],
             requestedHorizonMs: 60_000,
             pressureLevel: 5,
           },
@@ -1317,7 +1443,7 @@ describe("desktop playable session integration", () => {
       {
         id: "narrate",
         match: { operation: "player-action.narration.v1" },
-        result: { kind: "text", text: "You inspect the square for signs of the incident." },
+        result: { kind: "text", text: "You begin with the most relevant signs available here." },
       },
     ]);
     const play = new DesktopPlaySession(
@@ -1327,18 +1453,13 @@ describe("desktop playable session integration", () => {
       undefined,
     );
 
-    const question = await play.performTurn("I investigate the incident.");
-    expect(question.transcript.at(-1)).toEqual(expect.objectContaining({
-      speaker: "system",
-      text: "Which location do you want to investigate?",
-    }));
-
-    const resolved = await play.performTurn("Central Square");
+    const resolved = await play.performTurn("I investigate the incident.");
     expect(resolved.error).toBeUndefined();
     expect(resolved.transcript.at(-1)).toEqual(expect.objectContaining({
       speaker: "narrator",
-      text: "You inspect the square for signs of the incident.",
+      text: "You begin with the most relevant signs available here.",
     }));
+    expect(resolved.transcript.some((entry) => entry.speaker === "system")).toBe(false);
     expect(model.invocations.map((invocation) => invocation.schemaId))
       .not.toContain("desktop.turn-route.v1");
   });

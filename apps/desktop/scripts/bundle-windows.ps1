@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$desktopDirectory = Split-Path -Parent $scriptDirectory
 & (Join-Path $scriptDirectory "prepare-llama-runtime.ps1")
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
@@ -28,6 +29,12 @@ $env:PATH = "$cargoDirectory;$env:PATH"
 if (-not (Test-Path (Join-Path $cargoDirectory "cargo.exe"))) {
     throw "Rust is required to build the Windows installer. Install it from https://rustup.rs/."
 }
+
+# Keep installer builds separate from the ordinary release directory. A running
+# packaged app may have its embedded llama runtime open beneath target\release,
+# which otherwise makes Tauri's resource staging fail with Windows error 32.
+$bundleTargetDirectory = Join-Path $desktopDirectory ".bundle-cache\tauri-target"
+$env:CARGO_TARGET_DIR = $bundleTargetDirectory
 
 Push-Location (Split-Path -Parent $scriptDirectory)
 try {

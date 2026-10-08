@@ -237,7 +237,15 @@ describe("game package contracts", () => {
     expect(game.operationRegistry.listOperations("rules", "actions"))
       .toEqual([
         expect.objectContaining({
+          id: "rules.actions.complete-routine-task",
+          kind: "ordinary",
+        }),
+        expect.objectContaining({
           id: "rules.actions.concede",
+          kind: "ordinary",
+        }),
+        expect.objectContaining({
+          id: "rules.actions.enter-local-place",
           kind: "ordinary",
         }),
         expect.objectContaining({
@@ -264,7 +272,9 @@ describe("game package contracts", () => {
     expect(game.toolCatalog.listTools("rules", "actions").map(
       (tool) => tool.id,
     )).toEqual([
+      "rules.actions.complete-routine-task",
       "rules.actions.concede",
+      "rules.actions.enter-local-place",
       "rules.actions.resolve-action",
       "rules.actions.traverse-route",
     ]);

@@ -10,8 +10,14 @@ import {
   loadGameDefinition,
   type EventTypeDefinition,
   type GameDefinition,
+  type ModelInvocationOptions,
+  type ModelRuntime,
   type PersistencePorts,
   type RulesOperation,
+  type StructuredModelRequest,
+  type StructuredModelResult,
+  type TextModelRequest,
+  type TextModelResult,
 } from "@llm-ttrpg/engine";
 import {
   ATTRIBUTE_IDS,
@@ -27,6 +33,7 @@ import {
   rulesCreatureStateSchema,
   sourceContainsQuotedText,
   startingRegionWorkingStateSchema,
+  type StartingRegionSeed,
 } from "@llm-ttrpg/reference-game";
 import { createMigratedSqlitePersistence } from "../../../tests/support/sqlite.js";
 import {
@@ -78,6 +85,34 @@ const socialChangedEventType: EventTypeDefinition<
   schemaVersion: 1,
   payloadSchema: socialChangedPayloadSchema,
 };
+
+class OptionsRecordingModelRuntime implements ModelRuntime {
+  readonly capabilities;
+  readonly invocationOptions: ModelInvocationOptions[] = [];
+
+  constructor(private readonly delegate: ScriptedModelRuntime) {
+    this.capabilities = delegate.capabilities;
+  }
+
+  generate(
+    request: TextModelRequest,
+    options?: ModelInvocationOptions,
+  ): Promise<TextModelResult>;
+  generate<T>(
+    request: StructuredModelRequest<T>,
+    options?: ModelInvocationOptions,
+  ): Promise<StructuredModelResult<T>>;
+  generate<T>(
+    request: TextModelRequest | StructuredModelRequest<T>,
+    options?: ModelInvocationOptions,
+  ): Promise<TextModelResult | StructuredModelResult<T>> {
+    this.invocationOptions.push(options ?? {});
+    if (request.output.kind === "text") {
+      return this.delegate.generate(request as TextModelRequest, options);
+    }
+    return this.delegate.generate(request as StructuredModelRequest<T>, options);
+  }
+}
 const changeAliceRelationshipOperation: RulesOperation<
   { actorId: string },
   { changed: true }
@@ -199,6 +234,88 @@ describe("generated starting region", () => {
     })).resolves.toEqual(outputs.locality);
   });
 
+  it("keeps institution proposals compact and limited to real service-area entities", async () => {
+    const outputs = startingRegionStageOutputs();
+    const runtime = new ScriptedModelRuntime([{
+      id: "compact-institutions",
+      match: {
+        schemaId: "starting-region.institutions.v1",
+        predicate: (request) => {
+          expect(request.prompt.instructions).toEqual(expect.arrayContaining([
+            "Return only one or two locally relevant institutions. Use an empty object for every entity.data field; do not invent nested metadata there.",
+            "Keep each goals, capabilities, resources, constraints, and currentPressures list to at most two concise one-sentence entries.",
+            "Set serviceAreaEntityId only to the provided region.id or settlement.id; settlement district IDs are descriptive and are not world entities.",
+          ]));
+          return true;
+        },
+      },
+      result: { kind: "structured", value: outputs.institutions },
+    }]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("institutions", {
+      request: startingRegionRequestFixture,
+      region: outputs.region,
+      settlement: outputs.settlement,
+    })).resolves.toEqual(outputs.institutions);
+  });
+
+  it("normalizes a generated mundane prelude into an immediate phenomenon opening", async () => {
+    const outputs = startingRegionStageOutputs();
+    const candidate = {
+      ...outputs["opening-situation"],
+      openingMode: "mundane-manifestation",
+      supernaturalFocus: "creature",
+    };
+    const runtime = new ScriptedModelRuntime([{
+      id: "contradictory-mundane-opening",
+      match: { schemaId: "starting-region.opening-situation.v1" },
+      result: { kind: "structured", value: candidate },
+    }]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("opening-situation", {
+      request: startingRegionRequestFixture,
+    })).resolves.toEqual({
+      ...candidate,
+      openingMode: "supernatural-inciting-incident",
+      supernaturalFocus: "phenomenon",
+      manifestationTargetTurn: 1,
+    });
+  });
+
+  it("turns opening entity references into concrete narrative guidance", async () => {
+    const outputs = startingRegionStageOutputs();
+    const creature = outputs.pressures.creatures[0]!;
+    const pressure = outputs.pressures.pressures.find((item) =>
+      item.category === "supernatural"
+    )!;
+    const candidate = {
+      ...outputs["opening-situation"],
+      awakeningEvent: creature.entity.id,
+      manifestationOpportunity: pressure.id,
+      manifestationTargetTurn: 3,
+    };
+    const runtime = new ScriptedModelRuntime([{
+      id: "id-based-opening-guidance",
+      match: { schemaId: "starting-region.opening-situation.v1" },
+      result: { kind: "schema-invalid", value: candidate },
+    }]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    const context = startingRegionWorkingStateSchema.parse({
+      request: startingRegionRequestFixture,
+      pressures: outputs.pressures.pressures,
+      creatures: outputs.pressures.creatures,
+    });
+    await expect(proposal.propose("opening-situation", context))
+      .resolves.toEqual(expect.objectContaining({
+      awakeningEvent: expect.stringContaining(creature.entity.name),
+      manifestationOpportunity: expect.stringContaining("first committed attempt"),
+      manifestationTargetTurn: 1,
+      }));
+  });
+
   it("forwards ordinary parsed schema-invalid JSON to the bounded stage repair pipeline", async () => {
     const candidate = { wrong: true };
     const runtime = new ScriptedModelRuntime([{
@@ -302,6 +419,163 @@ describe("generated starting region", () => {
           })],
         }),
         provenance: expect.objectContaining({ class: "generator-chosen" }),
+      }),
+    ]);
+  });
+
+  it("bounds initial NPC generation to a small densifiable cast", async () => {
+    const outputs = startingRegionStageOutputs();
+    const runtime = new OptionsRecordingModelRuntime(new ScriptedModelRuntime([{
+      id: "compact-npcs",
+      match: { schemaId: "starting-region.npcs.v1" },
+      result: { kind: "schema-invalid", value: [{
+        name: "Alice",
+        summary: "Rowan's sibling, who noticed something strange after work.",
+        simulationReasons: ["family relationship", "supernatural witness"],
+        goals: ["Get Rowan home safely."],
+      }] },
+    }]));
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await proposal.propose("npcs", {
+      request: startingRegionRequestFixture,
+      normalized: normalizedRegionConstraintsSchema.parse(outputs.normalize),
+      settlement: outputs.settlement,
+      locality: outputs.locality,
+      institutions: outputs.institutions,
+      playerContext: outputs["player-context"],
+    });
+
+    expect(runtime.invocationOptions).toEqual([
+      expect.objectContaining({
+        generation: { temperature: 0, maxOutputTokens: 1_024 },
+      }),
+    ]);
+  });
+
+  it("recovers a token-truncated NPC stage with a minimal bounded contract", async () => {
+    const outputs = startingRegionStageOutputs();
+    const runtime = new ScriptedModelRuntime([
+      {
+        id: "truncated-npcs",
+        match: { schemaId: "starting-region.npcs.v1" },
+        result: {
+          kind: "failure",
+          failureKind: "invalid-output",
+          message: "The model reached its output token limit before completing the requested JSON",
+        },
+      },
+      {
+        id: "npc-recovery",
+        match: { schemaId: "starting-region.npcs.compact-recovery.v1" },
+        result: {
+          kind: "structured",
+          value: [{
+            name: "Alice",
+            summary: "The residence coordinator who dispatches Rowan's maintenance calls.",
+            simulationReasons: ["work contact"],
+            goals: ["Keep urgent repairs moving."],
+          }],
+        },
+      },
+    ]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("npcs", {
+      request: startingRegionRequestFixture,
+      normalized: normalizedRegionConstraintsSchema.parse(outputs.normalize),
+      settlement: outputs.settlement,
+      locality: outputs.locality,
+      institutions: outputs.institutions,
+      playerContext: outputs["player-context"],
+    })).resolves.toEqual([
+      expect.objectContaining({
+        entity: expect.objectContaining({ name: "Alice" }),
+        simulationReasons: ["work contact"],
+      }),
+    ]);
+    expect(runtime.invocations.map((invocation) => invocation.schemaId)).toEqual([
+      "starting-region.npcs.v1",
+      "starting-region.npcs.compact-recovery.v1",
+    ]);
+  });
+
+  it("falls back deterministically when even compact NPC recovery is truncated", async () => {
+    const outputs = startingRegionStageOutputs();
+    const tokenLimitFailure = {
+      kind: "failure" as const,
+      failureKind: "invalid-output" as const,
+      message: "The model reached its output token limit before completing the requested JSON",
+    };
+    const runtime = new ScriptedModelRuntime([
+      {
+        id: "truncated-npcs",
+        match: { schemaId: "starting-region.npcs.v1" },
+        result: tokenLimitFailure,
+      },
+      {
+        id: "truncated-npc-recovery",
+        match: { schemaId: "starting-region.npcs.compact-recovery.v1" },
+        result: tokenLimitFailure,
+      },
+    ]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("npcs", {
+      request: startingRegionRequestFixture,
+      normalized: normalizedRegionConstraintsSchema.parse(outputs.normalize),
+      settlement: outputs.settlement,
+      locality: outputs.locality,
+      institutions: outputs.institutions,
+      playerContext: outputs["player-context"],
+    })).resolves.toEqual([
+      expect.objectContaining({
+        entity: expect.objectContaining({ name: "Local Contact" }),
+      }),
+    ]);
+  });
+
+  it("recovers a token-truncated institution stage with a compact proposal", async () => {
+    const outputs = startingRegionStageOutputs();
+    const runtime = new ScriptedModelRuntime([
+      {
+        id: "truncated-institutions",
+        match: { schemaId: "starting-region.institutions.v1" },
+        result: {
+          kind: "failure",
+          failureKind: "invalid-output",
+          message: "The model reached its output token limit before completing the requested JSON",
+        },
+      },
+      {
+        id: "institution-recovery",
+        match: { schemaId: "starting-region.institutions.compact-recovery.v1" },
+        result: {
+          kind: "structured",
+          value: [{
+            name: "Riverside Transit Office",
+            summary: "The small public office coordinating local buses.",
+            institutionType: "transit",
+            serviceAreaEntityId: outputs.settlement.id,
+            goals: ["Keep the town connected."],
+            capabilities: ["Dispatch local buses."],
+            resources: ["A small bus fleet."],
+            constraints: ["Limited drivers."],
+            currentPressures: ["Route delays."],
+          }],
+        },
+      },
+    ]);
+    const proposal = createStartingRegionProposalModel(runtime);
+
+    await expect(proposal.propose("institutions", {
+      request: startingRegionRequestFixture,
+      region: outputs.region,
+      settlement: outputs.settlement,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        entity: expect.objectContaining({ name: "Riverside Transit Office", data: {} }),
+        serviceAreaEntityId: outputs.settlement.id,
       }),
     ]);
   });
@@ -450,6 +724,85 @@ describe("generated starting region", () => {
     expect(model.calls).toEqual(["audit"]);
   });
 
+  it("deterministically separates reused region, settlement, and locality IDs before audit", async () => {
+    const outputs = startingRegionStageOutputs();
+    const sharedId = "generated.place.hillbrook";
+    const sharedScopeId = `scope.${sharedId}`;
+    const pressures = outputs.pressures.pressures.map((pressure) => ({
+      ...pressure,
+      scopeId: sharedScopeId,
+    }));
+    const processes = outputs.pressures.processes.map((process) => ({
+      ...process,
+      scopeId: sharedScopeId,
+    }));
+    let auditedIds: string[] = [];
+    const model = {
+      propose() {
+        throw new Error("Accepted stages must not be regenerated");
+      },
+      repair() {
+        throw new Error("A deterministic ID collision must not require model repair");
+      },
+      audit(seed: StartingRegionSeed) {
+        auditedIds = [seed.region.id, seed.settlement.id, seed.locality.id];
+        return { issues: [] };
+      },
+    };
+
+    const result = await generateStartingRegion(startingRegionRequestFixture, model, {
+      resumeState: startingRegionWorkingStateSchema.parse({
+        request: startingRegionRequestFixture,
+        normalized: outputs.normalize,
+        region: { ...outputs.region, id: sharedId },
+        settlement: { ...outputs.settlement, id: sharedId },
+        institutions: outputs.institutions.map((institution) => ({
+          ...institution,
+          serviceAreaEntityId: sharedId,
+        })),
+        locality: { ...outputs.locality, id: sharedId },
+        playerContext: outputs["player-context"],
+        npcs: outputs.npcs,
+        pressures,
+        creatures: outputs.pressures.creatures,
+        knowledge: outputs.pressures.knowledge,
+        processes,
+        openingSituation: {
+          ...outputs["opening-situation"],
+          ordinaryAnchorEntityIds: [
+            ...outputs["opening-situation"].ordinaryAnchorEntityIds,
+            sharedId,
+          ],
+        },
+      }),
+    });
+
+    expect(result.kind).toBe("generated");
+    if (result.kind !== "generated") throw new Error("Expected resumed generation");
+    expect(new Set(auditedIds).size).toBe(3);
+    expect(auditedIds).toEqual([
+      sharedId,
+      "generated.settlement.haven",
+      "generated.locality.riverside",
+    ]);
+    expect(result.seed.institutions[0]?.serviceAreaEntityId).toBe(
+      "generated.settlement.haven",
+    );
+    expect(result.seed.pressures.map((pressure) => pressure.scopeId)).toEqual([
+      "scope.generated.locality.riverside",
+      "scope.generated.settlement.haven",
+      `scope.${sharedId}`,
+    ]);
+    expect(result.seed.processes.map((process) => process.scopeId)).toEqual([
+      "scope.generated.locality.riverside",
+      "scope.generated.settlement.haven",
+      `scope.${sharedId}`,
+    ]);
+    expect(result.seed.openingSituation.ordinaryAnchorEntityIds).toContain(
+      "generated.locality.riverside",
+    );
+  });
+
   it("minimally grounds a physical workplace while keeping model audit opinions advisory", async () => {
     const outputs = startingRegionStageOutputs();
     const normalized = normalizedRegionConstraintsSchema.parse({
@@ -531,6 +884,62 @@ describe("generated starting region", () => {
       expect.objectContaining({ severity: "warning" }),
     ]);
     expect(repairCalls).toBe(0);
+  });
+
+  it("does not invent a separate school when an accepted locality already contains the player's college", async () => {
+    const outputs = startingRegionStageOutputs();
+    const normalized = normalizedRegionConstraintsSchema.parse({
+      ...outputs.normalize,
+      player: {
+        ...outputs.normalize.player,
+        establishedFacts: [{
+          id: "player.fact.college-work",
+          category: "work-school",
+          statement: "Liam works at Hillbrook College.",
+          sourceText: "works at Hillbrook College",
+        }],
+      },
+    });
+    const locality = {
+      ...outputs.locality,
+      locations: outputs.locality.locations.map((location, index) =>
+        index === 0
+          ? {
+              ...location,
+              name: "Hillbrook College Dorms",
+              summary: "The college dormitory where Liam lives and works.",
+            }
+          : location
+      ),
+    };
+    const model = new DeterministicStartingRegionModel();
+
+    const result = await generateStartingRegion(startingRegionRequestFixture, model, {
+      resumeState: startingRegionWorkingStateSchema.parse({
+        request: startingRegionRequestFixture,
+        normalized,
+        region: outputs.region,
+        settlement: outputs.settlement,
+        institutions: outputs.institutions,
+        locality,
+        playerContext: outputs["player-context"],
+        npcs: outputs.npcs,
+        pressures: outputs.pressures.pressures,
+        creatures: outputs.pressures.creatures,
+        knowledge: outputs.pressures.knowledge,
+        processes: outputs.pressures.processes,
+        openingSituation: outputs["opening-situation"],
+      }),
+    });
+
+    expect(result.kind).toBe("generated");
+    if (result.kind !== "generated") throw new Error("Expected resumed generation");
+    expect(result.seed.locality.locations.some((location) =>
+      location.name === "Local School"
+    )).toBe(false);
+    expect(result.seed.playerContext.currentObligations).not.toContain(
+      "Work shifts at Local School.",
+    );
   });
 
   it("accepts faithful source quotations despite model casing and whitespace normalization", () => {

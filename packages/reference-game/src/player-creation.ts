@@ -399,12 +399,17 @@ export type OpeningSupernaturalFocus = z.infer<
   typeof openingSupernaturalFocusSchema
 >;
 
+const openingNarrativeGuidanceSchema = z.string().trim().min(12).refine(
+  (value) => /\s/.test(value) && !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/.test(value),
+  "Opening guidance must be a concrete narrative statement, not an entity or pressure ID",
+);
+
 export const openingSituationSchema = z.object({
   ordinaryAnchorEntityIds: z.array(stableIdSchema).min(1),
   openingMode: openingModeSchema.default("supernatural-inciting-incident"),
   supernaturalFocus: openingSupernaturalFocusSchema.default("creature"),
-  awakeningEvent: z.string().trim().min(1),
-  manifestationOpportunity: z.string().trim().min(1),
+  awakeningEvent: openingNarrativeGuidanceSchema,
+  manifestationOpportunity: openingNarrativeGuidanceSchema,
   manifestationTargetTurn: z.number().int().min(1).max(3).default(3),
   manifestationDeadlineTurns: z.literal(3).default(3),
   combatRequired: z.literal(false),
@@ -449,10 +454,11 @@ export const openingProgressionStateSchema = z.object({
   manifestationTargetTurn: z.number().int().min(1).max(3),
   manifestationDeadlineTurns: z.literal(3),
   firstPowerManifested: z.boolean(),
-  manifestationOpportunity: z.string().trim().min(1),
+  manifestationOpportunity: openingNarrativeGuidanceSchema,
   characterSummary: z.string().trim().min(1),
   normalizedSetup: normalizedPlayerSetupSchema,
   firstPowerProposal: firstPowerProposalSchema.optional(),
+  manifestationEvidenceEventId: stableIdSchema.optional(),
   manifestationEventId: stableIdSchema.optional(),
   manifestationNarrationPending: z.boolean(),
 }).strict().superRefine((state, context) => {

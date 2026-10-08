@@ -173,7 +173,7 @@ export function createPowerProposalModel(modelRuntime: ModelRuntime) {
         },
         trace: { operation: "reference-game.generate-power" },
       }, {
-        timeoutMs: 2 * 60 * 1_000,
+        timeoutMs: 5 * 60 * 1_000,
         generation: { temperature: 0.7, maxOutputTokens: 2_048 },
       });
 

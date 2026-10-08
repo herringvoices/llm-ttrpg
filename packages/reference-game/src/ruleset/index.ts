@@ -39,6 +39,14 @@ import {
   traverseRouteOperation,
 } from "./traversal-operation.js";
 import {
+  enterLocalPlaceOperation,
+  localPlaceEnteredEventType,
+} from "./local-place-operation.js";
+import {
+  completeRoutineTaskOperation,
+  routineTaskCompletedEventType,
+} from "./routine-task-operation.js";
+import {
   applyConversationConsequencesOperation,
   callPlacedEventType,
   communicationRecordedEventType,
@@ -51,10 +59,12 @@ export * from "./action-operation.js";
 export * from "./awakening-operation.js";
 export * from "./conversation-operations.js";
 export * from "./invincible.js";
+export * from "./local-place-operation.js";
 export * from "./mechanics.js";
 export * from "./mechanical-generation.js";
 export * from "./model.js";
 export * from "./power-discovery-operation.js";
+export * from "./routine-task-operation.js";
 export * from "./state-operations.js";
 export * from "./task-operations.js";
 export * from "./traversal-operation.js";
@@ -137,6 +147,8 @@ export const referenceRuleset: Ruleset = {
     validateRepeatAttemptOperation,
     orderMaterialEffectsOperation,
     traverseRouteOperation,
+    enterLocalPlaceOperation,
+    completeRoutineTaskOperation,
     recordCommunicationOperation,
     applyConversationConsequencesOperation,
     placeCallOperation,
@@ -152,6 +164,8 @@ export const referenceRuleset: Ruleset = {
     mechanicsRealizedEventType,
     creatureGrewEventType,
     routeTraversedEventType,
+    localPlaceEnteredEventType,
+    routineTaskCompletedEventType,
     communicationRecordedEventType,
     conversationConsequencesAppliedEventType,
     callPlacedEventType,

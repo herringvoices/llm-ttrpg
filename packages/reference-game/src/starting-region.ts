@@ -474,6 +474,25 @@ const npcModelProposalSchema = z.array(z.object({
 }).passthrough());
 type NpcModelProposal = z.infer<typeof npcModelProposalSchema>;
 
+const compactNpcRecoverySchema = z.array(z.object({
+  name: z.string().trim().min(1).max(80),
+  summary: z.string().trim().min(1).max(200),
+  simulationReasons: z.array(z.string().trim().min(1).max(120)).min(1).max(2),
+  goals: z.array(z.string().trim().min(1).max(160)).min(1).max(2),
+}).strict()).min(1).max(2);
+
+const compactInstitutionRecoverySchema = z.array(z.object({
+  name: z.string().trim().min(1).max(100),
+  summary: z.string().trim().min(1).max(200),
+  institutionType: z.string().trim().min(1).max(80),
+  serviceAreaEntityId: z.string().trim().min(1).max(160),
+  goals: z.array(z.string().trim().min(1).max(160)).min(1).max(2),
+  capabilities: z.array(z.string().trim().min(1).max(160)).max(2).default([]),
+  resources: z.array(z.string().trim().min(1).max(160)).max(2).default([]),
+  constraints: z.array(z.string().trim().min(1).max(160)).max(2).default([]),
+  currentPressures: z.array(z.string().trim().min(1).max(160)).max(2).default([]),
+}).strict()).max(2);
+
 export const threatEnvelopeSchema = z.object({
   challengeBand: z.enum([
     "Routine",
@@ -824,6 +843,62 @@ function expandPlayerContextProposal(
         : ["player.input"],
       rationale: "Player-specific context expands the normalized setup without changing player-established facts.",
     },
+  });
+}
+
+function expandCompactInstitutionProposals(
+  rawProposal: unknown,
+  context: Readonly<StartingRegionWorkingState>,
+): InstitutionSeed[] {
+  if (!context.region || !context.settlement) {
+    throw new Error("Institution recovery requires the accepted region and settlement");
+  }
+  const parsed = compactInstitutionRecoverySchema.parse(rawProposal);
+  const proposals = parsed.length > 0
+    ? parsed
+    : [{
+        name: `${context.settlement.name} Civic Services`,
+        summary: `A local institution supporting ordinary life in ${context.settlement.name}.`,
+        institutionType: "civic-services",
+        serviceAreaEntityId: context.settlement.id,
+        goals: ["Keep essential local services operating."],
+        capabilities: ["Coordinate ordinary local services."],
+        resources: [],
+        constraints: ["Local capacity is limited."],
+        currentPressures: [],
+      }];
+  const allowedServiceAreaIds = new Set([context.region.id, context.settlement.id]);
+  const usedIds = new Set<string>();
+  return proposals.map((proposal, index) => {
+    const name = proposal.name.trim().slice(0, 100);
+    const baseSlug = stableGeneratedSlug(name, `local-institution-${index + 1}`);
+    let entityId = `generated.institution.${baseSlug}`;
+    if (usedIds.has(entityId)) entityId = `${entityId}-${index + 1}`;
+    usedIds.add(entityId);
+    const goals = compactStrings(proposal.goals, 2);
+    return institutionSeedSchema.parse({
+      entity: {
+        id: entityId,
+        kind: "institution",
+        name,
+        summary: proposal.summary.trim().slice(0, 200),
+        data: {},
+      },
+      institutionType: stableGeneratedSlug(proposal.institutionType, "local-services"),
+      serviceAreaEntityId: allowedServiceAreaIds.has(proposal.serviceAreaEntityId)
+        ? proposal.serviceAreaEntityId
+        : context.settlement!.id,
+      goals: goals.length > 0 ? goals : ["Support ordinary local life."],
+      capabilities: compactStrings(proposal.capabilities, 2),
+      resources: compactStrings(proposal.resources, 2),
+      constraints: compactStrings(proposal.constraints, 2),
+      currentPressures: compactStrings(proposal.currentPressures, 2),
+      provenance: {
+        class: "generator-chosen",
+        sourceIds: [context.settlement!.id],
+        rationale: "Expanded from a compact institution proposal against the accepted settlement.",
+      },
+    });
   });
 }
 
@@ -1219,16 +1294,70 @@ const startingRegionStageSchemas: Readonly<Record<string, z.ZodType<unknown>>> =
   institutions: z.array(institutionSeedSchema),
   locality: startingLocalitySchema,
   "player-context": playerContextModelProposalSchema,
-  npcs: npcModelProposalSchema,
+  npcs: compactNpcRecoverySchema,
   pressures: pressureModelProposalSchema,
   "opening-situation": openingSituationSchema,
 };
 
 function startingRegionStageMaxOutputTokens(stageId: string): number {
   if (stageId === "opening-situation") return 1_024;
-  if (["npcs", "pressures"].includes(stageId)) return 1_536;
+  if (stageId === "npcs") return 1_024;
+  if (stageId === "pressures") return 1_536;
   if (stageId === "player-context") return 2_048;
   return 4_096;
+}
+
+function reachedStructuredOutputTokenLimit(error: {
+  readonly kind: string;
+  readonly message: string;
+  readonly diagnostic?: string;
+}): boolean {
+  if (error.kind !== "invalid-output") return false;
+  return `${error.message} ${error.diagnostic ?? ""}`
+    .toLocaleLowerCase()
+    .includes("output token limit");
+}
+
+export function normalizeOpeningSituationCandidate(
+  value: unknown,
+  context?: Readonly<Pick<StartingRegionWorkingState, "creatures" | "pressures">>,
+): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const candidate = value as Record<string, unknown>;
+  const looksLikeId = (item: unknown): item is string =>
+    typeof item === "string" && /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/.test(item);
+  const referencedCreature = looksLikeId(candidate.awakeningEvent)
+    ? context?.creatures?.find((creature) => creature.entity.id === candidate.awakeningEvent)
+    : undefined;
+  const referencedPressure = looksLikeId(candidate.awakeningEvent)
+    ? context?.pressures?.find((pressure) => pressure.id === candidate.awakeningEvent)
+    : undefined;
+  const normalized = {
+    ...candidate,
+    ...(looksLikeId(candidate.awakeningEvent)
+      ? {
+          awakeningEvent: referencedCreature
+            ? `${referencedCreature.entity.name} intrudes on the player's ordinary routine through ${referencedCreature.observedTraits[0] ?? "an unmistakable magical disturbance"}.`
+            : referencedPressure
+              ? referencedPressure.currentState
+              : "An unmistakable supernatural disturbance intrudes on the player's ordinary routine.",
+        }
+      : {}),
+    ...(looksLikeId(candidate.manifestationOpportunity)
+      ? {
+          manifestationOpportunity: "The player's first committed attempt to understand or address the supernatural disturbance becomes the event through which a first power manifests.",
+        }
+      : {}),
+    manifestationTargetTurn: 1,
+  };
+  if (candidate.openingMode === "mundane-manifestation") {
+    return {
+      ...normalized,
+      openingMode: "supernatural-inciting-incident",
+      supernaturalFocus: "phenomenon",
+    };
+  }
+  return normalized;
 }
 
 const STARTING_REGION_MODEL_TIMEOUT_MS = 20 * 60 * 1_000;
@@ -1356,6 +1485,7 @@ export function createStartingRegionProposalModel(
           "Do not default to medieval or pseudo-medieval fantasy. Unless player-established facts explicitly support a historic or isolated exception, use contemporary roads, vehicles, utilities, communications, businesses, services, and public institutions; a town or rural setting is still modern.",
           "Preserve player-established facts verbatim and do not make unspecified details player-authored.",
           "Use stable lowercase dot- or dash-separated IDs and cite provenance for generated choices.",
+          "Every region, settlement, locality, location, institution, actor, creature, and pressure must have a distinct ID; never reuse a containing place's ID for a nested place.",
           "Use concise strings and the smallest arrays that satisfy the requested contract.",
           ...(stageId === "normalize"
             ? [
@@ -1372,11 +1502,18 @@ export function createStartingRegionProposalModel(
                 "Use unique IDs, concise strings, and only location/institution references present in the provided context.",
               ]
             : []),
+          ...(stageId === "institutions"
+            ? [
+                "Return only one or two locally relevant institutions. Use an empty object for every entity.data field; do not invent nested metadata there.",
+                "Keep each goals, capabilities, resources, constraints, and currentPressures list to at most two concise one-sentence entries.",
+                "Set serviceAreaEntityId only to the provided region.id or settlement.id; settlement district IDs are descriptive and are not world entities.",
+              ]
+            : []),
           ...(stageId === "npcs"
             ? [
-                "Return a small cast of one to four concise, distinctive NPC proposals that connect to established people, places, institutions, obligations, or pressures.",
-                "For each NPC provide only identity, narrative relevance, goals, an optional relationship to the player, a few salient memories, and genuinely mechanical constraints.",
-                "Do not emit entity IDs, actor social-state boilerplate, timestamps, provenance, commitments, or empty scaffolding; the engine expands and validates those deterministically.",
+                "Return only one or two concise, distinctive NPC proposals that connect to established people, places, institutions, obligations, or pressures.",
+                "For each NPC return only name, summary, one or two simulationReasons, and one or two immediate goals. Finish the JSON before adding detail.",
+                "Do not emit relationships, memories, mechanical constraints, entity IDs, actor social-state boilerplate, timestamps, provenance, commitments, or empty scaffolding. Those details are generated later if play makes the NPC important.",
               ]
             : []),
           ...(stageId === "pressures"
@@ -1390,9 +1527,9 @@ export function createStartingRegionProposalModel(
           ...(stageId === "opening-situation"
             ? [
                 "Frame one concise opening from the accepted entities, ordinary life, player power preferences, and pressures supplied here.",
-                "Choose openingMode deliberately. supernatural-inciting-incident means magic is immediately relevant; mundane-manifestation means play begins in ordinary modern life and the player's power intrudes before any larger incident is required.",
+                "Use supernatural-inciting-incident so magic is immediately relevant in the opening narration. Do not choose a mundane prelude for a generated Awakening Earth campaign.",
                 "For supernatural-inciting-incident choose supernaturalFocus creature only when an accepted near-term creature genuinely fits; otherwise use phenomenon for a Gate, magical object, environmental anomaly, unstable power, or other non-creature supernatural event. For mundane-manifestation use supernaturalFocus none.",
-                "Choose manifestationTargetTurn from 1 through 3. The first power must manifest by turn 3, but do not script the player's actions needed to reach it.",
+                "Set manifestationTargetTurn to 1. The first committed player action must provide the grounded event through which the first power manifests; do not script the player's action in advance.",
                 "Use only existing entity IDs for ordinaryAnchorEntityIds. Offer social, investigative, and risky directions without requiring combat or a mandatory quest.",
                 "awakeningEvent and manifestationOpportunity are protected opening guidance, not already-narrated outcomes. A mundane opening may keep both latent until the manifestation turn.",
                 "Do not restate the world, create mechanics, or narrate an outcome; return only the requested opening brief.",
@@ -1422,6 +1559,112 @@ export function createStartingRegionProposalModel(
         maxOutputTokens: startingRegionStageMaxOutputTokens(stageId),
       },
     });
+    if (
+      !result.ok &&
+      reachedStructuredOutputTokenLimit(result.error) &&
+      (stageId === "npcs" || stageId === "institutions")
+    ) {
+      const isNpcRecovery = stageId === "npcs";
+      const recoveryPrompt = {
+          instructions: isNpcRecovery
+            ? [
+                "The previous NPC response was truncated. Return exactly one or two very small NPC records.",
+                "For each record return only name, summary, one or two simulationReasons, and one or two goals. Do not return any other fields.",
+                "Finish the JSON before adding detail.",
+              ]
+            : [
+                "The previous institution response was truncated. Return exactly one or two very small institution records.",
+                "Use only the requested compact fields, with no more than two short strings in any array. serviceAreaEntityId must be the supplied region or settlement ID.",
+                "Finish the JSON before adding detail.",
+              ],
+          context: JSON.stringify(isNpcRecovery
+            ? {
+                player: context.playerContext && {
+                  name: context.playerContext.entity.name,
+                  summary: context.playerContext.entity.summary,
+                  currentObligations: context.playerContext.currentObligations,
+                },
+                locality: context.locality && {
+                  name: context.locality.name,
+                  locations: context.locality.locations.map((location) => ({
+                    id: location.id,
+                    name: location.name,
+                  })),
+                },
+                institutions: context.institutions?.map((institution) => ({
+                  id: institution.entity.id,
+                  name: institution.entity.name,
+                })),
+              }
+            : {
+                region: context.region && { id: context.region.id, name: context.region.name },
+                settlement: context.settlement && {
+                  id: context.settlement.id,
+                  name: context.settlement.name,
+                  settlementType: context.settlement.settlementType,
+                  districts: context.settlement.districts.map((district) => ({
+                    id: district.id,
+                    name: district.name,
+                  })),
+                },
+              }),
+          input: `Recover truncated starting-region stage '${stageId}'.`,
+        };
+      const recoveryTrace = {
+        operation: "starting-region-generation" as const,
+        invocationId: `starting-region.${stageId}.truncation-recovery`,
+      };
+      const recoveryOptions = {
+        timeoutMs: STARTING_REGION_MODEL_TIMEOUT_MS,
+        generation: { temperature: 0, maxOutputTokens: 1_024 },
+      } as const;
+      const recoveryResult = isNpcRecovery
+        ? await modelRuntime.generate({
+            prompt: recoveryPrompt,
+            output: {
+              kind: "structured",
+              schemaId: "starting-region.npcs.compact-recovery.v1",
+              schema: compactNpcRecoverySchema,
+            },
+            trace: recoveryTrace,
+          }, recoveryOptions)
+        : await modelRuntime.generate({
+            prompt: recoveryPrompt,
+            output: {
+              kind: "structured",
+              schemaId: "starting-region.institutions.compact-recovery.v1",
+              schema: compactInstitutionRecoverySchema,
+            },
+            trace: recoveryTrace,
+          }, recoveryOptions);
+      if (recoveryResult.ok) {
+        return isNpcRecovery
+          ? expandNpcProposals(recoveryResult.output.value, context)
+          : expandCompactInstitutionProposals(recoveryResult.output.value, context);
+      }
+      if (
+        recoveryResult.error.candidate !== undefined
+      ) {
+        try {
+          return isNpcRecovery
+            ? expandNpcProposals(recoveryResult.error.candidate, context)
+            : expandCompactInstitutionProposals(recoveryResult.error.candidate, context);
+        } catch {
+          // Fall through to the deterministic minimal record below.
+        }
+      }
+      if (reachedStructuredOutputTokenLimit(recoveryResult.error)) {
+        return isNpcRecovery
+          ? expandNpcProposals([], context)
+          : expandCompactInstitutionProposals([], context);
+      }
+      const recoveryDiagnostic = recoveryResult.error.diagnostic
+        ? `: ${recoveryResult.error.diagnostic}`
+        : "";
+      throw new Error(
+        `Starting-region ${stageId} compact recovery failed: ${recoveryResult.error.message}${recoveryDiagnostic}`,
+      );
+    }
     if (!result.ok) {
       if (
         result.error.kind === "invalid-output" &&
@@ -1444,6 +1687,9 @@ export function createStartingRegionProposalModel(
             );
           }
         }
+        if (stageId === "opening-situation") {
+          return normalizeOpeningSituationCandidate(result.error.candidate, context);
+        }
         return result.error.candidate;
       }
       const diagnostic = result.error.diagnostic
@@ -1461,6 +1707,9 @@ export function createStartingRegionProposalModel(
     }
     if (stageId === "pressures") {
       return expandPressureProposal(result.output.value, context);
+    }
+    if (stageId === "opening-situation") {
+      return normalizeOpeningSituationCandidate(result.output.value, context);
     }
     return result.output.value;
   };
@@ -1633,7 +1882,7 @@ function ensurePlayerRoutineAnchors(
 
   for (const anchor of anchors) {
     const alreadyGrounded = locality.locations.some((location) =>
-      `${location.name} ${location.summary}`.toLocaleLowerCase().includes(anchor.term)
+      anchor.pattern.test(`${location.name} ${location.summary}`)
     );
     if (alreadyGrounded) continue;
     const baseId = `${locality.id}.player-${anchor.slug}`;
@@ -2028,6 +2277,126 @@ function requireSeed(state: StartingRegionWorkingState): StartingRegionSeed {
     processes: state.processes,
     openingSituation: state.openingSituation,
   };
+}
+
+/**
+ * Repairs model-generated collisions between the three nested geographic IDs.
+ *
+ * These records describe different scopes even when the model gives all of them
+ * the same place-derived ID. Keep the first usable ID, allocate deterministic
+ * type-prefixed IDs for collisions, and rewrite references according to the
+ * kind of record that owns the reference.
+ */
+export function ensureUniqueStartingRegionIds(
+  seed: StartingRegionSeed,
+): StartingRegionSeed {
+  const reservedIds = new Set([
+    ...seed.locality.locations.map((item) => item.id),
+    ...seed.institutions.map((item) => item.entity.id),
+    seed.playerContext.entity.id,
+    ...seed.npcs.map((item) => item.entity.id),
+    ...seed.creatures.map((item) => item.entity.id),
+    ...seed.pressures.map((item) => item.id),
+  ]);
+  const allocateId = (
+    preferredId: string,
+    prefix: "region" | "settlement" | "locality",
+    name: string,
+  ): string => {
+    if (!reservedIds.has(preferredId)) {
+      reservedIds.add(preferredId);
+      return preferredId;
+    }
+    const base = `generated.${prefix}.${stableGeneratedSlug(name, prefix)}`;
+    let candidate = base;
+    let suffix = 2;
+    while (reservedIds.has(candidate)) candidate = `${base}-${suffix++}`;
+    reservedIds.add(candidate);
+    return candidate;
+  };
+
+  const original = {
+    region: seed.region.id,
+    settlement: seed.settlement.id,
+    locality: seed.locality.id,
+  };
+  const assigned = {
+    region: allocateId(original.region, "region", seed.region.name),
+    settlement: allocateId(original.settlement, "settlement", seed.settlement.name),
+    locality: allocateId(original.locality, "locality", seed.locality.name),
+  };
+  if (
+    assigned.region === original.region &&
+    assigned.settlement === original.settlement &&
+    assigned.locality === original.locality
+  ) return seed;
+
+  const referenceFor = (
+    value: string,
+    preference: readonly (keyof typeof original)[],
+  ): string => {
+    for (const kind of preference) {
+      if (value === original[kind]) return assigned[kind];
+    }
+    return value;
+  };
+  const scopeForPressure = (pressure: PressureSeed): string => {
+    const unscoped = pressure.scopeId.startsWith("scope.")
+      ? pressure.scopeId.slice("scope.".length)
+      : pressure.scopeId;
+    const preference: readonly (keyof typeof original)[] =
+      pressure.category === "ordinary"
+        ? ["locality", "settlement", "region"]
+        : pressure.category === "social-institutional"
+          ? ["settlement", "locality", "region"]
+          : ["region", "settlement", "locality"];
+    const remapped = referenceFor(unscoped, preference);
+    return remapped === unscoped ? pressure.scopeId : `scope.${remapped}`;
+  };
+  const pressures = seed.pressures.map((pressure) => pressureSeedSchema.parse({
+    ...pressure,
+    scopeId: scopeForPressure(pressure),
+  }));
+  const scopeByPressureId = new Map(pressures.map((pressure) => [
+    pressure.id,
+    pressure.scopeId,
+  ]));
+
+  return startingRegionSeedSchema.parse({
+    ...seed,
+    region: { ...seed.region, id: assigned.region },
+    settlement: { ...seed.settlement, id: assigned.settlement },
+    locality: { ...seed.locality, id: assigned.locality },
+    institutions: seed.institutions.map((institution) => ({
+      ...institution,
+      serviceAreaEntityId: referenceFor(institution.serviceAreaEntityId, [
+        "settlement", "region", "locality",
+      ]),
+    })),
+    playerContext: {
+      ...seed.playerContext,
+      homeLocationId: referenceFor(seed.playerContext.homeLocationId, [
+        "locality", "settlement", "region",
+      ]),
+      routineLocationIds: seed.playerContext.routineLocationIds.map((id) =>
+        referenceFor(id, ["locality", "settlement", "region"])
+      ),
+      accessEntityIds: seed.playerContext.accessEntityIds.map((id) =>
+        referenceFor(id, ["locality", "settlement", "region"])
+      ),
+    },
+    pressures,
+    processes: seed.processes.map((process) => ({
+      ...process,
+      scopeId: scopeByPressureId.get(process.pressureId) ?? process.scopeId,
+    })),
+    openingSituation: {
+      ...seed.openingSituation,
+      ordinaryAnchorEntityIds: seed.openingSituation.ordinaryAnchorEntityIds.map((id) =>
+        referenceFor(id, ["locality", "settlement", "region"])
+      ),
+    },
+  });
 }
 
 function entityIds(seed: StartingRegionSeed): Set<string> {
@@ -2789,8 +3158,17 @@ export async function generateStartingRegion(
     },
   });
   state = ensurePlayerRoutineAnchors(generated.state);
-  const seed = ensureOpeningCreature(requireSeed(state));
+  const seed = ensureUniqueStartingRegionIds(
+    ensureOpeningCreature(requireSeed(state)),
+  );
   state = mergeState(state, seed);
+
+  const hardIssues = validateStartingRegionSeed(seed);
+  if (hardIssues.length > 0) {
+    const messages = hardIssues.map((issue) => issue.message).join(" ");
+    throw new Error(`Starting region failed validation: ${messages}`);
+  }
+
   const rawAudit = coherenceAuditSchema.parse(await model.audit(seed, state));
   const seenAuditIssues = new Set<string>();
   const audit = coherenceAuditSchema.parse({
@@ -2803,12 +3181,6 @@ export async function generateStartingRegion(
       return [{ ...advisoryIssue, severity: "warning" as const }];
     }),
   });
-
-  const hardIssues = validateStartingRegionSeed(seed);
-  if (hardIssues.length > 0) {
-    const messages = hardIssues.map((issue) => issue.message).join(" ");
-    throw new Error(`Starting region failed validation: ${messages}`);
-  }
 
   const auditDiagnostics = [{
     stageId: "coherence-audit",
