@@ -1,6 +1,7 @@
 export * from "./content.js";
 export * from "./content-planning.js";
 export * from "./campaign-planning.js";
+export * from "./campaign-direction.js";
 export * from "./conversation-contracts.js";
 export * from "./conversation.js";
 export * from "./actor-social-state.js";
