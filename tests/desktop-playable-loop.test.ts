@@ -647,6 +647,43 @@ describe("desktop playable session integration", () => {
     expect(await engine.eventHistory({ types: ["test.effort-resolved"] })).toHaveLength(2);
   });
 
+  it("skips planner models for a routine committed action even with an active plan", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Routine planned turn");
+    const basis = engine.planningBasis();
+    await engine.initializeCampaignPlan(campaignPlanDocumentSchema.parse({
+      schemaVersion: 1, planRevision: 0,
+      basedOnWorldRevision: basis.worldRevision,
+      basedOnEventSequence: basis.eventSequence,
+      updatedAtFictionalTime: engine.snapshot().fictionalTime,
+      horizons: {
+        high: { summary: "Preserve choices.", attention: [], threadIds: [] },
+        medium: { summary: "Attend to established stakes.", attention: [], threadIds: [] },
+        low: { summary: "Allow quiet moments.", attention: [], threadIds: ["thread.routine"] },
+      },
+      threads: [{
+        id: "thread.routine", title: "Everyday choices",
+        summary: "Observe Amelia's life without forced plot beats.",
+        kind: "developing-situation", horizon: "low", priority: 50, status: "active",
+        grounding: [{ kind: "entity", id: "campaign.entity.amelia" }],
+        related: [], playerInterestIds: [], currentTension: "What matters today?",
+        assumptions: [], conditionalDevelopments: [], lastReviewedAt: basis,
+        rationale: "Grounded in the player's established existence.",
+      }],
+      playerGoals: [], interestSignals: [],
+    }));
+    const model = actionModel();
+    const play = new DesktopPlaySession(engine, model, "campaign.entity.amelia", undefined);
+    const view = await play.performTurn("I test my footing and press forward.");
+    expect(view.error).toBeUndefined();
+    expect(view.diagnostics?.plannerReview).toEqual(expect.objectContaining({
+      modelCalls: 0, noOp: true, planRevisionBefore: 0, planRevisionAfter: 0,
+    }));
+    expect(model.invocations.map((call) => call.schemaId))
+      .not.toContain("campaign-direction-review.v1");
+    expect((await engine.campaignPlan())?.planRevision).toBe(0);
+  });
+
   it("triggers a targeted low replan after a canonical action invalidates its assumption", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Planner integration");
@@ -721,43 +758,22 @@ describe("desktop playable session integration", () => {
       { id: "stop", match: { schemaId: "player-action.execution-decision.v1" }, result: { kind: "structured", value: { kind: "stop", reason: "goal-achieved" } } },
       { id: "narrate", match: { operation: "player-action.narration.v1" }, result: { kind: "text", text: "Amelia leaves town, abandoning the expected opportunity." } },
       {
-        id: "replan-low",
-        match: { schemaId: "campaign-plan-mutation-proposal.v1" },
+        id: "review-low",
+        match: { schemaId: "campaign-direction-review.v1" },
         result: (request: ModelRequest<unknown>) => {
           const context = JSON.parse(request.prompt.context!) as {
-            plan: typeof initialPlan;
-            authoritativeBasis: { worldRevision: number; eventSequence: number };
-            signals: Array<{ id: string }>;
+            direction: { threads: Array<{ ref: string; horizon: string }> };
           };
-          const current = context.plan.threads[0]!;
+          const selected = context.direction.threads.find((t) => t.horizon === "low");
+          if (!selected) throw new Error("The grounded low thread is unavailable");
           return {
             kind: "structured" as const,
             value: {
-              requestedHorizon: "low",
-              basedOnPlanRevision: context.plan.planRevision,
-              basedOnWorldRevision: context.authoritativeBasis.worldRevision,
-              basedOnEventSequence: context.authoritativeBasis.eventSequence,
-              consumedSignalIds: context.signals.map((signal) => signal.id),
-              mutations: [{
-                kind: "upsert-thread",
-                thread: {
-                  ...current,
-                  priority: 95,
-                  currentTension: "What follows from Amelia leaving town?",
-                  assumptions: current.assumptions.map((assumption) => ({
-                    ...assumption,
-                    status: "invalid",
-                    lastEvaluatedAt: context.authoritativeBasis,
-                  })),
-                  lastReviewedAt: context.authoritativeBasis,
-                  rationale: "Adapt attention to the canonical departure without reversing it.",
-                },
-              }, {
-                kind: "set-horizon",
-                summary: "Follow consequences of Amelia's unexpected departure.",
-                attention: ["Do not force Amelia back toward the abandoned hook."],
-              }],
-              rationale: "The near-term location assumption was invalidated.",
+              kind: "revise-thread", threadRef: selected.ref,
+              priority: 95,
+              currentTension: "What follows from Amelia leaving town?",
+              horizonSummary: "Follow consequences of Amelia's unexpected departure.",
+              reason: "Adapt near-term attention without reversing Amelia's choice.",
             },
           };
         },
@@ -772,11 +788,14 @@ describe("desktop playable session integration", () => {
     const beforeActionWorld = engine.snapshot();
     const result = await play.performTurn("I leave town instead.");
     expect(result.error).toBeUndefined();
-    expect(result.diagnostics?.planner).toEqual(expect.objectContaining({
-      horizonReviewed: "low",
-      assumptionsInvalidated: ["assumption.amelia-remains"],
-      canonicalMutationCount: 0,
+    expect(result.diagnostics?.plannerReview).toEqual(expect.objectContaining({
+      reason: "material-source",
+      decision: "revise-thread",
+      invalidatedAssumptions: ["assumption.amelia-remains"],
+      modelCalls: 1,
+      noOp: false,
     }));
+    expect(result.diagnostics?.planner).toEqual(expect.objectContaining({ canonicalMutationCount: 0 }));
     expect((await engine.campaignPlan())?.horizons.low.summary).toContain("unexpected departure");
     expect(engine.snapshot().entities.find((entity) =>
       entity.id === "campaign.entity.amelia"

@@ -1,6 +1,5 @@
 import {
   compileNarrationDirective,
-  createCampaignPlanContextItem,
   deriveSceneRegister,
   fictionalDurationMs,
   jsonValueSchema,
@@ -10,9 +9,10 @@ import {
   recallContinuity,
   performConversationTurn,
   renderContextForModel,
-  runPlannerPass,
-  validatePlanningAssumptions,
-  type CampaignPlanDocument,
+  reviewCampaignDirection,
+  selectCampaignReview,
+  changedPlanningSources,
+  type CampaignReviewDiagnostic,
   type ConversationWorkingState,
   type GameSession,
   type JsonValue,
@@ -162,6 +162,15 @@ export interface TurnDiagnostics {
   readonly eventCountAfter: number;
   readonly actionTrace?: JsonValue;
   readonly planner?: PlanRevisionDiagnostic | { readonly error: string };
+  /** Every submitted play turn reports why planning ran or safely skipped. */
+  readonly plannerReview?: CampaignReviewDiagnostic | {
+    readonly reason: "routine" | "unrelated" | "no-plan" | "historical-recall";
+    readonly historyQueryCount: 0 | 1;
+    readonly modelCalls: 0;
+    readonly noOp: true;
+    readonly planRevisionBefore?: number;
+    readonly planRevisionAfter?: number;
+  };
   readonly narrationStatus: "complete" | "failed";
   /** Legacy absolute after-state totals; retained for existing developer consumers. */
   readonly growth: WorldRecordCounts;
@@ -262,6 +271,7 @@ export class DesktopPlaySession {
   private turnProgress?: TurnProgress;
   private lastError?: string;
   private lastDiagnostics?: TurnDiagnostics;
+  private pendingPlannerEscalation = false;
   private lastContinuityDiagnostics?: ReturnType<typeof projectContinuity>["diagnostics"];
   private lastBoundaryContinuityDiagnostics?: TurnDiagnostics["continuityBoundary"];
   private readonly observedModelRuntime?: ModelRuntime;
@@ -831,50 +841,82 @@ export class DesktopPlaySession {
     }
   }
 
-  private async replanIfInvalidated(
-    listener?: TurnProgressListener,
-  ): Promise<PlanRevisionDiagnostic | { readonly error: string } | undefined> {
-    let plan = await this.session.campaignPlan();
-    if (!plan) return undefined;
+  /** Only grounded changes and meaningful scene boundaries reach the planner.
+   * No full-history scans, no escalation cascade, no canonical writes. */
+  private async reviewCampaignAtBoundary(input: {
+    readonly before: ReturnType<GameSession["snapshot"]>;
+    readonly beforeBasis: ReturnType<GameSession["planningBasis"]>;
+    readonly beforeLocationId?: string;
+    readonly materialEventIds: readonly string[];
+    readonly onProgress?: TurnProgressListener;
+  }): Promise<{
+    readonly revision?: PlanRevisionDiagnostic;
+    readonly review: NonNullable<TurnDiagnostics["plannerReview"]>;
+  }> {
+    const plan = await this.session.campaignPlan();
+    if (!plan) return { review: {
+      reason: "no-plan", historyQueryCount: 0, modelCalls: 0, noOp: true,
+    } };
+    const after = this.session.snapshot();
     const basis = this.session.planningBasis();
-    const history = await this.session.eventHistory();
-    const validation = validatePlanningAssumptions({
-      plan,
-      world: this.session.snapshot(),
-      history,
-      ...basis,
-    });
-    if (validation.signals.length === 0) return undefined;
-    this.reportTurnProgress("updating", listener);
-    const model = this.requireModel();
-    let horizon: "low" | "medium" | "high" = "low";
-    let finalDiagnostic: PlanRevisionDiagnostic | undefined;
-    while (true) {
-      const protectedContext = this.session.assembleContext({
-        role: "planner",
-        perspective: { kind: "canonical" },
-        budget: { maxUnits: 40_000 },
-      }, { retrieved: [createCampaignPlanContextItem(plan)] });
-      const currentBasis = this.session.planningBasis();
-      const pass = await runPlannerPass({
-        modelRuntime: model,
-        plan,
-        horizon,
-        signals: validation.signals,
-        world: this.session.snapshot(),
-        history: await this.session.eventHistory(),
-        ...currentBasis,
-        authoritativeContext: asJson(protectedContext),
-      });
-      if (!pass.ok || !pass.plan || !pass.diagnostic) {
-        return { error: pass.error ?? "Planner pass failed; the previous plan remains active." };
-      }
-      plan = await this.session.commitCampaignPlan(plan.planRevision, pass.plan);
-      finalDiagnostic = pass.diagnostic;
-      if (!pass.diagnostic.escalationRequested) break;
-      horizon = pass.diagnostic.escalationRequested;
+    const currentLocationId = this.view().currentLocationId;
+    const changed = changedPlanningSources(plan, input.before, after);
+    const locationChanged = input.beforeLocationId !== currentLocationId;
+    const fictionalHours = (Date.parse(after.fictionalTime) -
+      Date.parse(input.before.fictionalTime)) / 3_600_000;
+    const hasNewEventEvidence = input.materialEventIds.length > 0 &&
+      basis.eventSequence > input.beforeBasis.eventSequence;
+    if (changed.length === 0 && !locationChanged && fictionalHours < 24 &&
+        !hasNewEventEvidence) {
+      return { review: {
+        reason: "routine", historyQueryCount: 0, modelCalls: 0, noOp: true,
+        planRevisionBefore: plan.planRevision, planRevisionAfter: plan.planRevision,
+      } };
     }
-    return finalDiagnostic;
+    // Read only the finite newly committed receipt window. This also supports
+    // event-sparse worlds with canonical state changes but no routine events.
+    const events = hasNewEventEvidence
+      ? await this.session.eventHistory({
+          direction: "descending",
+          limit: Math.min(64, Math.max(1, basis.eventSequence -
+            input.beforeBasis.eventSequence)),
+        })
+      : [];
+    const trigger = selectCampaignReview({
+      plan, before: input.before, after, basis,
+      beforeLocationId: input.beforeLocationId,
+      afterLocationId: currentLocationId,
+      playerActorId: this.playerActorId,
+      events,
+      deferUntilBoundary: this.pendingPlannerEscalation,
+    });
+    if (!trigger.reason) return { review: {
+      reason: "unrelated",
+      historyQueryCount: events.length ? 1 : 0,
+      modelCalls: 0, noOp: true,
+      planRevisionBefore: plan.planRevision, planRevisionAfter: plan.planRevision,
+    } };
+    input.onProgress && this.reportTurnProgress("updating", input.onProgress);
+    const reviewed = await reviewCampaignDirection({
+      plan, world: after, basis, trigger,
+      history: events,
+      historyQueryCount: hasNewEventEvidence ? 1 : 0,
+      modelRuntime: this.requireModel(),
+    });
+    this.pendingPlannerEscalation = Boolean(reviewed.diagnostic.deferredEscalation);
+    if (reviewed.plan) {
+      try {
+        await this.session.commitCampaignPlan(plan.planRevision, reviewed.plan);
+        return { revision: reviewed.revision, review: reviewed.diagnostic };
+      } catch (error) {
+        return { review: {
+          ...reviewed.diagnostic, noOp: true,
+          planRevisionAfter: plan.planRevision,
+          error: errorMessage(error),
+        } };
+      }
+    }
+    return { review: reviewed.diagnostic };
   }
 
   async performTurn(
@@ -900,6 +942,7 @@ export class DesktopPlaySession {
     let actionTrace: JsonValue | undefined;
     let narrationStatus: "complete" | "failed" = "complete";
     let planner: PlanRevisionDiagnostic | { readonly error: string } | undefined;
+    let plannerReview: TurnDiagnostics["plannerReview"];
     let turnOutcome: TurnPerformanceDiagnostic["outcome"] = "failed";
     const pendingClarification = this.pendingActionClarification;
     this.pendingActionClarification = undefined;
@@ -1153,8 +1196,23 @@ export class DesktopPlaySession {
         }
       }
       if (recallAnswer === undefined) {
-        planner = await this.replanIfInvalidated(onProgress)
-          .catch((error: unknown) => ({ error: errorMessage(error) }));
+        const planReview = await this.reviewCampaignAtBoundary({
+          before, beforeBasis: beforeBasis!,
+          beforeLocationId: locationBeforeTurn,
+          materialEventIds: openingEvidenceEventIds,
+          onProgress,
+        }).catch((error: unknown) => ({ review: {
+          reason: "unrelated" as const, historyQueryCount: 0 as const,
+          modelCalls: 0 as const, noOp: true as const,
+        }, error: errorMessage(error) }));
+        plannerReview = planReview.review;
+        if ("revision" in planReview) planner = planReview.revision;
+        if ("error" in planReview) planner = { error: planReview.error };
+      } else {
+        plannerReview = {
+          reason: "historical-recall", historyQueryCount: 0,
+          modelCalls: 0, noOp: true,
+        };
       }
     } catch (error) {
       this.lastError = errorMessage(error);
@@ -1220,6 +1278,7 @@ export class DesktopPlaySession {
             eventCountAfter: afterBasis.eventSequence,
             ...(actionTrace ? { actionTrace } : {}),
             ...(planner ? { planner } : {}),
+            ...(plannerReview ? { plannerReview } : {}),
             narrationStatus,
             growth: afterCounts,
             stateCounts: {
