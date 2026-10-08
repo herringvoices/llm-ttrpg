@@ -1411,7 +1411,7 @@ describe("desktop playable session integration", () => {
     const model = new ScriptedModelRuntime([
       {
         id: "ask-for-location",
-        match: { schemaId: "player-action.intent-interpretation.v1" },
+        match: { schemaId: "turn.declaration.v1" },
         result: {
           kind: "structured",
           value: {
@@ -1423,7 +1423,7 @@ describe("desktop playable session integration", () => {
       {
         id: "interpret-with-inferred-detail",
         match: {
-          schemaId: "player-action.intent-interpretation.v1",
+          schemaId: "turn.declaration.v1",
           predicate: (request) => request.prompt.input.includes("I investigate the incident") &&
             request.prompt.input.includes("Which location do you want to investigate?"),
         },
@@ -1431,25 +1431,24 @@ describe("desktop playable session integration", () => {
           kind: "structured",
           value: {
             kind: "interpreted",
-            goal: "begin investigating the incident from the current location",
-            targetRefs: [],
-            modes: ["manipulation"],
-            requestedHorizonMs: 60_000,
-            pressureLevel: 5,
+            segments: [{
+              kind: "action",
+              goal: "begin investigating the incident from the current location",
+              targetRefs: [],
+              modes: ["manipulation"],
+              statedMeans: [],
+              requestedHorizonMs: 60_000,
+              pressureLevel: 5,
+            }],
           },
         },
       },
       {
-        id: "invoke",
-        match: { schemaId: "player-action.execution-decision.v1" },
-        result: {
-          kind: "structured",
-          value: {
-            kind: "invoke-tool",
-            toolId: "test.actions.resolve-effort",
-            arguments: { base: 8, modifier: 2, difficulty: 9, durationMs: 1_000 },
-          },
-        },
+        id: "arguments",
+        match: { schemaId: "player-action.tool-arguments.v1" },
+        result: { kind: "structured", value: {
+          base: 8, modifier: 2, difficulty: 9, durationMs: 1_000,
+        } },
       },
       {
         id: "stop",
