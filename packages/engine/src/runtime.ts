@@ -1978,7 +1978,7 @@ function openSession(
             );
           }
           const validateAliases = (value: JsonValue): void => {
-            if (typeof value === "string" && /^scene\\.\\d{3}$/.test(value)) {
+            if (typeof value === "string" && /^scene\.\d{3}$/.test(value)) {
               resolveBriefReference(
                 executionBrief, value,
                 { worldRevision: revision, eventSequence },
