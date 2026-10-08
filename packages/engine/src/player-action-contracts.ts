@@ -38,6 +38,21 @@ export type IntentInterpretationDecision = z.infer<
   typeof intentInterpretationDecisionSchema
 >;
 
+/** Engine-validated semantic interpretation from the shared turn classifier.
+ * Canonical target IDs are never sent to or accepted from the model. */
+export const preinterpretedPlayerActionSchema = z.object({
+  declaration: z.string().trim().min(1),
+  goal: z.string().trim().min(1),
+  targetIds: z.array(stableIdSchema),
+  modes: z.array(semanticActionModeSchema).min(1),
+  statedMeans: z.array(z.string().trim().min(1)).max(8),
+  pressureLevel: actionPressureLevelSchema,
+  requestedHorizonMs: fictionalDurationMsSchema,
+  worldRevision: z.number().int().nonnegative(),
+  eventSequence: z.number().int().nonnegative(),
+}).strict();
+export type PreinterpretedPlayerAction = z.infer<typeof preinterpretedPlayerActionSchema>;
+
 export const executionDecisionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("discover-subsystems"), domainId: stableIdSchema }).strict(),
   z.object({
