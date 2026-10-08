@@ -619,6 +619,15 @@ describe("NPC interaction and conversation", () => {
             }
           : { kind: "stop", reason: "goal-achieved" };
       }
+      if (request.output.schemaId === "player-action.tool-arguments.v1") {
+        return {
+          service: "animal control",
+          message: "A chicken is missing under unusual circumstances.",
+          durationMs: 3_000,
+          scopeIds: [],
+          causedByEventIds: [],
+        };
+      }
       if (request.output.schemaId === "conversation.npc-decision.v1") {
         return npcDecision(request);
       }
