@@ -657,6 +657,11 @@ export class DesktopPlaySession {
 
   private async advanceOpeningProgression(
     evidenceEventIds: readonly string[],
+    committedTurn: {
+      readonly transcriptId: string;
+      readonly sourceKind: "committed-player-action" | "completed-conversation";
+      readonly description: string;
+    },
     listener?: TurnProgressListener,
   ): Promise<void> {
     const state = this.openingProgression;
@@ -665,21 +670,52 @@ export class DesktopPlaySession {
       state.manifestationDeadlineTurns,
       state.playerTurnsSinceStart + 1,
     );
-    const evidenceEventId = evidenceEventIds.at(-1);
+    let evidenceEventId = evidenceEventIds.at(-1) ??
+      state.manifestationEvidenceEventId;
+    if (nextTurns >= state.manifestationTargetTurn && !evidenceEventId) {
+      // LM-06: a routine action or casual conversation is a committed turn
+      // even when it creates no canonical history. We emit exactly one
+      // opening-specific causal anchor only when the first power is due.
+      // The player's stable transcript message was already persisted before
+      // the turn, and this method runs only after its completion.
+      const history = await this.session.eventHistory();
+      const previous = history.find((event) =>
+        event.type === "rules.opening-turn-evidenced" &&
+        event.relatedEntityIds.includes(this.playerActorId) &&
+        typeof event.payload === "object" && event.payload !== null &&
+        !Array.isArray(event.payload) &&
+        event.payload.turnId === committedTurn.transcriptId
+      );
+      if (previous) {
+        evidenceEventId = previous.id;
+      } else {
+        await this.session.executeOperation(
+          "rules.progression.record-opening-turn-evidence",
+          {
+            actorId: this.playerActorId,
+            turnId: committedTurn.transcriptId,
+            sourceKind: committedTurn.sourceKind,
+            description: committedTurn.description.slice(0, 240),
+          },
+        );
+        const newlyCommitted = await this.session.eventHistory();
+        const anchor = newlyCommitted.find((event) =>
+          event.type === "rules.opening-turn-evidenced" &&
+          !history.some((prior) => prior.id === event.id) &&
+          event.relatedEntityIds.includes(this.playerActorId)
+        );
+        if (!anchor) throw new Error("Opening turn evidence was not committed");
+        evidenceEventId = anchor.id;
+      }
+    }
     this.openingProgression = openingProgressionStateSchema.parse({
       ...state,
       playerTurnsSinceStart: nextTurns,
       ...(evidenceEventId ? { manifestationEvidenceEventId: evidenceEventId } : {}),
     });
     await this.persistPresentation();
-    if (
-      nextTurns >= state.manifestationTargetTurn &&
-      (evidenceEventIds.length > 0 || Boolean(state.manifestationEvidenceEventId))
-    ) {
-      // Routine speech has no material event. An opening turn with no
-      // authoritative evidence cannot be used to force an Awakening.
-      // An earlier opening event remains available through persisted state.
-      await this.ensureOpeningManifestation(evidenceEventIds, listener);
+    if (nextTurns >= state.manifestationTargetTurn && evidenceEventId) {
+      await this.ensureOpeningManifestation([evidenceEventId], listener);
     }
   }
 
@@ -953,7 +989,13 @@ export class DesktopPlaySession {
         : asJson({ segments: segmentTraces });
       if (meaningfulTurn) {
         try {
-          await this.advanceOpeningProgression(openingEvidenceEventIds, onProgress);
+          await this.advanceOpeningProgression(openingEvidenceEventIds, {
+            transcriptId: playerMessageId,
+            sourceKind: routeKind === "conversation"
+              ? "completed-conversation"
+              : "committed-player-action",
+            description: submittedDeclaration,
+          }, onProgress);
           if (this.openingProgression?.manifestationNarrationPending) {
             narrationStatus = "failed";
             turnOutcome = "committed-presentation-failed";
