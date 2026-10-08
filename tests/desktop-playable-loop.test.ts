@@ -647,6 +647,43 @@ describe("desktop playable session integration", () => {
     expect(await engine.eventHistory({ types: ["test.effort-resolved"] })).toHaveLength(2);
   });
 
+  it("skips planner models for a routine committed action even with an active plan", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Routine planned turn");
+    const basis = engine.planningBasis();
+    await engine.initializeCampaignPlan(campaignPlanDocumentSchema.parse({
+      schemaVersion: 1, planRevision: 0,
+      basedOnWorldRevision: basis.worldRevision,
+      basedOnEventSequence: basis.eventSequence,
+      updatedAtFictionalTime: engine.snapshot().fictionalTime,
+      horizons: {
+        high: { summary: "Preserve choices.", attention: [], threadIds: [] },
+        medium: { summary: "Attend to established stakes.", attention: [], threadIds: [] },
+        low: { summary: "Allow quiet moments.", attention: [], threadIds: ["thread.routine"] },
+      },
+      threads: [{
+        id: "thread.routine", title: "Everyday choices",
+        summary: "Observe Amelia's life without forced plot beats.",
+        kind: "developing-situation", horizon: "low", priority: 50, status: "active",
+        grounding: [{ kind: "entity", id: "campaign.entity.amelia" }],
+        related: [], playerInterestIds: [], currentTension: "What matters today?",
+        assumptions: [], conditionalDevelopments: [], lastReviewedAt: basis,
+        rationale: "Grounded in the player's established existence.",
+      }],
+      playerGoals: [], interestSignals: [],
+    }));
+    const model = actionModel();
+    const play = new DesktopPlaySession(engine, model, "campaign.entity.amelia", undefined);
+    const view = await play.performTurn("I test my footing and press forward.");
+    expect(view.error).toBeUndefined();
+    expect(view.diagnostics?.plannerReview).toEqual(expect.objectContaining({
+      modelCalls: 0, noOp: true, planRevisionBefore: 0, planRevisionAfter: 0,
+    }));
+    expect(model.invocations.map((call) => call.schemaId))
+      .not.toContain("campaign-direction-review.v1");
+    expect((await engine.campaignPlan())?.planRevision).toBe(0);
+  });
+
   it("triggers a targeted low replan after a canonical action invalidates its assumption", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Planner integration");
