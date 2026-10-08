@@ -39,7 +39,7 @@ The repeatable fixture in `tests/model-brief.test.ts` builds the *same authorize
 1. **Before:** `renderContextForModel(context).length` (full serialized context).
 2. **After:** `prepareModelBrief(...).diagnostics.serializedCharacters` (compact serialized brief).
 
-**Recorded scripted example (CI, 2026-10-08):** the lobby fixture's actor-authorized full context was **2,795 characters** and the equivalent compact routing brief was **668 characters**, a **76.1% reduction** in serialized context length. These are character counts from the same fixture, not token/latency claims.
+**Recorded scripted example (CI, 2026-10-08):** the lobby fixture's actor-authorized full context was **2,809 characters** and the equivalent compact routing brief was **635 characters**, a **77.4% reduction** in serialized context length. These are character counts from the same fixture, not token/latency claims.
 
 The scripted test asserts the latter is smaller; it also verifies determinism, masked identity protection, private hidden-door separation between actors, no raw entity ID, no catalog/provenance, preserved required anchors, explicit overflow, and invalid/forged/stale reference rejection. `tests/desktop-playable-loop.test.ts` and `tests/player-action-pipeline.test.ts` exercise actual routing and action execution. LM-01's `performance.calls[].promptCharacters` and optional reported usage tokens provide per-stage measurements for later comparisons.
 
