@@ -1,12 +1,10 @@
-import { z } from "zod";
 import {
   compileNarrationDirective,
   createCampaignPlanContextItem,
   deriveSceneRegister,
   jsonValueSchema,
   observeModelRuntime,
-  prepareModelBrief,
-  resolveBriefReference,
+  classifyTurnDeclaration,
   performConversationTurn,
   renderContextForModel,
   runPlannerPass,
@@ -202,19 +200,9 @@ export interface PlaySessionPersistence {
   }): Promise<void>;
 }
 
-const turnRouteSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("action") }).strict(),
-  z.object({ kind: z.literal("conversation"), recipientRefs: z.array(z.string().min(1)).min(1) }).strict(),
-]);
-
 const ROUTING_CONTEXT_BUDGET_UNITS = 8_000;
 const ACTION_CONTEXT_BUDGET_UNITS = 12_000;
 const ACTION_MAX_MODEL_TURNS = 6;
-
-function mayBeConversation(declaration: string): boolean {
-  return /["“”]|\b(answer|ask|call|greet|reply|say|speak|talk|tell|text|whisper|yell)\b/i
-    .test(declaration);
-}
 
 function nowMs(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
@@ -423,35 +411,24 @@ export class DesktopPlaySession {
     return this.view();
   }
 
-  private async routeDeclaration(declaration: string) {
-    const model = this.requireModel();
+  private async classifyDeclaration(declaration: string) {
+    const basis = this.session.planningBasis();
     const context = this.session.assembleContext({
       role: "actor",
       perspective: { kind: "actor", id: this.playerActorId },
       focalActorId: this.playerActorId,
-      ...(this.view().currentLocationId ? { locationId: this.view().currentLocationId } : {}),
+      ...(this.view().currentLocationId
+        ? { locationId: this.view().currentLocationId } : {}),
       declaration,
       budget: { maxUnits: ROUTING_CONTEXT_BUDGET_UNITS },
     });
-    const brief = prepareModelBrief({
-      purpose: "routing",
-      perspective: { kind: "actor", id: this.playerActorId },
+    return classifyTurnDeclaration({
+      declaration,
+      actorId: this.playerActorId,
       context,
+      modelRuntime: this.requireModel(),
+      ...basis,
     });
-    const result = await model.generate({
-      prompt: {
-        instructions: [
-          "Route the declaration as conversation only when speech or communicative behavior targets an available actor.",
-          "Use only local references from the authorized scene context. Otherwise choose action.",
-        ],
-        context: brief.modelText,
-        input: declaration,
-      },
-      output: { kind: "structured", schemaId: "desktop.turn-route.v1", schema: turnRouteSchema },
-      trace: { operation: "desktop-turn-route", invocationId: `turn-route.${crypto.randomUUID()}` },
-    });
-    if (!result.ok) throw new Error(`Unable to interpret the turn safely: ${result.error.message}`);
-    return { route: result.output.value, brief };
   }
 
   private async persistPresentation(): Promise<void> {
@@ -776,78 +753,144 @@ export class DesktopPlaySession {
       await Promise.resolve();
       let meaningfulTurn = false;
       let openingEvidenceEventIds: string[] = [];
-      const routed = !pendingClarification && mayBeConversation(declaration)
-        ? await this.routeDeclaration(declaration)
-        : undefined;
-      const route = routed?.route ?? { kind: "action" as const };
-      routeKind = route.kind;
-      if (route.kind === "conversation") {
-        const recipientIds = route.recipientRefs.map((ref) =>
-          resolveBriefReference(routed!.brief, ref, this.session.planningBasis())
-        ).filter((id) => id !== this.playerActorId);
-        if (recipientIds.length === 0) throw new Error("No authorized conversation recipient was available");
-        const player = before.entities.find((entity) => entity.id === this.playerActorId);
-        const result = await performConversationTurn({
-          session: this.session,
-          modelRuntime: this.requireModel(),
-          bindings: referenceConversationBindings,
-          request: {
-            turnId: `conversation-turn.${crypto.randomUUID()}`,
-            interactionId: this.workingConversation?.interactionId ?? `interaction.${crypto.randomUUID()}`,
-            playerActorId: this.playerActorId,
-            playerCharacterName: player?.name ?? "Player",
-            recipientIds,
-            materialNpcIds: recipientIds,
-            declaration,
-            ...(this.view().currentLocationId ? { locationId: this.view().currentLocationId } : {}),
-            narrationPreference: this.preference,
-            beatComplexity: "ordinary",
-            budget: { maxUnits: 40_000 },
-            authorizedMaterialSemanticKinds: ["disclosure", "promise", "threat", "offer", "agreement"],
-            authorizedMaterialCommitments: [],
-            authorizedDeception: false,
-            authorizedTestimony: [],
-            extractDurableConsequences: true,
-          },
-          ...(this.workingConversation ? { workingState: this.workingConversation } : {}),
-          onProgress: (phase) => this.reportTurnProgress(phase, onProgress),
-        });
-        this.workingConversation = result.workingState;
-        meaningfulTurn = true;
-        turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
-        openingEvidenceEventIds = [
-          ...result.communicationEventIds,
-          ...result.extractionEventIds,
-        ];
-        if (result.narration) this.add("npc", result.narration);
-        else {
-          narrationStatus = "failed";
-          this.add("system", result.narrationError ?? "The conversation committed, but narration was unavailable.");
-        }
-        actionTrace = asJson({
-          communicationEventIds: result.communicationEventIds,
-          extractionEventIds: result.extractionEventIds,
-          decisions: result.decisions,
-          committedActions: result.committedActions,
-          stopReason: result.stopReason,
-          narrationPresentation: result.narrationPresentation,
-        });
-      } else {
-        const actionRequest = {
-          actionId: `action.${crypto.randomUUID()}`,
-          actorId: this.playerActorId,
+      const classified = pendingClarification
+        ? undefined
+        : await this.classifyDeclaration(declaration);
+      if (classified?.kind === "player-decision-required") {
+        turnOutcome = "needs-player-input";
+        this.pendingActionClarification = {
           declaration,
-          ...(this.view().currentLocationId ? { locationId: this.view().currentLocationId } : {}),
+          question: classified.question,
+        };
+        this.add("system", classified.question);
+      }
+      const segments = classified?.kind === "interpreted"
+        ? classified.segments
+        : pendingClarification
+          ? [{ kind: "legacy-action" as const, text: declaration }]
+          : [];
+      const segmentTraces: JsonValue[] = [];
+      for (const [index, segment] of segments.entries()) {
+        // IDs are derived from the persisted player transcript identity, not
+        // random per-operation IDs. Each segment is a distinct action run.
+        const playerMessageId = this.transcriptEntries.at(-1)!.id;
+        const segmentId = `action.${playerMessageId}.segment.${index + 1}`;
+        if (segment.kind === "communication") {
+          routeKind = "conversation";
+          const visible = this.session.assembleContext({
+            role: "actor",
+            perspective: { kind: "actor", id: this.playerActorId },
+            focalActorId: this.playerActorId,
+            ...(this.view().currentLocationId
+              ? { locationId: this.view().currentLocationId } : {}),
+            workingContext: {
+              activeEntityIds: [...segment.recipientIds],
+              recentEntityIds: [],
+              aliases: [],
+            },
+            budget: { maxUnits: ROUTING_CONTEXT_BUDGET_UNITS },
+          });
+          const available = new Set(Object.values(visible.diagnostics.localReferences));
+          const recipientIds = segment.recipientIds.filter((id) =>
+            id !== this.playerActorId && available.has(id) &&
+            visible.situation.scene.some((entity) =>
+              visible.diagnostics.localReferences[entity.localRef] === id &&
+              entity.access.actorAware && !entity.access.privileged
+            )
+          );
+          if (recipientIds.length !== segment.recipientIds.length || !recipientIds.length) {
+            this.lastError = "The intended recipient is not available or visible after the preceding action.";
+            this.add("system", this.lastError);
+            break;
+          }
+          const player = this.session.snapshot().entities.find(
+            (entity) => entity.id === this.playerActorId
+          );
+          const result = await performConversationTurn({
+            session: this.session,
+            modelRuntime: this.requireModel(),
+            bindings: referenceConversationBindings,
+            request: {
+              turnId: `conversation.${playerMessageId}.segment.${index + 1}`,
+              interactionId: this.workingConversation?.interactionId ?? `interaction.${playerMessageId}`,
+              playerActorId: this.playerActorId,
+              playerCharacterName: player?.name ?? "Player",
+              recipientIds,
+              materialNpcIds: recipientIds,
+              declaration: segment.text,
+              ...(this.view().currentLocationId
+                ? { locationId: this.view().currentLocationId } : {}),
+              narrationPreference: this.preference,
+              beatComplexity: "ordinary",
+              budget: { maxUnits: 40_000 },
+              authorizedMaterialSemanticKinds: ["disclosure", "promise", "threat", "offer", "agreement"],
+              authorizedMaterialCommitments: [],
+              authorizedDeception: false,
+              authorizedTestimony: [],
+              extractDurableConsequences: true,
+            },
+            ...(this.workingConversation ? { workingState: this.workingConversation } : {}),
+            onProgress: (phase) => this.reportTurnProgress(phase, onProgress),
+          });
+          this.workingConversation = result.workingState;
+          segmentTraces.push(asJson({
+            communicationEventIds: result.communicationEventIds,
+            extractionEventIds: result.extractionEventIds,
+            decisions: result.decisions,
+            committedActions: result.committedActions,
+            stopReason: result.stopReason,
+            narrationPresentation: result.narrationPresentation,
+          }));
+          openingEvidenceEventIds.push(...result.communicationEventIds, ...result.extractionEventIds);
+          meaningfulTurn = meaningfulTurn || result.communicationCommitted ||
+            result.committedActions.length > 0;
+          if (!result.communicationCommitted) {
+            this.lastError = result.narrationError ??
+              "The preceding action did not permit the intended speech.";
+            this.add("system", this.lastError);
+            break;
+          }
+          turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
+          if (result.narration) this.add("npc", result.narration);
+          else {
+            narrationStatus = "failed";
+            this.add("system", result.narrationError ??
+              "The conversation committed, but narration was unavailable.");
+            break;
+          }
+          continue;
+        }
+
+        const currentBasis = this.session.planningBasis();
+        const actionRequest = {
+          actionId: segmentId,
+          actorId: this.playerActorId,
+          declaration: segment.text,
+          ...(this.view().currentLocationId
+            ? { locationId: this.view().currentLocationId } : {}),
           budget: { maxUnits: ACTION_CONTEXT_BUDGET_UNITS },
         };
         this.lastActionRequest = actionRequest;
         const result = await this.session.performPlayerAction(actionRequest, {
           modelRuntime: this.requireModel(),
           maxModelTurns: ACTION_MAX_MODEL_TURNS,
+          registeredOnly: true,
+          ...(segment.kind === "action"
+            ? { preinterpreted: {
+                declaration: segment.text,
+                goal: segment.goal,
+                targetIds: [...segment.targetIds],
+                modes: [...segment.modes],
+                statedMeans: [...segment.statedMeans],
+                pressureLevel: segment.pressureLevel,
+                requestedHorizonMs: segment.requestedHorizonMs,
+                ...currentBasis,
+              } }
+            : {}),
           narrationPreference: this.preference,
           onProgress: (phase) => this.reportTurnProgress(phase, onProgress),
         });
-        actionTrace = asJson(result.trace);
+        segmentTraces.push(asJson(result.trace));
         if (result.kind === "needs-player-input") {
           turnOutcome = "needs-player-input";
           this.pendingActionClarification = {
@@ -855,28 +898,38 @@ export class DesktopPlaySession {
             question: result.question,
           };
           this.add("system", result.question);
+          break;
         }
-        else if (result.kind === "failed") {
+        if (result.kind === "failed") {
           if (result.developmentSignal) {
-            meaningfulTurn = result.developmentSignal.operationIds.length > 0 ||
+            meaningfulTurn = meaningfulTurn ||
+              result.developmentSignal.operationIds.length > 0 ||
               result.developmentSignal.eventIds.length > 0;
-            openingEvidenceEventIds = [...result.developmentSignal.eventIds];
+            openingEvidenceEventIds.push(...result.developmentSignal.eventIds);
             narrationStatus = "failed";
             turnOutcome = "committed-presentation-failed";
             this.add("system", "The action changed the world, but presentation failed. You may retry narration without replaying it.");
-          } else throw new Error(result.failure.message);
-        } else {
-          meaningfulTurn = result.developmentSignal.operationIds.length > 0 ||
-            result.developmentSignal.eventIds.length > 0;
-          openingEvidenceEventIds = [...result.developmentSignal.eventIds];
-          turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
-          if (result.narration) this.add("narrator", result.narration);
-          else {
-            narrationStatus = "failed";
-            this.add("system", "The action committed, but narration was unavailable. You may retry narration safely.");
+          } else {
+            this.lastError = result.failure.message;
+            this.add("system", this.lastError);
           }
+          break;
+        }
+        meaningfulTurn = meaningfulTurn ||
+          result.developmentSignal.operationIds.length > 0 ||
+          result.developmentSignal.eventIds.length > 0;
+        openingEvidenceEventIds.push(...result.developmentSignal.eventIds);
+        turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
+        if (result.narration) this.add("narrator", result.narration);
+        else {
+          narrationStatus = "failed";
+          this.add("system", "The action committed, but narration was unavailable. You may retry narration safely.");
+          break;
         }
       }
+      actionTrace = segmentTraces.length === 1
+        ? segmentTraces[0]
+        : asJson({ segments: segmentTraces });
       if (meaningfulTurn) {
         try {
           await this.advanceOpeningProgression(openingEvidenceEventIds, onProgress);
