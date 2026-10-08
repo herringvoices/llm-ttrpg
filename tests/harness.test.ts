@@ -403,9 +403,10 @@ describe("simulation and test harness", () => {
     }, referenceConversationBindings);
     expect(result.communicationCommitted).toBe(true);
     expect(result.decisions[0]?.actorId).toBe("campaign.entity.nina");
+    // The legacy orchestration can still run without making ordinary speech canonical.
     expect((await session.eventHistory()).filter((event) =>
       event.type === "rules.communication-recorded"
-    )).toHaveLength(2);
+    )).toHaveLength(0);
     const bundle = await session.exportReproduction();
     expect(bundle.commands.some((command) =>
       command.kind === "execute-conversation"
