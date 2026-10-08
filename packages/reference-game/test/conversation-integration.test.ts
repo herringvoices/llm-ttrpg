@@ -305,6 +305,109 @@ async function createConversationSession(
   };
 }
 
+
+describe("LM-05 ordinary NPC reply fast path", () => {
+  it("answers once from the NPC perspective without extracting or committing conversation events", async () => {
+    const { session } = await createConversationSession();
+    await session.applyActionPressureAssessment({ level: 3 });
+    const historyBefore = await session.eventHistory();
+    const model = new ConversationModelRuntime((request) => {
+      if (request.output.kind !== "structured" ||
+          request.output.schemaId !== "conversation.npc-reply.v1") {
+        throw new Error("An ordinary reply must not invoke legacy conversation stages");
+      }
+      expect(request.prompt.context).not.toContain(hiddenFactId);
+      expect(request.prompt.context).not.toContain(secret);
+      expect(request.prompt.input).not.toContain(secret);
+      return {
+        kind: "ordinary",
+        speech: "I haven't heard anything useful.",
+        visibleManner: "He folds his arms.",
+        continueConversation: true,
+        materialSignal: "none",
+      };
+    });
+    const declaration = 'I ask, "Where did the chicken go?"';
+    const result = await performConversationTurn({
+      session,
+      modelRuntime: model,
+      ordinaryFastPath: true,
+      bindings: referenceConversationBindings,
+      request: turnRequest("turn.direct-npc", declaration),
+    });
+    expect(result.communicationCommitted).toBe(true);
+    expect(result.act.exactQuoteFragments).toEqual(["Where did the chicken go?"]);
+    expect(result.narration).toContain("I haven't heard anything useful.");
+    expect(result.communicationEventIds).toEqual([]);
+    expect(result.extractionEventIds).toEqual([]);
+    expect(result.decisions).toEqual([]);
+    expect(model.requests).toHaveLength(1);
+    expect(await session.eventHistory()).toEqual(historyBefore);
+    const second = await performConversationTurn({
+      session, modelRuntime: model, ordinaryFastPath: true,
+      bindings: referenceConversationBindings,
+      request: turnRequest("turn.direct-npc-next", "I ask if there's a back door."),
+      workingState: result.workingState,
+    });
+    expect(second.communicationCommitted).toBe(true);
+    expect(second.workingState.beat).toBe(2);
+    expect(second.workingState.recentTranscript.length).toBeLessThanOrEqual(12);
+  });
+
+  it("escalates a material response without making a canonical commitment from its draft", async () => {
+    const { session } = await createConversationSession();
+    await session.applyActionPressureAssessment({ level: 3 });
+    const model = new ConversationModelRuntime((request) => {
+      if (request.output.kind === "text") {
+        return "Gary hesitates before answering.";
+      }
+      switch (request.output.schemaId) {
+        case "conversation.npc-reply.v1":
+          return { kind: "escalate", reason: "disclosure", proposedSpeech: "I know where it is." };
+        case "conversation.player-communication.v1":
+          return interpretation(request);
+        case "conversation.npc-decision.v1":
+          return npcDecision(request);
+        case "conversation.durable-extraction.v1":
+          return { proposals: [] };
+        default: throw new Error("Unexpected stage: " + request.output.schemaId);
+      }
+    });
+    const result = await performConversationTurn({
+      session, modelRuntime: model, ordinaryFastPath: true,
+      bindings: referenceConversationBindings,
+      request: turnRequest("turn.escalate-npc", "I ask Gary what he knows."),
+    });
+    expect(result.communicationCommitted).toBe(true);
+    expect(model.requests[0]?.output.kind).toBe("structured");
+    expect(model.requests.some((item) => item.output.kind === "structured" &&
+      item.output.schemaId === "conversation.player-communication.v1")).toBe(true);
+    expect(result.extractionEventIds).toEqual([]);
+  });
+
+  it("repairs an invalid local-model output once without recording new events", async () => {
+    const { session } = await createConversationSession();
+    await session.applyActionPressureAssessment({ level: 3 });
+    const before = await session.eventHistory();
+    let calls = 0;
+    const model = new ConversationModelRuntime((request) => {
+      expect(request.output.kind).toBe("structured");
+      calls++;
+      return calls === 1
+        ? { kind: "ordinary", speech: "Invalid", continueConversation: true, materialSignal: "unapproved" }
+        : { kind: "ordinary", speech: "No.", continueConversation: false, materialSignal: "none" };
+    });
+    const result = await performConversationTurn({
+      session, modelRuntime: model, ordinaryFastPath: true,
+      bindings: referenceConversationBindings,
+      request: turnRequest("turn.retry-npc", "I ask if Gary has a moment."),
+    });
+    expect(calls).toBe(2);
+    expect(result.narration).toContain("No.");
+    expect(await session.eventHistory()).toEqual(before);
+  });
+});
+
 describe("NPC interaction and conversation", () => {
   it("normalizes described, third-person, quoted, and mixed speech without adding player intent", async () => {
     const declarations = [
