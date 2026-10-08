@@ -23,6 +23,10 @@ import {
   manifestFirstPowerOperation,
 } from "./awakening-operation.js";
 import {
+  openingTurnEvidencedEventType,
+  recordOpeningTurnEvidenceOperation,
+} from "./opening-evidence-operation.js";
+import {
   activateInvincibleOperation,
   invincibleActivatedEventType,
 } from "./invincible.js";
@@ -59,6 +63,7 @@ import {
 export * from "./action-operation.js";
 export * from "./attempt-preparer.js";
 export * from "./awakening-operation.js";
+export * from "./opening-evidence-operation.js";
 export * from "./conversation-operations.js";
 export * from "./invincible.js";
 export * from "./local-place-operation.js";
@@ -142,6 +147,7 @@ export const referenceRuleset: Ruleset = {
     recoverStressOperation,
     createEmergentSkillOperation,
     manifestFirstPowerOperation,
+    recordOpeningTurnEvidenceOperation,
     activateInvincibleOperation,
     recordPowerDiscoveryOperation,
     realizeMechanicsOperation,
@@ -162,6 +168,7 @@ export const referenceRuleset: Ruleset = {
     skillCreatedEventType,
     stressRecoveredEventType,
     firstPowerManifestedEventType,
+    openingTurnEvidencedEventType,
     invincibleActivatedEventType,
     powerBehaviorDiscoveredEventType,
     mechanicsRealizedEventType,
