@@ -91,6 +91,8 @@ function record(world: WorldState, ref: GroundingReference): unknown {
     case "actor-memory": return world.actorSocialStates.flatMap((v) => v.memories).find((v) => v.id === ref.id);
     case "actor-commitment": return world.actorSocialStates.flatMap((v) => v.commitments).find((v) => v.id === ref.id);
     case "mechanical-realization": return world.mechanicalRealizations.find((v) => v.entityId === ref.id);
+    case "scheduled-trigger": return world.scheduledTriggers.find((v) => v.id === ref.id);
+    case "simulation-scope": return world.simulationCursors.find((v) => v.scopeId === ref.id);
     default: return undefined; // Event refs are checked against bounded event receipts.
   }
 }
@@ -310,7 +312,7 @@ export async function reviewCampaignDirection(input: {
         ...(decision.kind === "defer-escalation" ? { deferredEscalation: true } : {}) } };
     }
     const id = brief.threadIdsByRef.get(decision.threadRef);
-    const thread = plan.threads.find((item) => item.id === id);
+    const thread = evaluation.plan.threads.find((item) => item.id === id);
     if (!thread || thread.status !== "active" || thread.horizon !== trigger.horizon) {
       throw new Error("Reviewer selected an unavailable, inactive, or cross-horizon thread");
     }
