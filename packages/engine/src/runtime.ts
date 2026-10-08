@@ -1605,6 +1605,26 @@ function openSession(
               return modes.some((mode) => pendingDeclaredModes.includes(mode));
             })
           : [];
+        if (options.registeredOnly && candidates.length === 0) {
+          // Package-authored general fallbacks are selected by metadata,
+          // never by guessed operation identifiers or tool-tree exploration.
+          candidates = dependencies.game.operationRegistry.listAll()
+            .filter((operation) => operation.applicability?.generalFallback)
+            .flatMap((operation) => {
+              try {
+                return [dependencies.game.toolCatalog.inspectTool(
+                  operation.id, options.toolPolicy,
+                )];
+              } catch {
+                return [];
+              }
+            });
+        }
+        if (options.registeredOnly && candidates.length === 0) {
+          return fail("proposal",
+            "No registered capability or general resolution fallback can handle the declared action safely.",
+            run);
+        }
         const explicitlyRoutine = run.executableIntent.pressureLevel <= 4 &&
           /\b(?:quick|simple|routine|straightforward|easy|ordinary)\b/i.test(run.declaration);
         const routineCandidate = candidates.find((candidate) => {
@@ -1631,7 +1651,8 @@ function openSession(
           candidate
         );
         const requireStopDecision = run.receipts.length > 0 &&
-          hasTrackableDeclaredModes && pendingDeclaredModes.length === 0;
+          ((hasTrackableDeclaredModes && pendingDeclaredModes.length === 0) ||
+            (options.registeredOnly && !hasTrackableDeclaredModes));
         const candidateIds = new Set(candidates.map((candidate) => candidate.id));
         if (candidates.length) {
           record("catalog", {
@@ -1677,7 +1698,20 @@ function openSession(
               [...candidateIds],
               singleCandidateArgumentSchema,
             );
-        const decisionResult = await structuredModelDecision<unknown>(
+        // One uniquely registered handler needs arguments, not another
+        // model-led choice among tools or exploratory catalog browsing.
+        const directCandidate = options.registeredOnly && !requireStopDecision &&
+          candidates.length === 1 && run.receipts.length === 0
+          ? candidates[0]
+          : undefined;
+        const decisionResult = directCandidate
+          ? {
+              ok: true as const,
+              value: { kind: "invoke-tool" as const, toolId: directCandidate.id },
+              attempts: 0,
+              metadata: { runtimeId: "registered-handler", elapsedMs: 0 },
+            }
+          : await structuredModelDecision<unknown>(
           options.modelRuntime,
           "player-action.execution-decision.v1",
           decisionSchema as z.ZodType<unknown>,
@@ -1695,7 +1729,9 @@ function openSession(
                     "Choose exactly one next action: invoke one supplied candidate or stop.",
                     "You may not discover catalog entries, inspect tools, or choose a tool outside the supplied candidates.",
                   ]
-                : ["Choose exactly one next action: discover subsystems/tools, inspect a tool, invoke one tool, or stop."]),
+                : options.registeredOnly
+                  ? ["No authorized handler is available; stop safely rather than inventing a tool."]
+                  : ["Choose exactly one next action: discover subsystems/tools, inspect a tool, invoke one tool, or stop."]),
               "Do not produce an execution plan. Tool invocations must use context-local scene references; the engine injects the actor and bounded intent.",
               "Do not stop for player input during execution. The interpretation stage has already established an executable intent.",
               ...(run.receipts.length === 0
@@ -1863,6 +1899,13 @@ function openSession(
           continue;
         }
 
+        if (options.registeredOnly &&
+          (decision.kind === "discover-subsystems" ||
+            decision.kind === "discover-tools" ||
+            decision.kind === "inspect-tool")) {
+          record("rejection", { reason: "catalog-navigation-not-allowed" });
+          return fail("proposal", "Normal player turns cannot navigate the internal tool catalog", run);
+        }
         let catalogContent: JsonValue | undefined;
         try {
           if (decision.kind === "discover-subsystems") {
