@@ -4,6 +4,7 @@ import { knowledgePerspectiveSchema } from "./context-contracts.js";
 import { redactModelBriefText } from "./model-brief.js";
 import type { WorldState } from "./world.js";
 import type { CanonicalEvent } from "./events.js";
+import type { ModelRuntime } from "./model-runtime.js";
 
 /**
  * LM-07: derived, perspective-scoped memory. No source is written back into
@@ -176,7 +177,7 @@ function sources(input: ContinuityRequest): Candidate[] {
       push("fact", fact.id, 820, "public-fact",
         `Current location: ${location?.name ?? "an established place"}.`, fact);
     } else if (/^(?:character|actor|relationship|location)\./.test(fact.predicate) &&
-        typeof fact.value !== "string" || false) {
+        typeof fact.value !== "string") {
       // Raw data fields should not be turned into narrated private mechanics.
       continue;
     } else if (fact.tags.some((tag) =>
@@ -296,5 +297,102 @@ export function recallContinuity(
       eventSequence: request.eventSequence,
       refreshedAt: request.world.fictionalTime,
     },
+  });
+}
+
+/** Foreground-only optional compression: the model can select or reorder only
+ * already-verified source points, never author prose, facts or source IDs.
+ * Ordinary turns never invoke this helper. The extractive original is safe
+ * fallback on timeout, invalid output or out-of-range selection.
+ */
+export const continuitySelectionSchema = z.object({
+  selectedPositions: z.array(z.number().int().nonnegative()).max(12),
+}).strict();
+
+export async function condenseContinuityAtBoundary(input: {
+  readonly summary: ContinuitySummary;
+  readonly modelRuntime: ModelRuntime;
+  readonly trigger: "scene-transition" | "material-event" | "time-jump" | "explicit-recall";
+  readonly maxCharacters?: number;
+}): Promise<{
+  readonly summary: ContinuitySummary;
+  readonly diagnostics: { readonly modelRefreshCalls: number; readonly usedModel: boolean; readonly fallbackReason?: string };
+}> {
+  const original = continuitySummarySchema.parse(input.summary);
+  const fallback = (reason: string, calls: number) => ({
+    summary: original,
+    diagnostics: { modelRefreshCalls: calls, usedModel: false, fallbackReason: reason },
+  });
+  if (original.status !== "current") return fallback("summary-not-current", 0);
+  if (original.points.length < 7) return fallback("already-compact", 0);
+  const maxCharacters = Math.min(1_500, input.maxCharacters ?? 900);
+  try {
+    const response = await input.modelRuntime.generate({
+      prompt: {
+        instructions: [
+          "Choose which established continuity sentences remain most useful.",
+          "Return only selectedPositions in priority order, using zero-based indices.",
+          "Retain all active obligations, commitments, and established personal history.",
+          "You cannot add claims, author new prose, request additional records, or edit facts.",
+        ],
+        input: JSON.stringify({
+          trigger: input.trigger,
+          points: original.points.map((item, position) =>
+            ({ position, text: item.text })),
+          maxCharacters,
+        }),
+      },
+      output: {
+        kind: "structured",
+        schemaId: "continuity.select.v1",
+        schema: continuitySelectionSchema,
+      },
+      trace: { operation: "continuity.select.v1" },
+    });
+    if (!response.ok || response.output.kind !== "structured") {
+      return fallback("model-unavailable", 1);
+    }
+    const parsed = continuitySelectionSchema.safeParse(response.output.value);
+    if (!parsed.success) return fallback("invalid-model-selection", 1);
+    const indices = parsed.data.selectedPositions;
+    if (new Set(indices).size !== indices.length ||
+        indices.some((index) => index >= original.points.length)) {
+      return fallback("unauthorized-source-position", 1);
+    }
+    const mandatory = original.points.flatMap((point, index) =>
+      /^(?:Active obligation:|Established personal history:)/.test(point.text) ? [index] : []);
+    if (!mandatory.every((index) => indices.includes(index))) {
+      return fallback("mandatory-continuity-omitted", 1);
+    }
+    const points = indices.map((index) => original.points[index]!);
+    const summaryText = points.map((point) => point.text).join("\n");
+    if (summaryText.length > maxCharacters) return fallback("model-overflow", 1);
+    const summary = continuitySummarySchema.parse({
+      ...original, summaryText, points,
+      sourceRefs: points.flatMap((point) => point.sourceRefs),
+    });
+    return { summary, diagnostics: { modelRefreshCalls: 1, usedModel: true } };
+  } catch {
+    return fallback("invalid-output-or-timeout", 1);
+  }
+}
+
+/** Use this when a cached record is held across a scene or package change.
+ * A stale record never carries old text into a new actor-facing model brief.
+ */
+export function assessContinuityFreshness(
+  previous: ContinuitySummary,
+  current: ContinuityRequest,
+): ContinuitySummary {
+  const now = projectContinuity(current).summary;
+  if (previous.schemaVersion === now.schemaVersion &&
+      JSON.stringify(previous.perspective) === JSON.stringify(now.perspective) &&
+      JSON.stringify(previous.scope) === JSON.stringify(now.scope) &&
+      previous.basis.gameFingerprint === now.basis.gameFingerprint &&
+      previous.basis.sourceFingerprint === now.basis.sourceFingerprint) {
+    return previous;
+  }
+  return continuitySummarySchema.parse({
+    ...previous, status: "stale", summaryText: "", points: [], sourceRefs: [],
   });
 }
