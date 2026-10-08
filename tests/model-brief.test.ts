@@ -175,6 +175,39 @@ describe("LM-02 compact model-facing briefs", () => {
   });
 });
 
+describe("LM-03 ordered interpretation", () => {
+  it("preserves movement before quoted speech and resolves local recipients once", async () => {
+    const { get } = setup();
+    const context = get(bobId);
+    const ref = context.situation.scene.find((item) => item.displayIdentity === "masked figure")!.localRef;
+    const declaration = 'I approach the masked figure, then say "Who are you?"';
+    const model = new ScriptedModelRuntime([{
+      id: "ordered", match: { schemaId: "turn.declaration.v1" },
+      result: { kind: "structured", value: {
+        kind: "interpreted", segments: [
+          { kind: "action", text: "I approach the masked figure",
+            goal: "approach the figure", targetRefs: [ref],
+            modes: ["movement", "interaction"], statedMeans: ["walk"],
+            pressureLevel: 5, requestedHorizonMs: 30000 },
+          { kind: "communication", text: 'say "Who are you?"',
+            recipientRefs: [ref], utterance: "Who are you?" },
+        ],
+      } },
+    }]);
+    const decision = await classifyTurnDeclaration({
+      declaration, actorId: bobId, context, modelRuntime: model,
+      worldRevision: 7, eventSequence: 11,
+    });
+    expect(decision.kind).toBe("interpreted");
+    if (decision.kind !== "interpreted") return;
+    expect(decision.segments).toMatchObject([
+      { kind: "action", targetIds: [maskedId] },
+      { kind: "communication", recipientIds: [maskedId], utterance: "Who are you?" },
+    ]);
+    expect(model.invocations).toHaveLength(1);
+  });
+});
+
 describe("LM-03 classifier smoke", () => {
   it("uses one model classification and keeps actor-local aliases", async () => {
     const { get } = setup();
