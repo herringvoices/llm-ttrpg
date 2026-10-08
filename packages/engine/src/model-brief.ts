@@ -147,9 +147,12 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
       localRef: element.localRef,
       displayIdentity: cleanText(element.displayIdentity, forbidden),
       category: element.category,
-      // Entity-authored summaries may mention a name the observer does not
-      // recognize. A masked identity gets only its authorized display label.
-      ...(element.summary && element.access.identityRecognized
+      // Canonical entity summaries can include GM-only motives or hidden
+      // relationships even when the entity itself is visible. Only use the
+      // focal actor's own summary or an explicitly observable condition.
+      // Other entities remain identified by their authorized scene labels.
+      ...(element.summary && element.access.identityRecognized &&
+        (element.localRef === focalRef || element.category === "condition")
         ? { summary: cleanText(element.summary, forbidden) }
         : {}),
     };
