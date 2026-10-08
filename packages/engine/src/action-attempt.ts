@@ -6,7 +6,7 @@ import type { DeepReadonly, OperationWorldView } from "./operations.js";
 
 /**
  * LM-04: a rules-package-only boundary. This is never passed to a language model.
- * Engine semantics stay independent of any named attribute, die, skill or effect.
+ * Engine semantics stay independent of package-defined mechanical vocabulary.
  */
 export const semanticActionAttemptSchema = z.object({
   actionId: stableIdSchema,
