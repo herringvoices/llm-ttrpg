@@ -439,15 +439,12 @@ describe("NPC interaction and conversation", () => {
         protectedGuidanceIncluded: true,
         selectedExemplarIds: ["awakening-earth.example.conversation"],
       }));
-      const recordedPlayerAct = (await session.eventHistory()).find((event) =>
+      // The exact words remain in the act and scene-local transcript;
+      // an ordinary question creates no canonical communication event.
+      expect((await session.eventHistory()).filter((event) =>
         event.type === "rules.communication-recorded" &&
         event.relatedEntityIds[0] === playerId
-      );
-      expect(recordedPlayerAct?.payload).toEqual(expect.objectContaining({
-        act: expect.objectContaining({
-          exactQuoteFragments: result.act.exactQuoteFragments,
-        }),
-      }));
+      )).toHaveLength(0);
     }
     expect(acts[0]?.authorizedContent).toBe(acts[1]?.authorizedContent);
     expect(acts[2]?.exactQuoteFragments).toEqual([
