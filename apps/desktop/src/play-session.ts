@@ -747,6 +747,9 @@ export class DesktopPlaySession {
     const playerMessageId = this.transcriptEntries.at(-1)!.id;
     this.reportTurnProgress("understanding", onProgress);
     try {
+      // Persist the player message and its stable ID before committing any
+      // segment; a restart must not lose the parent identity of stored receipts.
+      await this.persistPresentation();
       beforeBasis = this.session.planningBasis();
       const before = this.session.snapshot();
       beforeWorld = before;
