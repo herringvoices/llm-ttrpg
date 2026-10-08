@@ -1395,6 +1395,7 @@ describe("desktop playable session integration", () => {
       allowGeneratedDetails: true,
     });
     const phases: string[] = [];
+    const invocationsBeforeTurn = model.invocations.length;
 
     const view = await play.performTurn("I ask what is happening at the loading dock.", (update) => {
       if (update.turnProgress) phases.push(update.turnProgress.phase);
@@ -1403,6 +1404,11 @@ describe("desktop playable session integration", () => {
     expect(phases).toContain("responding");
     expect(view.turnProgress).toBeUndefined();
     expect(view.busy).toBe(false);
+    const calls = view.diagnostics?.performance.calls ?? [];
+    expect(calls).toHaveLength(model.invocations.length - invocationsBeforeTurn);
+    expect(calls.some((call) => call.schemaId === "desktop.turn-route.v1")).toBe(true);
+    expect(calls.some((call) => call.schemaId === "conversation.npc-decision.v1")).toBe(true);
+    expect(calls.some((call) => call.operation === "conversation.narration.v1")).toBe(true);
   });
 
   it("infers an omitted investigation location instead of making the player answer a questionnaire", async () => {
