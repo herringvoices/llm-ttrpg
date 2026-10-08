@@ -798,7 +798,7 @@ describe("desktop playable session integration", () => {
   });
 
 
-  it("awakens on the third meaningful event-sparse turn using one sourced opening anchor", async () => {
+  it("keeps three low-impact turns event sparse while grounding first power within the deadline", async () => {
     const { database } = await createMigratedSqlitePersistence();
     let id = 0;
     const model = generatedCampaignModel({
@@ -811,9 +811,9 @@ describe("desktop playable session integration", () => {
         manifestationDeadlineTurns: 3,
       },
       turnSteps: [
-        ...openingActionSteps("sparse-first"),
+        ...openingActionSteps("sparse-first", { includePowerManifestation: true }),
         ...openingActionSteps("sparse-second"),
-        ...openingActionSteps("sparse-third", { includePowerManifestation: true }),
+        ...openingActionSteps("sparse-third"),
       ],
     });
     const app = createDesktopApplication(createSqlJsClient(database), {
@@ -831,27 +831,32 @@ describe("desktop playable session integration", () => {
     const first = await play.performTurn("I eat a quick breakfast.");
     expect(first.error).toBeUndefined();
     expect(first.openingProgression?.playerTurnsSinceStart).toBe(1);
-    expect(first.openingProgression?.firstPowerManifested).toBe(false);
-    expect(await play.engineSession().eventHistory()).toEqual(initialHistory);
-
-    const second = await play.performTurn("I look around at the shelves.");
-    expect(second.error).toBeUndefined();
-    expect(second.openingProgression?.playerTurnsSinceStart).toBe(2);
-    expect(second.openingProgression?.firstPowerManifested).toBe(false);
-    expect(await play.engineSession().eventHistory()).toEqual(initialHistory);
-
-    const third = await play.performTurn("I straighten the grocery display.");
-    expect(third.error).toBeUndefined();
-    expect(third.openingProgression?.playerTurnsSinceStart).toBe(3);
-    expect(third.openingProgression?.firstPowerManifested).toBe(true);
-    const history = await play.engineSession().eventHistory();
-    const anchors = history.filter((event) => event.type === "rules.opening-turn-evidenced");
-    const manifestations = history.filter((event) => event.type === "rules.first-power-manifested");
+    expect(first.openingProgression?.firstPowerManifested).toBe(true);
+    const manifestedHistory = await play.engineSession().eventHistory();
+    const anchors = manifestedHistory.filter((event) =>
+      event.type === "rules.opening-turn-evidenced"
+    );
+    const manifestations = manifestedHistory.filter((event) =>
+      event.type === "rules.first-power-manifested"
+    );
     expect(anchors).toHaveLength(1);
     expect(anchors[0]?.access).toBe("gm-only");
     expect(manifestations).toHaveLength(1);
     expect(manifestations[0]?.causedByEventIds).toContain(anchors[0]!.id);
-    expect(history.filter((event) => event.type === "rules.routine-task-completed")).toHaveLength(0);
+    expect(manifestedHistory).toHaveLength(initialHistory.length + 2);
+
+    const second = await play.performTurn("I look around at the shelves.");
+    expect(second.error).toBeUndefined();
+    expect(second.openingProgression?.firstPowerManifested).toBe(true);
+    expect(await play.engineSession().eventHistory()).toEqual(manifestedHistory);
+
+    const third = await play.performTurn("I straighten the grocery display.");
+    expect(third.error).toBeUndefined();
+    expect(third.openingProgression?.firstPowerManifested).toBe(true);
+    expect(await play.engineSession().eventHistory()).toEqual(manifestedHistory);
+    expect(manifestedHistory.filter((event) =>
+      event.type === "rules.routine-task-completed"
+    )).toHaveLength(0);
     expect(third.transcript.filter((entry) => entry.speaker === "player")).toHaveLength(3);
   });
 
