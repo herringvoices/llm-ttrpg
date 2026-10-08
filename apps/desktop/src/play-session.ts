@@ -2,6 +2,7 @@ import {
   compileNarrationDirective,
   createCampaignPlanContextItem,
   deriveSceneRegister,
+  fictionalDurationMs,
   jsonValueSchema,
   observeModelRuntime,
   classifyTurnDeclaration,
@@ -883,7 +884,7 @@ export class DesktopPlaySession {
                 modes: [...segment.modes],
                 statedMeans: [...segment.statedMeans],
                 pressureLevel: segment.pressureLevel,
-                requestedHorizonMs: segment.requestedHorizonMs,
+                requestedHorizonMs: fictionalDurationMs(segment.requestedHorizonMs),
                 ...currentBasis,
               } }
             : {}),
