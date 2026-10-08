@@ -1408,7 +1408,7 @@ describe("desktop playable session integration", () => {
     expect(calls).toHaveLength(model.invocations.length - invocationsBeforeTurn);
     expect(calls.some((call) => call.schemaId === "desktop.turn-route.v1")).toBe(true);
     expect(calls.some((call) => call.schemaId === "conversation.npc-decision.v1")).toBe(true);
-    expect(calls.some((call) => call.operation === "conversation.narration.v1")).toBe(true);
+    expect(calls.some((call) => call.phase === "responding")).toBe(true);
   });
 
   it("infers an omitted investigation location instead of making the player answer a questionnaire", async () => {
