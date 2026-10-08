@@ -27,7 +27,7 @@ export interface ModelCallDiagnostic {
 }
 
 function clock(): number {
-  return typeof performance === "undefined" ? Date.now() : performance.now();
+  return Date.now();
 }
 
 function safeNumber(value: unknown): number | undefined {
