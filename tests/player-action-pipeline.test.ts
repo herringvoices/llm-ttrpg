@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createGameRuntime,
   createInMemoryPersistence,
+  fictionalDurationMs,
   loadGameDefinition,
   type ModelInvocationOptions,
   type ModelRuntime,
@@ -704,7 +705,7 @@ describe("LM-04 reference ruleset mechanics without model-authored inputs", () =
         modes: ["other"],
         statedMeans: [],
         pressureLevel: 6,
-        requestedHorizonMs: 10_000,
+        requestedHorizonMs: fictionalDurationMs(10_000),
         ...basis,
       },
     });
