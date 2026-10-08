@@ -17,6 +17,7 @@ const MAX_CONTINUITY_ITEMS = 6;
 const MAX_REPLY_ATTEMPTS = 2;
 const FAST_BRIEF_BUDGET = 3_200;
 const MATERIAL_CLAIM = /\b(?:i (?:promise|swear|confess|stole|hid|killed|accept|agree|offer|give|sold|bought|paid)|we (?:promise|swear|agree)|(?:i'll|i will) (?:pay|give|trade|attack|leave|help)|(?:deal|payment|contract|trade) (?:is|was) (?:done|agreed|accepted))\b/i;
+const MATERIAL_GESTURE = /\b(?:hands? (?:you|over)|gives? (?:you|the player)|passes? (?:you|over)|opens? (?:the|a) (?:door|gate|container|chest)|leaves? (?:the|this) (?:room|building)|strikes? (?:you|the player)|attacks? (?:you|the player)|pays? (?:you|the player)|produces? (?:a|the) (?:item|key|weapon))\b/i;
 
 function quotes(declaration: string): string[] {
   return [...declaration.matchAll(/"([^"\r\n]+)"/g)].map((item) => item[1]!);
@@ -184,7 +185,11 @@ export async function tryOrdinaryNpcConversation(
       const parsed = npcReplySchema.safeParse(result.output.value);
       if (!parsed.success) continue;
       if (parsed.data.kind === "escalate") return undefined;
-      if (MATERIAL_CLAIM.test(parsed.data.speech) || MATERIAL_CLAIM.test(parsed.data.visibleManner ?? "")) {
+      if (MATERIAL_CLAIM.test(parsed.data.speech) ||
+          MATERIAL_CLAIM.test(parsed.data.visibleManner ?? "") ||
+          MATERIAL_GESTURE.test(parsed.data.visibleManner ?? "")) {
+        // This utterance/gesture could propose a lasting effect. Do not
+        // display it as accomplished or commit from language alone.
         return undefined;
       }
       reply = { ...parsed.data,
