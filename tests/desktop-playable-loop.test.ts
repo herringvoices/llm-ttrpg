@@ -441,6 +441,54 @@ function actionModel(narration: "success" | "fail" = "success") {
 }
 
 describe("desktop playable session integration", () => {
+  it("executes two ordered action segments with distinct replay-safe action identities", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Segmented turn");
+    const declaration = "I test my footing, then I knock twice.";
+    const model = new ScriptedModelRuntime([
+      { id: "classify", match: { schemaId: "turn.declaration.v1" },
+        result: { kind: "structured", value: { kind: "interpreted", segments: [
+          { kind: "action", text: "I test my footing", goal: "test footing",
+            modes: ["manipulation"], targetRefs: [], statedMeans: [],
+            pressureLevel: 6, requestedHorizonMs: 60000 },
+          { kind: "action", text: "I knock twice", goal: "knock twice",
+            modes: ["manipulation"], targetRefs: [], statedMeans: ["knock"],
+            pressureLevel: 6, requestedHorizonMs: 60000 },
+        ] } } },
+      { id: "args-1", match: { schemaId: "player-action.tool-arguments.v1" },
+        result: { kind: "structured", value: { base: 8, modifier: 1, difficulty: 7, durationMs: 1000 } } },
+      { id: "stop-1", match: { schemaId: "player-action.execution-decision.v1" },
+        result: { kind: "structured", value: { kind: "stop", reason: "goal-achieved" } } },
+      { id: "narrate-1", match: { operation: "player-action.narration.v1" },
+        result: { kind: "text", text: "Your footing holds." } },
+      { id: "args-2", match: { schemaId: "player-action.tool-arguments.v1" },
+        result: { kind: "structured", value: { base: 8, modifier: 1, difficulty: 7, durationMs: 1000 } } },
+      { id: "stop-2", match: { schemaId: "player-action.execution-decision.v1" },
+        result: { kind: "structured", value: { kind: "stop", reason: "goal-achieved" } } },
+      { id: "narrate-2", match: { operation: "player-action.narration.v1" },
+        result: { kind: "text", text: "Two clear knocks follow." } },
+    ]);
+    const play = new DesktopPlaySession(engine, model, "campaign.entity.amelia", undefined);
+    const after = await play.performTurn(declaration);
+    expect(after.error).toBeUndefined();
+    expect(after.transcript.map((entry) => entry.speaker)).toEqual([
+      "player", "narrator", "narrator",
+    ]);
+    expect(model.invocations.filter((call) => call.schemaId === "turn.declaration.v1")).toHaveLength(1);
+    expect(model.invocations.map((call) => call.schemaId)).not.toContain("player-action.intent-interpretation.v1");
+    const history = await engine.eventHistory({ types: ["test.effort-resolved"] });
+    expect(history).toHaveLength(2);
+    const parent = after.transcript[0]!.id;
+    const replay = await engine.performPlayerAction({
+      actionId: `action.${parent}.segment.1`,
+      actorId: "campaign.entity.amelia",
+      declaration: "I test my footing",
+      budget: { maxUnits: 12000 },
+    }, { modelRuntime: new ScriptedModelRuntime([]) });
+    expect(replay.kind).toBe("resolved");
+    expect(await engine.eventHistory({ types: ["test.effort-resolved"] })).toHaveLength(2);
+  });
+
   it("triggers a targeted low replan after a canonical action invalidates its assumption", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Planner integration");
