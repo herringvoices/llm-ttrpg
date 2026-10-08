@@ -1313,7 +1313,10 @@ describe("desktop playable session integration", () => {
     expect(schemaCalls.filter((id) => id === "turn.declaration.v1")).toHaveLength(1);
     expect(schemaCalls).not.toContain("desktop.turn-route.v1");
     expect(schemaCalls).not.toContain("player-action.intent-interpretation.v1");
-    expect(schemaCalls).not.toContain("player-action.execution-decision.v1");
+    // LM-11 still owns the final authoritative stop decision; LM-03
+    // eliminates model-led catalog selection for the uniquely registered operation.
+    expect(schemaCalls.filter((id) => id === "player-action.execution-decision.v1"))
+      .toHaveLength(1);
     expect(view.diagnostics?.stateCounts.delta.entities).toBe(0);
     expect(view.diagnostics?.stateCounts.delta.events).toBe(
       view.diagnostics!.eventCountAfter - view.diagnostics!.eventCountBefore,
