@@ -530,6 +530,43 @@ describe("desktop playable session integration", () => {
     expect(reopened.engineSession().snapshot()).toEqual(worldBefore);
   });
 
+  it("refreshes derived continuity at a meaningful foreground time boundary without a summary call", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Continuity time boundary");
+    await engine.applyActionPressureAssessment({ level: 1 });
+    const model = new ScriptedModelRuntime([
+      { id: "classify", match: { schemaId: "turn.declaration.v1" },
+        result: { kind: "structured", value: { kind: "interpreted", segments: [{
+          kind: "action", goal: "sort paperwork for one hour",
+          targetRefs: [], modes: ["manipulation"], statedMeans: ["sort paperwork"],
+          pressureLevel: 1, requestedHorizonMs: 7_200_000,
+        }] } } },
+      { id: "arguments", match: { schemaId: "player-action.tool-arguments.v1" },
+        result: { kind: "structured", value: {
+          base: 8, modifier: 2, difficulty: 9, durationMs: 3_600_000,
+        } } },
+      { id: "stop", match: { schemaId: "player-action.execution-decision.v1" },
+        result: { kind: "structured", value: { kind: "stop", reason: "goal-achieved" } } },
+      { id: "narrate", match: { operation: "player-action.narration.v1" },
+        result: { kind: "text", text: "You finish your hour of sorting paperwork." } },
+    ]);
+    const play = new DesktopPlaySession(engine, model, "campaign.entity.amelia", undefined);
+    const startTime = engine.snapshot().fictionalTime;
+    const view = await play.performTurn("I spend an hour sorting paperwork.");
+    expect(view.error).toBeUndefined();
+    expect(Date.parse(view.fictionalTime) - Date.parse(startTime)).toBeGreaterThanOrEqual(3_600_000);
+    expect(view.diagnostics?.continuityBoundary).toEqual(expect.objectContaining({
+      reason: "time-jump",
+      diagnostics: expect.objectContaining({
+        serializedCharacters: expect.any(Number),
+        selectedSourceCount: expect.any(Number),
+        modelRefreshCalls: 0,
+      }),
+    }));
+    expect(model.invocations.map((invocation) => invocation.schemaId))
+      .not.toContain("continuity.select.v1");
+  });
+
   it("bounds a long creative search to pressure 9 through a registered general handler", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Pressure-bound creative action");
