@@ -441,6 +441,38 @@ function actionModel(narration: "success" | "fail" = "success") {
 }
 
 describe("desktop playable session integration", () => {
+  it("bounds a long creative search to pressure 9 through a registered general handler", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Pressure-bound creative action");
+    const beforeTime = Date.parse(engine.snapshot().fictionalTime);
+    const model = new ScriptedModelRuntime([
+      { id: "classify", match: { schemaId: "turn.declaration.v1" },
+        result: { kind: "structured", value: { kind: "interpreted", segments: [{
+          kind: "action", goal: "search for Jonny throughout the morning",
+          modes: ["other"], targetRefs: [], statedMeans: ["search"],
+          pressureLevel: 9, requestedHorizonMs: 28800000,
+        }] } } },
+      { id: "arguments", match: { schemaId: "player-action.tool-arguments.v1" },
+        result: { kind: "structured", value: {
+          mode: "automatic", modifier: 0, durationMs: 28800000,
+        } } },
+      { id: "stop", match: { schemaId: "player-action.execution-decision.v1" },
+        result: { kind: "structured", value: { kind: "stop", reason: "budget-exhausted" } } },
+      { id: "narrate", match: { operation: "player-action.narration.v1" },
+        result: { kind: "text", text: "You make only a brief start before the urgency interrupts you." } },
+    ]);
+    const play = new DesktopPlaySession(engine, model, "campaign.entity.amelia", undefined);
+    const view = await play.performTurn("I search for Jonny all morning.");
+    expect(view.error).toBeUndefined();
+    expect(Date.parse(engine.snapshot().fictionalTime) - beforeTime).toBe(5_000);
+    const events = await engine.eventHistory({ types: ["test.contract-resolution-recorded"] });
+    expect(events).toHaveLength(1);
+    const schemas = model.invocations.map((invocation) => invocation.schemaId);
+    expect(schemas.filter((id) => id === "turn.declaration.v1")).toHaveLength(1);
+    expect(schemas).not.toContain("desktop.turn-route.v1");
+    expect(schemas).not.toContain("player-action.intent-interpretation.v1");
+  });
+
   it("executes two ordered action segments with distinct replay-safe action identities", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Segmented turn");
