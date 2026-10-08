@@ -73,7 +73,7 @@ export interface ContinuityProjection {
   };
 }
 
-const cache = new Map<string, ContinuitySummary>();
+const cache = new Map<string, { readonly summary: ContinuitySummary; readonly sourceSignature: string }>();
 const CACHE_LIMIT = 64;
 const DEFAULT_MAX = 1_200;
 const DEFAULT_SOURCES = 12;
@@ -225,17 +225,20 @@ export function projectContinuity(input: ContinuityRequest): ContinuityProjectio
   const available = sources(input);
   const selected = available.slice(0, sourceCap);
   const gameFingerprint = digest(input.world.game);
-  const fingerprint = digest(selected.map((item) =>
+  const sourceSignature = JSON.stringify(selected.map((item) =>
     [item.kind, item.id, item.value]));
+  const fingerprint = digest(sourceSignature);
   const key = JSON.stringify([input.worldId, input.scope,
     input.perspective, gameFingerprint, budget, sourceCap]);
   const previous = cache.get(key);
-  if (previous?.basis.sourceFingerprint === fingerprint) {
-    return { summary: previous,
+  // Fingerprints are diagnostic identifiers, not security proofs. Exact
+  // comparison is necessary before reusing any actor-private cached prose.
+  if (previous?.sourceSignature === sourceSignature) {
+    return { summary: previous.summary,
       diagnostics: {
-        refreshed: false, trigger: "cache-hit", selectedSourceCount: previous.sourceRefs.length,
-        omittedSourceCount: Math.max(0, available.length - previous.sourceRefs.length),
-        serializedCharacters: previous.summaryText.length, modelRefreshCalls: 0,
+        refreshed: false, trigger: "cache-hit", selectedSourceCount: previous.summary.sourceRefs.length,
+        omittedSourceCount: Math.max(0, available.length - previous.summary.sourceRefs.length),
+        serializedCharacters: previous.summary.summaryText.length, modelRefreshCalls: 0,
       },
     };
   }
@@ -266,7 +269,7 @@ export function projectContinuity(input: ContinuityRequest): ContinuityProjectio
     },
   });
   if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value!);
-  cache.set(key, summary);
+  cache.set(key, { summary, sourceSignature });
   return {
     summary,
     diagnostics: {
