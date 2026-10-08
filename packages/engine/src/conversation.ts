@@ -36,6 +36,7 @@ import type { GameSession } from "./runtime.js";
 import { fictionalDurationMs } from "./time.js";
 import type { WorldState } from "./world.js";
 import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
+import { tryOrdinaryNpcConversation } from "./conversation-ordinary.js";
 
 export interface ConversationAuthorityBindings {
   readonly recordCommunicationOperationId: string;
@@ -48,6 +49,8 @@ export interface PerformConversationTurnInput {
   readonly request: ConversationTurnRequest;
   readonly bindings: ConversationAuthorityBindings;
   readonly workingState?: ConversationWorkingState;
+  /** LM-05: opt into a short NPC-perspective response before the exceptional path. */
+  readonly ordinaryFastPath?: boolean;
   readonly modelOptions?: ModelInvocationOptions;
   readonly onProgress?: (
     phase: "understanding" | "responding" | "updating" | "presenting",
@@ -520,6 +523,12 @@ export async function performConversationTurn(
     }
   };
   const request = conversationTurnRequestSchema.parse(input.request);
+  if (input.ordinaryFastPath) {
+    const ordinary = await tryOrdinaryNpcConversation(input);
+    if (ordinary) return ordinary;
+    // An escalated reply remains a proposal. The existing authoritative
+    // conversation flow starts from the same unchanged world snapshot.
+  }
   let working = initialWorkingState(request, input.workingState);
   const worldAtStart = input.session.snapshot();
   for (const actorId of [
