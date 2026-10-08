@@ -179,7 +179,7 @@ export async function classifyTurnDeclaration(input: {
       // A concrete investigation is already actionable from the current
       // visible scene; never ask the player to decide what the world reveals.
       const unnecessary = /\b(which|what) (?:location|place|room|object|tool)\b/i.test(question) &&
-        /\\b(?:investigate|look|search|inspect|examine)\\b/i.test(input.declaration);
+        /\b(?:investigate|look|search|inspect|examine)\b/i.test(input.declaration);
       if (unnecessary && attempt === 0) {
         lastError = question;
         continue;
