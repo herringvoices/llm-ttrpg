@@ -62,7 +62,7 @@ function samePerspective(
   a: KnowledgePerspective,
   b: Exclude<KnowledgePerspective, { kind: "canonical" }>,
 ): boolean {
-  return a.kind === b.kind && a.kind !== "canonical" && a.id === b.id;
+  return a.kind === b.kind && a.id === b.id;
 }
 
 function cleanText(text: string, forbidden: readonly string[]): string {
