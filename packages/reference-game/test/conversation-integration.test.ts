@@ -306,6 +306,51 @@ async function createConversationSession(
 }
 
 
+describe("LM-07 long-play dialogue projection", () => {
+  it("bounds twenty ordinary beats before every NPC model invocation without a summarization call", async () => {
+    const { session } = await createConversationSession();
+    await session.applyActionPressureAssessment({ level: 3 });
+    const historyBefore = await session.eventHistory();
+    const model = new ConversationModelRuntime((request) => {
+      expect(request.output.kind).toBe("structured");
+      expect(request.output.schemaId).toBe("conversation.npc-reply.v1");
+      const input = JSON.parse(request.prompt.input) as {
+        knowledge: { recentUtterances: Array<{ content: string }> };
+      };
+      expect(input.knowledge.recentUtterances.length).toBeLessThanOrEqual(6);
+      return {
+        kind: "ordinary",
+        speech: "I don't know anything new.",
+        continueConversation: true,
+        materialSignal: "none",
+      };
+    });
+    let working: Awaited<ReturnType<typeof performConversationTurn>>["workingState"] | undefined;
+    for (let beat = 1; beat <= 20; beat++) {
+      const result = await performConversationTurn({
+        session,
+        modelRuntime: model,
+        ordinaryFastPath: true,
+        bindings: referenceConversationBindings,
+        request: turnRequest(
+          `turn.twenty-beats-${beat}`,
+          `I ask Gary how things are going, question ${beat}.`,
+        ),
+        ...(working ? { workingState: working } : {}),
+      });
+      expect(result.communicationCommitted).toBe(true);
+      working = result.workingState;
+      expect(working.recentTranscript.length).toBeLessThanOrEqual(12);
+    }
+    expect(model.requests).toHaveLength(20);
+    const lengths = model.requests.map((request) =>
+      (request.prompt.context?.length ?? 0) + request.prompt.input.length
+    );
+    expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThan(1_000);
+    expect(await session.eventHistory()).toEqual(historyBefore);
+  });
+});
+
 describe("LM-05 ordinary NPC reply fast path", () => {
   it("answers once from the NPC perspective without extracting or committing conversation events", async () => {
     const { session } = await createConversationSession();
