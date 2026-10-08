@@ -11,7 +11,7 @@ The current gameplay architecture asks a relatively small local model to perform
 
 We will design a series of implementation tickets that reduce **model decision complexity, context volume, call count, and persistent-state growth** without sacrificing player agency, deterministic rules, perspectives/hidden knowledge, or persistence reliability.
 
-**This is a ticket-design backlog, not yet a set of Ready for Dev issues.** Each ticket starts as a high-level hypothesis. We will refine scope, boundaries, interfaces, acceptance criteria, test cases, migration implications, and dependencies one ticket at a time before implementation.
+**This document is a high-level planning index, not the implementation ticket source of truth.** Detailed specifications live in GitHub issues. Proposed ideas can become issues as they are fleshed out; creating an issue does not automatically mean it is Ready for Dev.
 
 ## Non-negotiable design constraints
 
@@ -42,18 +42,18 @@ Each ticket moves through:
 
 1. **Proposed:** High-level outcome and motivation captured here.
 2. **In discussion:** Resolve key policy questions, expected behavior, and ownership.
-3. **Specified:** Record scope, non-goals, dependencies, contracts, migration/rollout, edge cases, test matrix, acceptance criteria.
-4. **Ready for Dev:** Create or update a GitHub issue and link it here only after the design is settled.
+3. **Specified:** Write the full specification directly in a GitHub issue, including scope, non-goals, dependencies, contracts, migration/rollout, edge cases, test matrix, and acceptance criteria.
+4. **Ready for Dev:** Set the GitHub Project status after the specification and dependencies are agreed.
 5. **In progress / Verified:** Implement, instrument, run deterministic tests and local-model playtests, then update this plan.
 
-Do not automatically label these proposed tickets Ready for Dev. Avoid treating all tickets as independently executable; there are deliberate sequencing dependencies below.
+Do not automatically label a GitHub issue Ready for Dev merely because it has been created. Avoid treating all tickets as independently executable; there are deliberate sequencing dependencies below.
 
-## Active ticket specification batches
+## Active ticket issues
 
-- **Batch 1 — LM-01, LM-02, LM-03:** [Detailed Markdown ticket specifications](local-model-tickets-01-03.md). These tickets are specified for implementation, but GitHub issues have not yet been created.
-- **Next:** LM-04, LM-05, LM-06.
+- **Batch 1 (specified):** [LM-01 — Turn diagnostics](https://github.com/herringvoices/llm-ttrpg/issues/46), [LM-02 — Compact model briefs](https://github.com/herringvoices/llm-ttrpg/issues/47), [LM-03 — Unified routing](https://github.com/herringvoices/llm-ttrpg/issues/48). GitHub issues are the authoritative, detailed ticket specifications; no separate ticket Markdown is maintained.
+- **Next batch:** LM-04, LM-05, LM-06. Flesh these out directly as GitHub issues.
 
-## Proposed tickets (high-level only)
+## Backlog overview (high-level only)
 
 ### LM-01 — Establish local-model gameplay baseline and regression harness
 **Priority:** P0 · **Suggested first**
@@ -203,6 +203,7 @@ Some work can run in parallel once shared contracts are agreed. Final implementa
 - **2026-10-08:** Initial proposed backlog created from repo audit. No tickets are fully specified or marked Ready for Dev.
 - **2026-10-08:** Favor simplification of model-facing responsibilities, not elimination of determinism or package modularity.
 - **2026-10-08:** Baseline measurement and compact context contracts precede hot-path rewrite.
+- **2026-10-08:** Detailed specifications for LM-01 through LM-03 moved to GitHub issues #46–#48; the separate ticket Markdown file is being retired. Future tickets should be authored directly as issues.
 
 ## Next discussion
 
