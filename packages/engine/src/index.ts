@@ -34,3 +34,5 @@ export * from "./save.js";
 export * from "./simulation.js";
 export * from "./validation.js";
 export * from "./world.js";
+
+export * from "./continuity.js";
