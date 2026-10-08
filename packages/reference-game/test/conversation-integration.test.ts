@@ -871,8 +871,15 @@ describe("NPC interaction and conversation", () => {
       if (request.output.schemaId === "conversation.npc-decision.v1") {
         const context = request.prompt.context ?? "";
         const input = JSON.parse(request.prompt.input) as { actorRef: string };
-        // LM-07 exposes relevant prose, never a canonical goal record ID.
-        if (context.includes("Keep the neighborhood clinic supplied.")) {
+        // Identify the intended focal actor through the authorized scene
+        // alias, not through any leaked canonical goal or entity ID.
+        const actorScene = JSON.parse(context) as {
+          situation: { scene: Array<{ localRef: string; displayIdentity: string }> };
+        };
+        const focalName = actorScene.situation.scene.find((item) =>
+          item.localRef === input.actorRef
+        )?.displayIdentity;
+        if (focalName === "Mara") {
           return npcDecision(request, {
             actorId: input.actorRef,
             interpretation: "Mara treats the report as an emergency.",
