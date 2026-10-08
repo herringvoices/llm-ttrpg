@@ -2001,9 +2001,10 @@ function openSession(
           if (binding.kind !== "engine-query") {
             argumentsValue = injectActor(argumentsValue, run.actorId);
           }
-          if (binding.kind !== "engine-query") {
-            // Ordinary *and* resolution operations must respect remaining
-            // fictional time; mechanical resolution is not a pressure bypass.
+          if (binding.kind === "ordinary-operation" ||
+            (options.registeredOnly && binding.kind === "resolution-operation")) {
+            // Ordinary operations keep their legacy behavior; the new
+            // registered-only gameplay path also caps resolution durations.
             const remainingMs = Math.max(
               0,
               run.executableIntent.authorizedHorizonMs - run.elapsedMs,
