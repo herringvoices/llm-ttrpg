@@ -1442,6 +1442,7 @@ describe("desktop playable session integration", () => {
       if (update.turnProgress) phases.push(update.turnProgress.phase);
     });
 
+    expect(view.error).toBeUndefined();
     expect(phases).toContain("responding");
     expect(view.turnProgress).toBeUndefined();
     expect(view.busy).toBe(false);
@@ -1560,9 +1561,10 @@ describe("desktop playable session integration", () => {
     expect(await play.engineSession().eventHistory({
       types: ["rules.routine-task-completed"],
     })).toHaveLength(1);
-    expect((await play.engineSession().eventHistory({
+    // Casual speech is displayed without inventing a canonical social event.
+    expect(await play.engineSession().eventHistory({
       types: ["rules.communication-recorded"],
-    })).length).toBeGreaterThan(0);
+    })).toHaveLength(0);
     expect(view.turnProgress).toBeUndefined();
     expect(view.busy).toBe(false);
     const calls = view.diagnostics?.performance.calls ?? [];
