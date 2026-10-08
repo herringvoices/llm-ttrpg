@@ -268,17 +268,18 @@ function openingActionSteps(
   const steps: ScriptedModelStep[] = [
     {
       id: `${prefix}-interpret-action`,
-      match: { schemaId: "player-action.intent-interpretation.v1" },
+      match: { schemaId: "turn.declaration.v1" },
       result: {
         kind: "structured",
-        value: {
-          kind: "interpreted",
+        value: { kind: "interpreted", segments: [{
+          kind: "action",
           goal: "continue a harmless ordinary action",
           targetRefs: [],
           modes: ["manipulation"],
+          statedMeans: [],
           requestedHorizonMs: 30_000,
           pressureLevel: 2,
-        },
+        }] },
       },
     },
     {
@@ -394,35 +395,27 @@ function setup(persistence: PersistencePorts = createInMemoryPersistence()) {
 function actionModel(narration: "success" | "fail" = "success") {
   return new ScriptedModelRuntime([
     {
-      id: "route-action",
-      match: { schemaId: "desktop.turn-route.v1" },
-      result: { kind: "structured", value: { kind: "action" } },
-    },
-    {
       id: "interpret",
-      match: { schemaId: "player-action.intent-interpretation.v1" },
+      match: { schemaId: "turn.declaration.v1" },
       result: {
         kind: "structured",
-        value: {
-          kind: "interpreted",
+        value: { kind: "interpreted", segments: [{
+          kind: "action",
           goal: "test the current position",
           targetRefs: [],
+          modes: ["manipulation"],
+          statedMeans: [],
           requestedHorizonMs: 60_000,
           pressureLevel: 6,
-        },
+        }] },
       },
     },
     {
-      id: "invoke",
-      match: { schemaId: "player-action.execution-decision.v1" },
-      result: {
-        kind: "structured",
-        value: {
-          kind: "invoke-tool",
-          toolId: "test.actions.resolve-effort",
-          arguments: { base: 8, modifier: 2, difficulty: 9, durationMs: 1_000 },
-        },
-      },
+      id: "arguments",
+      match: { schemaId: "player-action.tool-arguments.v1" },
+      result: { kind: "structured", value: {
+        base: 8, modifier: 2, difficulty: 9, durationMs: 1_000,
+      } },
     },
     {
       id: "stop",
@@ -517,9 +510,8 @@ describe("desktop playable session integration", () => {
     });
     await engine.initializeCampaignPlan(initialPlan);
     const model = new ScriptedModelRuntime([
-      { id: "route", match: { schemaId: "desktop.turn-route.v1" }, result: { kind: "structured", value: { kind: "action" } } },
-      { id: "intent", match: { schemaId: "player-action.intent-interpretation.v1" }, result: { kind: "structured", value: { kind: "interpreted", goal: "leave the expected situation", targetRefs: [], requestedHorizonMs: 60_000, pressureLevel: 6 } } },
-      { id: "invoke", match: { schemaId: "player-action.execution-decision.v1" }, result: { kind: "structured", value: { kind: "invoke-tool", toolId: "test.resolution.resolve-contract-fixture", arguments: { mode: "automatic", modifier: 0, durationMs: 0, setStatus: "left-town" } } } },
+      { id: "intent", match: { schemaId: "turn.declaration.v1" }, result: { kind: "structured", value: { kind: "interpreted", segments: [{ kind: "action", goal: "leave the expected situation", targetRefs: [], modes: ["other"], statedMeans: [], requestedHorizonMs: 60_000, pressureLevel: 6 }] } } },
+      { id: "arguments", match: { schemaId: "player-action.tool-arguments.v1" }, result: { kind: "structured", value: { mode: "automatic", modifier: 0, durationMs: 0, setStatus: "left-town" } } },
       { id: "stop", match: { schemaId: "player-action.execution-decision.v1" }, result: { kind: "structured", value: { kind: "stop", reason: "goal-achieved" } } },
       { id: "narrate", match: { operation: "player-action.narration.v1" }, result: { kind: "text", text: "Amelia leaves town, abandoning the expected opportunity." } },
       {
@@ -1306,7 +1298,7 @@ describe("desktop playable session integration", () => {
       turnSteps: [
         {
           id: "route-conversation",
-          match: { schemaId: "desktop.turn-route.v1" },
+          match: { schemaId: "turn.declaration.v1" },
           result: (request: ModelRequest<unknown>) => {
             const context = JSON.parse(request.prompt.context!) as {
               situation: {
@@ -1316,7 +1308,9 @@ describe("desktop playable session integration", () => {
             const recipientRef = context.situation.scene
               .find((item) => item.displayIdentity !== "Rowan")?.localRef;
             if (!recipientRef) throw new Error("Conversation recipient was absent from the authorized scene");
-            return { kind: "structured", value: { kind: "conversation", recipientRefs: [recipientRef] } };
+            return { kind: "structured", value: { kind: "interpreted", segments: [
+              { kind: "communication", recipientRefs: [recipientRef] },
+            ] } };
           },
         },
         {
@@ -1406,7 +1400,7 @@ describe("desktop playable session integration", () => {
     expect(view.busy).toBe(false);
     const calls = view.diagnostics?.performance.calls ?? [];
     expect(calls).toHaveLength(model.invocations.length - invocationsBeforeTurn);
-    expect(calls.some((call) => call.schemaId === "desktop.turn-route.v1")).toBe(true);
+    expect(calls.some((call) => call.schemaId === "turn.declaration.v1")).toBe(true);
     expect(calls.some((call) => call.schemaId === "conversation.npc-decision.v1")).toBe(true);
     expect(calls.some((call) => call.phase === "responding")).toBe(true);
   });
