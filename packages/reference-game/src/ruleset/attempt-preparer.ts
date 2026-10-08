@@ -123,7 +123,9 @@ export const prepareReferenceActionAttempt: ActionAttemptPreparer = ({
   const means = attempt.statedMeans.map((value) => value.trim().toLowerCase());
   // Do not conjure explicitly required implements. The ruleset will support
   // inventory-verified tools when the package has an inventory contract.
-  const claimedImplement = means.find((value) => /\b(?:crowbar|torch|knife|sword|gun|hammer)\b/i.test(value));
+  const claimedImplement = means.map((value) =>
+    value.match(/\b(?:crowbar|torch|knife|sword|gun|hammer)\b/i)?.[0]
+  ).find((value): value is string => Boolean(value));
   if (claimedImplement) {
     const holdings = [
       actor.data.inventory, actor.data.equipment, actor.data.heldItems,
@@ -139,7 +141,8 @@ export const prepareReferenceActionAttempt: ActionAttemptPreparer = ({
 
   const selectedPlan = plan(actorMechanics, attempt);
   const targetMechanics = target && stateOf(target.data.mechanics);
-  const inContest = attempt.modes.includes("attack") && Boolean(target);
+  const inContest = attempt.modes.includes("attack") &&
+    (target?.kind === "actor" || target?.kind === "creature");
   if (inContest && !targetMechanics) {
     return missing([ `entity:${targetId}:mechanics` ],
       "An opposed attack needs the target's realized attributes and protective statuses.");
