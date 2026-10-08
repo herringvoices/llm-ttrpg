@@ -1328,11 +1328,17 @@ describe("desktop playable session integration", () => {
 
     play.setNarrationPreference("concise");
     await play.save("Manual save");
-    expect(savedPresentation).toHaveLength(2);
+    expect(savedPresentation).toHaveLength(3);
     expect(savedPresentation[0]).toEqual(
       expect.objectContaining({ narrationPreference: "standard" }),
     );
+    expect(savedPresentation[0]).toEqual(expect.objectContaining({
+      transcript: [expect.objectContaining({ speaker: "player" })],
+    }));
     expect(savedPresentation[1]).toEqual(
+      expect.objectContaining({ narrationPreference: "standard" }),
+    );
+    expect(savedPresentation[2]).toEqual(
       expect.objectContaining({ narrationPreference: "concise" }),
     );
   });
