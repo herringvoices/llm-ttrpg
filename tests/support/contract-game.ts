@@ -221,7 +221,7 @@ export const resolveContractFixtureOperation: ResolutionOperation<
       subsystem: { id: "resolution", label: "Resolution" },
       tags: ["fixture"],
     },
-    applicability: { actionModes: ["other"], generalFallback: true },
+    generalFallback: true,
   },
   inputSchema: contractResolutionInputSchema,
   preparedSchema,
