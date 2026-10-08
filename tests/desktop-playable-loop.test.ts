@@ -1540,5 +1540,26 @@ describe("desktop playable session integration", () => {
     expect(retried.transcript.at(-1)?.text).toContain("committed effort");
     expect(engine.planningBasis()).toEqual(basisAfterCommit);
     expect(await engine.eventHistory()).toEqual(historyAfterCommit);
+    expect(play.recentPerformance()).toHaveLength(2);
+    expect(play.recentPerformance()[1]?.turnId).toMatch(/^narration-retry\\./);
+    expect(play.recentPerformance()[1]?.modelCallCount).toBeGreaterThan(0);
+    expect(play.recentPerformance()[1]?.outcome).toBe("resolved");
+  });
+
+  it("bounds the in-memory diagnostics ring and never creates new state for failed turns", async () => {
+    const { runtime } = setup();
+    const engine = await runtime.createWorld("Bounded instrumentation");
+    const before = engine.snapshot();
+    const beforeBasis = engine.planningBasis();
+    const play = new DesktopPlaySession(engine, undefined, "campaign.entity.amelia", undefined);
+    for (let i = 0; i < 22; i += 1) {
+      const view = await play.performTurn("I look around the room.");
+      expect(view.diagnostics?.performance.outcome).toBe("failed");
+      expect(view.diagnostics?.stateCounts.delta.events).toBe(0);
+    }
+    expect(play.recentPerformance()).toHaveLength(20);
+    expect(new Set(play.recentPerformance().map((entry) => entry.turnId)).size).toBe(20);
+    expect(engine.snapshot()).toEqual(before);
+    expect(engine.planningBasis()).toEqual(beforeBasis);
   });
 });
