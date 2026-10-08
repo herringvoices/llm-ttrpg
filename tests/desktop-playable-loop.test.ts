@@ -1435,6 +1435,7 @@ describe("desktop playable session integration", () => {
       locationDescription: "Medium-sized city in the Pacific Northwest.",
       allowGeneratedDetails: true,
     });
+    await play.engineSession().applyActionPressureAssessment({ level: 3 });
     const phases: string[] = [];
     const invocationsBeforeTurn = model.invocations.length;
 
