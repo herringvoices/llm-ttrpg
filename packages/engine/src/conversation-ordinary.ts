@@ -52,7 +52,6 @@ function workingState(
   });
 }
 function npcKnowledge(
-  world: ReturnType<PerformConversationTurnInput["session"]["snapshot"]>,
   actorId: string,
   playerId: string,
   working: ConversationWorkingState,
@@ -139,7 +138,7 @@ export async function tryOrdinaryNpcConversation(
     context.diagnostics.localReferences[item.localRef] === actorId);
   const displayName = npcScene?.displayIdentity ?? "NPC";
   const working = workingState(request, input.workingState);
-  const npcContext = npcKnowledge(world, actorId, request.playerActorId, working);
+  const npcContext = npcKnowledge(actorId, request.playerActorId, working);
   const directive = compileNarrationDirective(
     input.session.presentation().narrationProfile,
     deriveSceneRegister({
