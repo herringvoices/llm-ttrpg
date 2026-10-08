@@ -420,11 +420,12 @@ export class DesktopPlaySession {
       return `I can't identify a unique established speaker named ${request.speakerName}. I won't guess about their words.`;
     }
     const speaker = speakers[0];
-    const topic = request.topic?.toLowerCase();
+    const topicWords = (request.topic?.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])
+      .filter((word) => !["the", "and", "about", "from", "with", "into"].includes(word));
     const savedReplies = speaker ? this.transcriptEntries.filter((entry) =>
       entry.speaker === "npc" &&
       entry.speakerName?.toLowerCase() === speaker.name.toLowerCase() &&
-      (!topic || entry.text.toLowerCase().includes(topic))
+      topicWords.every((word) => entry.text.toLowerCase().includes(word))
     ).slice(-2) : [];
     const history = await this.session.eventHistory({
       access: ["public"], relatedEntityId: this.playerActorId,
