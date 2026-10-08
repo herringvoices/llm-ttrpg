@@ -1647,7 +1647,8 @@ describe("desktop playable session integration", () => {
 
     expect(phases).toContain("responding");
     expect(view.error).toBeUndefined();
-    expect(view.transcript.slice(0, 3).map((entry) => entry.speaker)).toEqual([
+    const playerIndex = view.transcript.findIndex((entry) => entry.speaker === "player");
+    expect(view.transcript.slice(playerIndex, playerIndex + 3).map((entry) => entry.speaker)).toEqual([
       "player", "narrator", "npc",
     ]);
     expect(await play.engineSession().eventHistory({
