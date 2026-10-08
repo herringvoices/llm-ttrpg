@@ -54,7 +54,8 @@ Do not automatically label a GitHub issue Ready for Dev merely because it has be
 - **Batch 2 (specified):** [LM-04 — Engine-owned mechanical derivation](https://github.com/herringvoices/llm-ttrpg/issues/49), [LM-05 — Lightweight NPC conversations](https://github.com/herringvoices/llm-ttrpg/issues/50), [LM-06 — Durable state materiality](https://github.com/herringvoices/llm-ttrpg/issues/51). Specifications are in the issues, not separate Markdown files.
 - **Batch 3 (specified):** [LM-07 — Bounded continuity memory](https://github.com/herringvoices/llm-ttrpg/issues/52), [LM-08 — Boundary-driven campaign planning](https://github.com/herringvoices/llm-ttrpg/issues/53), [LM-09 — Compact campaign seed](https://github.com/herringvoices/llm-ttrpg/issues/54). These are the authoritative specifications; no parallel Markdown ticket file.
 - **Batch 4 (specified):** [LM-10 — Lazy realization](https://github.com/herringvoices/llm-ttrpg/issues/55), [LM-11 — Scene-driven Action Pressure](https://github.com/herringvoices/llm-ttrpg/issues/56), [LM-12 — Committed-outcome narration](https://github.com/herringvoices/llm-ttrpg/issues/57). Detailed specifications live in the GitHub issues.
-- **Next batch:** LM-13 (quality gates, compatibility, rollout), followed by a cross-ticket integration/dependency review.
+- **Batch 5 (specified):** [LM-13 — Local-model quality gates, compatibility, and rollout](https://github.com/herringvoices/llm-ttrpg/issues/58). All thirteen LM tickets are now specified; implementation status remains separate from specification.
+- **Integration review:** The [cross-ticket integration review](#cross-ticket-integration-review-2026-10-08) below records interface ownership, conflicts, dependencies and recommended implementation waves.
 
 ## Backlog overview (high-level only)
 
@@ -162,15 +163,64 @@ Create scenario acceptance tests with realistic model runs alongside determinist
 
 **Decisions to flesh out:** Minimum performance baseline; hardware test matrix; acceptable failure rates; backward compatibility; what constitutes release readiness.
 
-## Suggested design order (not necessarily implementation order)
+## Cross-ticket integration review (2026-10-08)
 
-**First pass:** LM-01 → LM-02 → LM-03 → LM-04 → LM-05 → LM-06
+**Status:** Specification-level architectural review, not evidence of implementation or a verified release. All 13 issues have detailed specifications. This section resolves ownership and work order across them without replacing their acceptance criteria. The GitHub issues are the implementation source of truth.
 
-**Second pass:** LM-07 → LM-08 → LM-11 → LM-12
+### Ownership and handoff matrix
 
-**Third pass:** LM-09 → LM-10 → LM-13
+| Boundary | Responsible issue | Other issues consume, not reimplement |
+| --- | --- | --- |
+| Invocation/turn measurements, baseline and diagnostic correlation | [LM-01](https://github.com/herringvoices/llm-ttrpg/issues/46) | Every refactor measures through the same observer; no new gameplay model calls for instrumentation |
+| Authorization, local reference mapping, compact scene/actor/route briefs | [LM-02](https://github.com/herringvoices/llm-ttrpg/issues/47) | LM-03/05/07/08/12 request a view with purpose and perspective; do not create parallel “mini context engines” |
+| Single interpretation, ordered declaration segments, semantic modes, registry-based operation selection | [LM-03](https://github.com/herringvoices/llm-ttrpg/issues/48) | LM-04 gets validated attempts; LM-05 gets verbatim communication; LM-11 owns duration/stop |
+| Numeric/mechanical check derivation, resistances, effects, rules package policy | [LM-04](https://github.com/herringvoices/llm-ttrpg/issues/49) | LM-10 ensures required mechanically realized state exists before LM-04 evaluates a check |
+| NPC speech generation and consequential-NPC escalation | [LM-05](https://github.com/herringvoices/llm-ttrpg/issues/50) | LM-06 decides whether proposed social outcomes persist; LM-12 displays speech rather than regenerating it |
+| Durable world materiality, event-vs-receipt evidence and opening-power source compatibility | [LM-06](https://github.com/herringvoices/llm-ttrpg/issues/51) | LM-07 source summaries, LM-08 event/boundary triggers, LM-12 narration and first-power progression all consume typed sources |
+| Source-aware, perspective-safe continuity caches, refresh triggers and historical recall | [LM-07](https://github.com/herringvoices/llm-ttrpg/issues/52) | LM-02 projects cached continuity; LM-08 uses compact continuity, never authorizes new canon |
+| Planner trigger decisions, compact campaign direction, plan revision/grounding validation | [LM-08](https://github.com/herringvoices/llm-ttrpg/issues/53) | LM-09 creates a valid seed-derived initial plan without requiring the full planner refactor first |
+| Compact initial creative seed and deterministic campaign-scaffolding expansion | [LM-09](https://github.com/herringvoices/llm-ttrpg/issues/54) | LM-10 enriches this state only when required; do not prefill all possible people/places |
+| Targeted missing entity/identity/place/mechanics realization and deduplication | [LM-10](https://github.com/herringvoices/llm-ttrpg/issues/55) | LM-04 uses realized mechanics; LM-12 cannot use its prose to create them |
+| Scene-scoped pressure triggers, authorized horizon, elapsed-time accounting, interruption and authoritative stop | [LM-11](https://github.com/herringvoices/llm-ttrpg/issues/56) | LM-03 never declares goal completion solely from action-mode coverage; LM-05/12 consume pressure rather than reassessing it |
+| Player-observable committed-beat projection, narration profile compilation, and presentation-only retry | [LM-12](https://github.com/herringvoices/llm-ttrpg/issues/57) | LM-05 ordinary NPC reply remains display-ready; LM-06 event-sparse receipts remain narratable |
+| Integration tests, real local-model rubric, performance evidence, save migrations, staged rollout | [LM-13](https://github.com/herringvoices/llm-ttrpg/issues/58) | Acceptance criteria are contributed incrementally by all tickets; LM-13 does not substitute for completing their own tests |
 
-Some work can run in parallel once shared contracts are agreed. Final implementation sequencing will be set when dependencies are refined.
+### Significant integration risks and agreed decisions
+
+1. **LM-03 vs LM-11, competing action completion:** LM-03 owns *interpretation and execution selection* and must preserve ordered segments. **LM-11 owns the final stop/interruption and time accounting policy** based on receipts, postconditions and scene pressure. Early LM-03 improvements may have a temporary stop heuristic, but it must not grow into a second permanent completion engine. One semantic mode being handled does not prove the player's entire intent was completed.
+2. **LM-04 vs LM-10, the missing-mechanics cycle:** The rules package cannot derive an opposed check without required target capabilities; lazy realization must not wait until after that check. Agree now on a small `ready | missing-required-data` preflight result from the ruleset adapter, with explicit fields/target, followed by one bounded authorized LM-10 realization before LM-04 retries derivation. For the first implementation, LM-04 can operate against already-realized fixtures; LM-10 adds the missing-data path later. Avoid a circular import or automatic endless realization chain.
+3. **LM-05 vs LM-06 vs LM-07, speech and memory:** A line of NPC dialogue is **presentation**, a material pledge/disclosure/trade is a guarded **canonical consequence**, and a summary of the conversation is a **derived memory**. The fast ordinary speech path should not create a canonical belief or event on every line. LM-06 defines the materiality threshold and typed source/evidence identity; LM-07 summarizes only authorized source material. No three competing “is this important?” model classifiers.
+4. **LM-06 vs opening power, sparse events:** Current opening power logic expects an event ID from the triggering meaningful turn. **Migrate to a versioned committed receipt-or-event evidence reference before suppressing low-value routine events**. A turn can be meaningful with zero new canonical events; first power still must manifest within 1–3 meaningful turns and remain retry-safe. Legacy event IDs must remain readable.
+5. **LM-02/07/08/12, privacy:** A privileged planner can access more than a narrator, and an NPC can know more or less than the player. Build model-facing briefs from explicit perspective and purpose. Derived summaries inherit their **source access rights**, not “GM-readable therefore safe for every model.” The narration projector additionally checks *perceivability*; an event marked public may still describe an offscreen occurrence.
+6. **LM-06/08, what triggers planning:** The planner must not depend on the existence of a generic event for every successful turn. Typed material world changes, explicit scene/time boundaries and committed receipt signals are its input. For ordinary event-sparse turns there is no history load, invalidation pass, model call or revision churn. Existing plans/assumptions remain readable.
+7. **LM-09 vs LM-07/08, startup dependency is not strict:** Campaign startup runs before the main world/context exists. The compact initial proposal should use **source-preserving player/setup prompts** inspired by LM-02, not assume `SceneBrief` or continuity caches already exist. LM-09 should create a valid minimal initial `CampaignPlanDocument` directly and can be developed **in parallel** with LM-07/08 once seed/plan contracts are agreed. Otherwise we build an unnecessary long critical path. `2–3` is for core creative seed calls, not a hidden claim that optional creature, narration and repair calls vanished.
+8. **LM-09 vs LM-10, minimal starter state:** Define stable IDs and enough locality/actor/mechanical/setting records to compile an actually playable world. Do not assume a deferred entity exists as canonical. LM-10's realizers fill only missing data at active attention, and share no-retcon/identity rules. An old fully generated campaign stays valid without being retroactively downgraded to “lazy”.
+9. **LM-10 vs LM-12, imagined affordances:** A noun in narrator color (exit, firearm, route, witness, clue, magic item) is not a license to commit gameplay state. **Realize actionable detail before presenting it**, or omit it from generated prose. LM-12 can add genuinely non-actionable atmosphere only; it does not become a surrogate world generator.
+10. **LM-11 vs LM-05/12, one scene clock:** Conversations use the same pressure basis as physical actions, and narration describes **actually committed** elapsed time. Preserve existing nine-level caps unchanged: 8h, 2h, 30m, 10m, 2m, 60s, 30s, 10s, 5s. No second speech-only time clock and no LLM-authored pressure downgrade to complete an overlong attempt.
+11. **LM-12 vs LM-06, event-sparse presentation:** Action receipts and player-observable state deltas, not public event count, decide what the narrator can truthfully say. A successful routine action might produce zero events and still merit narration. The presentation retry must be anchored to the original committed beat, not whatever scene exists after later player actions.
+12. **LM-13, measurement scope and rollback:** Count **all** calls in a full submitted turn and separately count core generation calls vs opening narration/repair/conditional creature calls. Temporary flags only at major seams; a flag flip cannot restore old code's ability to read newly written persisted schema. Use dual readers/versioned migrations and stage writes in dependency order.
+
+### Recommended implementation waves
+
+This is an execution order based on dependencies, **not** an instruction to implement automatically or mark everything Ready for Dev.
+
+| Wave | Implement | Gate before moving on |
+| --- | --- | --- |
+| **A · Protect & measure** | LM-01, LM-02 | Instrumented scripted baseline; authorized compact briefs and local refs |
+| **B · Simplify the hot path** | LM-03, then LM-04 and LM-05 in parallel | Ordered actions and dialogue work; mechanics still authoritative; no duplicate interpretation |
+| **C · Repair evidence/persistence** | LM-06 first migrate event-dependent consumers, **then** suppress low-value events | Zero-event meaningful turn and first-power 1–3-turn compatibility; old save and retries |
+| **D · Remove repeat work** | LM-07, LM-08, LM-11, LM-12 using their owners' interfaces (parallel where code changes do not conflict) | Bounded context/summary, sparse planner, deterministic stop, no second NPC prose pass |
+| **E · Lean startup and lazy detail** | LM-09 may begin alongside C/D; complete LM-09 → LM-10 | New compact and legacy campaign paths work; stable on-demand entities/mechanics |
+| **F · Final release evidence** | LM-13 verification and rollout (start CI fixtures during A/B) | Real bundled CPU model and deterministic quality gates, migrations, rollback plan |
+
+**Merge strategy:** Prefer small vertically playable increments through existing public engine contracts rather than merging four simultaneous incompatible rewrites of `runtime.ts` or `play-session.ts`. In each wave: schema/interface first; one playable scenario through actual desktop; then edge cases and broader tests. Feature flags are temporary migration aids, not permanent alternate engines.
+
+### Remaining decisions to validate with measured runs
+
+- **Performance targets are provisional.** LM-01 must measure the baseline and LM-13 must verify real local-model improvements. Do not invent latency/token success percentages. Routine 0–2 total calls is a target, while ordinary dialogue's one NPC-response call is *after routing* and may still mean two total calls.
+- **Model limitations are empirical.** Three compressed seed stages may be more reliable than one overloaded schema; test validity, output length, retry rate and player experience before freezing LM-09's stage count.
+- **Quality is not only call count.** The no-retcon, no-double-commit, player-agency and private-information gates are strict; prose quality needs recorded human examples and failure cases.
+- **No extra issue needed yet.** The shared seams belong to existing tickets. If implementation reveals a truly missing standalone capability, create a focused follow-up rather than extending the orchestrator indefinitely.
 
 ## Cross-cutting questions to resolve during ticket discussions
 
@@ -183,7 +233,7 @@ Some work can run in parallel once shared contracts are agreed. Final implementa
 - Which existing persistent structures are worth keeping behind a compact projection, and which should truly be removed?
 - How do we make the system improve with stronger optional models without branching game rules or save formats?
 
-## Ticket specification template (use when we focus on one)
+## Historical ticket specification template (all current tickets already specified)
 
 ### LM-XX — Title
 - **Status:** Proposed / In discussion / Specified / Ready for Dev / In progress / Verified
@@ -203,6 +253,7 @@ Some work can run in parallel once shared contracts are agreed. Final implementa
 
 ## Decision log
 
+- **2026-10-08:** Completed LM-13 issue #58 and cross-reviewed all 13 specifications; clarified authority for routing/completion, mechanics/realization, speech/materiality/memory, event-sparse opening evidence, and scene pressure/presentation. No gameplay implementation was done.
 - **2026-10-08:** Initial proposed backlog created from repo audit. No tickets are fully specified or marked Ready for Dev.
 - **2026-10-08:** Specified LM-10 through LM-12 directly as GitHub issues #55–#57, grounding lazy realization in existing no-retcon rules, keeping 1–9 pressure horizons unchanged, and preventing narration from inventing playable world state.
 - **2026-10-08:** Favor simplification of model-facing responsibilities, not elimination of determinism or package modularity.
@@ -211,6 +262,6 @@ Some work can run in parallel once shared contracts are agreed. Final implementa
 - **2026-10-08:** Specified LM-04 through LM-06 directly as GitHub issues #49–#51, preserving ruleset authority, NPC knowledge boundaries, and event-dependent opening progression as explicit constraints.
 - **2026-10-08:** Specified LM-07 through LM-09 directly as GitHub issues #52–#54, distinguishing derived perspective-safe memory, sparse foreground planner triggers, and versioned compact campaign generation.
 
-## Next discussion
+## Next execution planning step
 
-Start with **LM-01 (measurement)** or **LM-02 (brief architecture)**. My suggested default is LM-01 first so subsequent changes can be measured rather than judged only by feel. During design, keep the end-state vision visible but resist turning every idea into an immediate implementation issue.
+Before moving any ticket to **Ready for Dev**, check the interface ownership matrix and confirm the contract/tests for its dependencies. Begin with **LM-01** (measurement) and **LM-02** (compact perspective-safe context), then proceed in the waves above. The 13 issues are specified but their code changes and real-model performance claims have not been implemented or verified by this planning exercise.
