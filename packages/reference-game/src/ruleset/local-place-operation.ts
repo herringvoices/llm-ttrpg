@@ -53,6 +53,7 @@ export const enterLocalPlaceOperation: RulesOperation<
   metadata: {
     id: "rules.actions.enter-local-place",
     kind: "ordinary",
+    retentionClass: "canonical",
     description:
       "Move an actor from their current broad location into a specifically named nearby place, room, facility, or area, creating that nested location canonically when first visited.",
     category: {
@@ -94,6 +95,30 @@ export const enterLocalPlaceOperation: RulesOperation<
     }
 
     const normalizedName = normalizedPlaceName(input.placeName);
+    // Re-entering the exact room where the actor already stands must not
+    // manufacture a nested duplicate or a spurious location-change event.
+    if (
+      parent.kind === "location" &&
+      (normalizedPlaceName(
+        typeof parent.data.localPlaceName === "string"
+          ? parent.data.localPlaceName
+          : parent.name,
+      ) === normalizedName)
+    ) {
+      const result = enterLocalPlaceResultSchema.parse({
+        actorId: input.actorId,
+        fromLocationId: currentLocationValue,
+        toLocationId: currentLocationValue,
+        placeName: input.placeName,
+        created: false,
+      });
+      return {
+        result,
+        advanceTimeByMs: fictionalDurationMs(input.travelDurationMs),
+        proposedMutations: [],
+        proposedEvents: [],
+      };
+    }
     const existing = context.world.entities.find((item) =>
       item.kind === "location" &&
       item.data.parentLocationId === currentLocationValue &&
