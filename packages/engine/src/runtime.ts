@@ -14,6 +14,7 @@ import {
 } from "./events.js";
 import type { LoadedGameDefinition, PresentationConfig } from "./contracts.js";
 import {
+  immutableOperationWorldView,
   applyMutationProposals,
   assessResolutionOperation,
   executeRulesOperation,
@@ -42,6 +43,7 @@ import {
   type ResolutionRequest,
 } from "./resolution.js";
 import { prepareModelBrief, redactModelBriefText, resolveBriefReference } from "./model-brief.js";
+import { semanticActionAttemptSchema, validatePreparedActionAttempt } from "./action-attempt.js";
 import type { JsonValue } from "./json.js";
 import { jsonValueSchema } from "./json.js";
 import {
@@ -1831,6 +1833,62 @@ function openSession(
           await dependencies.persistence.actionRuns.update(run);
           record("stop", { reason: decision.reason }, { worldRevision: revision });
           return narrate(run);
+        }
+
+        // LM-04: the rules package supplies complete numerical mechanics.
+        // A language model may select among registered capabilities, but its
+        // proposed numbers never override the trusted preparer.
+        if (
+          options.registeredOnly &&
+          decision.kind === "invoke-tool" &&
+          dependencies.game.ruleset.prepareActionAttempt
+        ) {
+          const attempt = semanticActionAttemptSchema.parse({
+            actionId: run.id,
+            actorId: run.actorId,
+            declaration: run.declaration,
+            goal: run.executableIntent.goal,
+            targetIds: run.executableIntent.targetIds,
+            modes: run.semanticAction?.modes ?? ["other"],
+            statedMeans: run.semanticAction?.statedMeans ?? [],
+            pressureLevel: run.executableIntent.pressureLevel,
+            requestedHorizonMs: run.executableIntent.requestedHorizonMs,
+            authorizedHorizonMs: run.executableIntent.authorizedHorizonMs,
+            remainingHorizonMs: Math.max(
+              0, run.executableIntent.authorizedHorizonMs - run.elapsedMs,
+            ),
+          });
+          const prepared = validatePreparedActionAttempt(
+            dependencies.game.ruleset.prepareActionAttempt({
+              operationId: decision.toolId,
+              attempt,
+              world: immutableOperationWorldView(state),
+            }),
+            decision.toolId,
+          );
+          if (prepared.status === "missing-required-data") {
+            record("rejection", { reason: "mechanics-not-realized", required: [...prepared.required] });
+            return fail("proposal", prepared.reason, run);
+          }
+          if (prepared.status === "cannot-attempt") {
+            record("rejection", { reason: "ruleset-cannot-attempt" });
+            return fail("proposal", prepared.reason, run);
+          }
+          if (prepared.status === "ready") {
+            const operation = dependencies.game.operationRegistry.get(decision.toolId);
+            const trustedInput = operation.inputSchema.parse(prepared.input);
+            decision = {
+              kind: "invoke-tool",
+              toolId: decision.toolId,
+              arguments: jsonValueSchema.parse(trustedInput),
+            };
+            record("intent", {
+              stage: "ruleset-derived-mechanics",
+              operationId: decision.toolId,
+              derivation: jsonValueSchema.parse(prepared.derivation),
+              authorizedHorizonMs: attempt.authorizedHorizonMs,
+            }, { worldRevision: revision });
+          }
         }
 
         if (decision.kind === "invoke-tool" && !("arguments" in decision)) {
