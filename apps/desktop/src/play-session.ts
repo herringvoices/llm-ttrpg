@@ -240,6 +240,7 @@ export class DesktopPlaySession {
   private pendingActionClarification?: {
     readonly declaration: string;
     readonly question: string;
+    readonly segmentActionId?: string;
   };
   private openingProgression?: OpeningProgressionState;
 
@@ -803,6 +804,7 @@ export class DesktopPlaySession {
             )
           );
           if (recipientIds.length !== segment.recipientIds.length || !recipientIds.length) {
+            turnOutcome = "failed";
             this.lastError = "The intended recipient is not available or visible after the preceding action.";
             this.add("system", this.lastError);
             break;
@@ -849,6 +851,7 @@ export class DesktopPlaySession {
           meaningfulTurn = meaningfulTurn || result.communicationCommitted ||
             result.committedActions.length > 0;
           if (!result.communicationCommitted) {
+            turnOutcome = "failed";
             this.lastError = result.narrationError ??
               "The preceding action did not permit the intended speech.";
             this.add("system", this.lastError);
@@ -867,7 +870,7 @@ export class DesktopPlaySession {
 
         const currentBasis = this.session.planningBasis();
         const actionRequest = {
-          actionId: segmentId,
+          actionId: pendingClarification?.segmentActionId ?? segmentId,
           actorId: this.playerActorId,
           declaration: segment.text,
           ...(this.view().currentLocationId
@@ -898,8 +901,9 @@ export class DesktopPlaySession {
         if (result.kind === "needs-player-input") {
           turnOutcome = "needs-player-input";
           this.pendingActionClarification = {
-            declaration,
+            declaration: segment.text,
             question: result.question,
+            segmentActionId: actionRequest.actionId,
           };
           this.add("system", result.question);
           break;
@@ -914,6 +918,7 @@ export class DesktopPlaySession {
             turnOutcome = "committed-presentation-failed";
             this.add("system", "The action changed the world, but presentation failed. You may retry narration without replaying it.");
           } else {
+            turnOutcome = "failed";
             this.lastError = result.failure.message;
             this.add("system", this.lastError);
           }
