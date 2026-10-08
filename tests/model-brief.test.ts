@@ -41,7 +41,7 @@ function setup() {
     });
   };
   add(aliceId, "Alice", "A character standing in the lobby.", {});
-  add(bobId, "Bob", "A character standing in the lobby.", {});
+  add(bobId, "Bob", "Private relationship detail visible only to Bob.", {});
   add(maskedId, "Daniel Mercer", "Secret identity: Daniel Mercer in disguise.", {
     unrecognizedIdentity: "masked figure",
     category: "participant",
@@ -135,6 +135,7 @@ describe("LM-02 compact model-facing briefs", () => {
       perspective: { kind: "actor", id: bobId },
     });
     expect(alice.modelText).toContain("Concealed service door");
+    expect(alice.modelText).not.toContain("Private relationship detail");
     expect(bob.modelText).not.toContain("Concealed service door");
     expect(() => prepareModelBrief({
       purpose: "narration", context: bobContext,
