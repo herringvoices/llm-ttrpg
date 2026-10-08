@@ -1422,6 +1422,20 @@ describe("desktop playable session integration", () => {
             },
           },
         },
+        {
+          id: "manifest-power",
+          match: { schemaId: "awakening-earth.power-proposal.v1" },
+          result: { kind: "structured", value: {
+            power: quickChangePower,
+            preferenceRationale: "This matches the established character and preference constraints.",
+            negativeConstraintsRespected: true,
+          } },
+        },
+        {
+          id: "narrate-power",
+          match: { operation: "desktop.first-power-narration.v1" },
+          result: { kind: "text", text: "A new ability begins to manifest." },
+        },
       ],
     });
     const { database } = await createMigratedSqlitePersistence();
