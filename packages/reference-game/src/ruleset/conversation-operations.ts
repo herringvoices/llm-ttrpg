@@ -18,6 +18,8 @@ export const recordCommunicationInputSchema = z.object({
   act: communicationActSchema,
   durationMs: z.number().int().nonnegative(),
   scopeIds: z.array(stableIdSchema),
+  /** Trusted caller requires a causal event for an exceptional extraction. */
+  retainForConsequences: z.boolean().optional(),
 }).strict();
 
 export const recordCommunicationResultSchema = z.object({
@@ -154,7 +156,9 @@ export const recordCommunicationOperation: RulesOperation<
       act: input.act,
       recipientBeliefIds,
     });
-    const material = mutations.length > 0 ||
+    const material = input.retainForConsequences === true ||
+      input.act.deliveryIntent !== "honest" ||
+      mutations.length > 0 ||
       input.act.materialCommitments.length > 0 ||
       input.act.intendedSocialEffect !== undefined ||
       input.act.containsNonSpeechAction ||
