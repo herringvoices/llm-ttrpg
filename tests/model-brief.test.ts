@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assembleContext,
+  classifyTurnDeclaration,
+  deterministicTurnClassification,
   initializeCampaignWorld,
   loadGameDefinition,
   prepareModelBrief,
@@ -8,6 +10,7 @@ import {
   resolveBriefReference,
 } from "@llm-ttrpg/engine";
 import { referenceGameDefinition, referenceSceneSource } from "@llm-ttrpg/reference-game";
+import { ScriptedModelRuntime } from "@llm-ttrpg/harness";
 
 const locationId = "fixture.location.lobby";
 const aliceId = "fixture.actor.alice";
