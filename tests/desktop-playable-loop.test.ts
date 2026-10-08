@@ -1609,6 +1609,20 @@ describe("desktop playable session integration", () => {
           match: { operation: "conversation.narration.v1" },
           result: { kind: "text", text: "The NPC looks toward the frost and tells you to stay back." },
         },
+        {
+          id: "manifest-power",
+          match: { schemaId: "awakening-earth.power-proposal.v1" },
+          result: { kind: "structured", value: {
+            power: quickChangePower,
+            preferenceRationale: "Quick Change fits the established ordinary character and their preferences.",
+            negativeConstraintsRespected: true,
+          } },
+        },
+        {
+          id: "narrate-power",
+          match: { operation: "desktop.first-power-narration.v1" },
+          result: { kind: "text", text: "A new ability stirs as the encounter ends." },
+        },
       ],
     });
     const { database } = await createMigratedSqlitePersistence();
@@ -1633,7 +1647,7 @@ describe("desktop playable session integration", () => {
 
     expect(phases).toContain("responding");
     expect(view.error).toBeUndefined();
-    expect(view.transcript.map((entry) => entry.speaker)).toEqual([
+    expect(view.transcript.slice(0, 3).map((entry) => entry.speaker)).toEqual([
       "player", "narrator", "npc",
     ]);
     expect(await play.engineSession().eventHistory({
