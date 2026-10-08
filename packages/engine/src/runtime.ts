@@ -74,7 +74,6 @@ import {
   assembleContext,
   createContextQueryExecutionOptions,
   queryAuthorizationFromContext,
-  renderContextForModel,
   prepareModelBrief,
   resolveBriefReference,
   type SceneSourceProvider,
@@ -1890,6 +1889,19 @@ function openSession(
               executionBrief, alias, { worldRevision: revision, eventSequence },
             );
           }
+          const validateAliases = (value: JsonValue): void => {
+            if (typeof value === "string" && /^scene\\.\\d{3}$/.test(value)) {
+              resolveBriefReference(
+                executionBrief, value,
+                { worldRevision: revision, eventSequence },
+              );
+            } else if (Array.isArray(value)) {
+              for (const entry of value) validateAliases(entry);
+            } else if (value && typeof value === "object") {
+              for (const entry of Object.values(value)) validateAliases(entry);
+            }
+          };
+          validateAliases(decision.arguments);
           argumentsValue = replaceLocalReferences(
             decision.arguments,
             executionBrief.localReferences,
@@ -1932,6 +1944,7 @@ function openSession(
               argumentsValue,
               {
                 ...queryOptions,
+                localReferences: executionBrief.localReferences,
                 worldId: persisted.metadata.id,
                 history: dependencies.persistence.history,
               },
@@ -1942,12 +1955,14 @@ function openSession(
               salience: "retrieved",
               content: output,
               provenance: { sourceKind: "tool-result", sourceIds: [decision.toolId], worldRevision: revision },
+              // The query ran with actor knowledge authorization, so only this
+              // same actor can use its result as short-term model context.
               access: {
-                audience: ["orchestrator"],
-                perspective: { kind: "canonical" },
-                actorAware: false,
+                audience: ["actor"],
+                perspective: { kind: "actor", id: run.actorId },
+                actorAware: true,
                 identityRecognized: true,
-                privileged: true,
+                privileged: false,
               },
               derivation: "raw",
               relevance: 100,
