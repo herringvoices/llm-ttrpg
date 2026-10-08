@@ -1389,6 +1389,7 @@ describe("desktop playable session integration", () => {
 
   it("reports responding while a routed conversation awaits an NPC", async () => {
     const model = generatedCampaignModel({
+      openingSituation: { manifestationTargetTurn: 3, manifestationDeadlineTurns: 3 },
       turnSteps: [
         {
           id: "route-conversation",
