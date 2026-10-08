@@ -213,6 +213,12 @@ export async function classifyTurnDeclaration(input: {
               })),
           });
         } else {
+          // If the player supplied exact quoted speech, the classifier may
+          // not silently omit it or turn a quote into an approximate summary.
+          const quotedSpeech = found.text.match(/["“]([^"”]+)["”]/);
+          if (quotedSpeech && segment.utterance !== quotedSpeech[1]) {
+            throw new Error("An exact player utterance was omitted or changed");
+          }
           if (segment.utterance && !exactQuote(found.text, segment.utterance)) {
             throw new Error("A quoted utterance was not copied verbatim");
           }
