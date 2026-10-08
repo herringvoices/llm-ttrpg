@@ -499,6 +499,37 @@ describe("desktop playable session integration", () => {
     expect(view.diagnostics?.performance.modelCallCount).toBe(0);
     expect(model.invocations).toHaveLength(0);
   });
+  it("reopens a saved transcript with optional speaker labels and safely handles older unlabeled rows", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    const client = createSqlJsClient(database);
+    const first = await createDesktopApplication(client).createWorld("Historical transcript");
+    const npc = first.engineSession().snapshot().entities.find((entity) =>
+      entity.id === "campaign.entity.nina"
+    )!;
+    const transcript = [
+      { id: "transcript.legacy", speaker: "npc", text: "Older unlabelled reply." },
+      { id: "transcript.named", speaker: "npc", speakerName: npc.name,
+        text: "The clock tower bell rang at noon." },
+    ];
+    await client.execute(
+      "UPDATE desktop_play_sessions SET transcript_json = ? WHERE world_id = ?",
+      [JSON.stringify(transcript), first.view().worldId],
+    );
+    const reopened = await createDesktopApplication(
+      createSqlJsClient(database)
+    ).openWorld(first.view().worldId);
+    expect(reopened.view().transcript).toEqual(transcript);
+    const worldBefore = reopened.engineSession().snapshot();
+    const recalled = await reopened.performTurn(`What did ${npc.name} say about the clock tower?`);
+    expect(recalled.error).toBeUndefined();
+    expect(recalled.transcript.at(-1)?.text).toContain(
+      "The clock tower bell rang at noon.",
+    );
+    expect(recalled.transcript.at(-1)?.text).not.toContain("Older unlabelled reply.");
+    expect(recalled.diagnostics?.performance.modelCallCount).toBe(0);
+    expect(reopened.engineSession().snapshot()).toEqual(worldBefore);
+  });
+
   it("bounds a long creative search to pressure 9 through a registered general handler", async () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Pressure-bound creative action");
