@@ -11,7 +11,7 @@ import type { ModelRuntime } from "./model-runtime.js";
  * WorldState. A point must always have a typed, currently authorized source.
  */
 export const continuitySourceRefSchema = z.object({
-  kind: z.enum(["entity", "fact", "belief", "goal", "relationship", "memory", "commitment", "event"]),
+  kind: z.enum(["player-established", "fact", "belief", "goal", "relationship", "memory", "commitment", "event"]),
   id: stableIdSchema,
 }).strict();
 export type ContinuitySourceRef = z.infer<typeof continuitySourceRefSchema>;
@@ -141,10 +141,16 @@ function sources(input: ContinuityRequest): Candidate[] {
     }
   }
   if (actorId) {
-    const self = world.entities.find((item) => item.id === actorId);
-    if (self?.summary) {
-      push("entity", self.id, 975, "firsthand",
-        `Established personal history: ${self.summary}`, self.summary);
+    // Free-form entity summaries may contain GM evaluations, incorrect-theory
+    // commentary or hidden motives. Only explicitly player-established,
+    // immutable realization constraints are safe as autobiographical source.
+    const realization = world.mechanicalRealizations.find((item) =>
+      item.entityId === actorId
+    );
+    for (const item of realization?.constraints ?? []) {
+      if (item.sourceKind !== "player-established") continue;
+      push("player-established", item.id, 975, "firsthand",
+        `Established personal history: ${item.summary}`, item);
     }
   }
   for (const belief of world.beliefs) {
