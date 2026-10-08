@@ -76,6 +76,11 @@ function cleanText(text: string, forbidden: readonly string[]): string {
   return safe.trim();
 }
 
+/** Redact implementation identifiers from other narrow model inputs, too. */
+export function redactModelBriefText(text: string): string {
+  return cleanText(text, []);
+}
+
 interface SmallSceneElement {
   readonly localRef: string;
   readonly displayIdentity: string;
