@@ -1229,6 +1229,11 @@ describe("desktop playable session integration", () => {
     }));
     expect(view.diagnostics?.performance.calls.map((call) => call.schemaId))
       .toEqual(model.invocations.map((call) => call.schemaId));
+    const schemaCalls = model.invocations.map((invocation) => invocation.schemaId);
+    expect(schemaCalls.filter((id) => id === "turn.declaration.v1")).toHaveLength(1);
+    expect(schemaCalls).not.toContain("desktop.turn-route.v1");
+    expect(schemaCalls).not.toContain("player-action.intent-interpretation.v1");
+    expect(schemaCalls).not.toContain("player-action.execution-decision.v1");
     expect(view.diagnostics?.stateCounts.delta.entities).toBe(0);
     expect(view.diagnostics?.stateCounts.delta.events).toBe(
       view.diagnostics!.eventCountAfter - view.diagnostics!.eventCountBefore,
