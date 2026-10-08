@@ -111,9 +111,11 @@ export function observeModelRuntime(
     const started = clock();
     const phase = phaseAtStart();
     try {
+      // TypeScript does not narrow a union from the nested output.kind field.
+      // These casts follow the discriminant, leaving provider behavior unchanged.
       const result = request.output.kind === "text"
-        ? await runtime.generate(request, options)
-        : await runtime.generate(request, options);
+        ? await runtime.generate(request as TextModelRequest, options)
+        : await runtime.generate(request as StructuredModelRequest<T>, options);
       safelyReport(
         request,
         phase,
