@@ -48,6 +48,11 @@ Each ticket moves through:
 
 Do not automatically label these proposed tickets Ready for Dev. Avoid treating all tickets as independently executable; there are deliberate sequencing dependencies below.
 
+## Active ticket specification batches
+
+- **Batch 1 — LM-01, LM-02, LM-03:** [Detailed Markdown ticket specifications](local-model-tickets-01-03.md). These tickets are specified for implementation, but GitHub issues have not yet been created.
+- **Next:** LM-04, LM-05, LM-06.
+
 ## Proposed tickets (high-level only)
 
 ### LM-01 — Establish local-model gameplay baseline and regression harness
