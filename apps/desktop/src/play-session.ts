@@ -896,7 +896,7 @@ export class DesktopPlaySession {
     } };
     input.onProgress && this.reportTurnProgress("updating", input.onProgress);
     const reviewed = await reviewCampaignDirection({
-      plan, world: after, basis, trigger, events,
+      plan, world: after, basis, trigger,
       history: events,
       historyQueryCount: hasNewEventEvidence ? 1 : 0,
       modelRuntime: this.requireModel(),
