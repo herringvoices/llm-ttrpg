@@ -758,7 +758,7 @@ describe("desktop playable session integration", () => {
       modelCalls: 1,
       noOp: false,
     }));
-    expect(result.diagnostics?.planner?.canonicalMutationCount).toBe(0);
+    expect(result.diagnostics?.planner).toEqual(expect.objectContaining({ canonicalMutationCount: 0 }));
     expect((await engine.campaignPlan())?.horizons.low.summary).toContain("unexpected departure");
     expect(engine.snapshot().entities.find((entity) =>
       entity.id === "campaign.entity.amelia"
