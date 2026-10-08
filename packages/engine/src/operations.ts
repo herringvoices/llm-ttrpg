@@ -48,6 +48,7 @@ export const operationCategorySchema = z
 export const operationApplicabilitySchema = z
   .object({
     actionModes: z.array(semanticActionModeSchema).min(1),
+    generalFallback: z.boolean().optional(),
   })
   .strict();
 export type OperationApplicability = z.infer<typeof operationApplicabilitySchema>;
