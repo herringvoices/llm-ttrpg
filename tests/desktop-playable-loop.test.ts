@@ -1439,10 +1439,11 @@ describe("desktop playable session integration", () => {
       ],
     });
     const { database } = await createMigratedSqlitePersistence();
+    let generatedId = 0;
     const app = createDesktopApplication(createSqlJsClient(database), {
       modelRuntime: model,
       now: () => generatedStart,
-      randomId: () => "conversation-progress",
+      randomId: () => `conversation-progress-${++generatedId}`,
       nextSeed: () => 0x1919_1919,
     });
     const play = await app.createWorld({
@@ -1574,9 +1575,10 @@ describe("desktop playable session integration", () => {
     expect(view.transcript.slice(playerIndex, playerIndex + 3).map((entry) => entry.speaker)).toEqual([
       "player", "narrator", "npc",
     ]);
+    // The ordinary operation still commits, but no public history is emitted.
     expect(await play.engineSession().eventHistory({
       types: ["rules.routine-task-completed"],
-    })).toHaveLength(1);
+    })).toHaveLength(0);
     // Casual speech is displayed without inventing a canonical social event.
     expect(await play.engineSession().eventHistory({
       types: ["rules.communication-recorded"],
