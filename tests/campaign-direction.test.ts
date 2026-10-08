@@ -141,7 +141,7 @@ describe("LM-08 bounded event-driven campaign direction", () => {
     }));
     expect(model.invocations).toHaveLength(1);
     expect(session.snapshot()).toEqual(before);
-    expect(await session.eventHistory()).toEqual([]);
+    expect((await session.eventHistory()).map((event) => event.type)).toEqual(["world.created"]);
   });
 
   it("a source-linked revision changes only the chosen plan thread, not canon or stated goals", async () => {
@@ -171,7 +171,7 @@ describe("LM-08 bounded event-driven campaign direction", () => {
     expect(reviewed.plan?.threads[0]?.currentTension).toContain("Amelia leaving");
     expect(reviewed.plan?.playerGoals).toEqual(plan.playerGoals);
     expect(session.snapshot()).toEqual(before);
-    expect(await session.eventHistory()).toHaveLength(0);
+    expect((await session.eventHistory()).map((event) => event.type)).toEqual(["world.created"]);
   });
 
   it("rejects unselected thread refs and retains the previous valid plan", async () => {
