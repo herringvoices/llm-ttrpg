@@ -388,6 +388,17 @@ function createInitialPlan(
 ): CampaignPlanDocument {
   const basis = session.planningBasis();
   const grounding = [{ kind: "entity" as const, id: playerActorId }];
+  const world = session.snapshot();
+  const player = world.entities.find((entity) => entity.id === playerActorId);
+  const opening = openingEntityId
+    ? world.entities.find((entity) => entity.id === openingEntityId)
+    : undefined;
+  const statedGoal = seed.normalized.player.currentWants[0];
+  const startingLocationFact = world.facts.find((fact) =>
+    fact.id === `state.fact.location.${playerActorId}`);
+  const startingLocation = startingLocationFact?.value;
+  const openingLabel = opening?.name ?? "the established opening situation";
+  const playerLabel = player?.name ?? "the player";
   const openingGrounding = openingEntityId
     ? [{ kind: "entity" as const, id: openingEntityId }]
     : grounding;
@@ -415,18 +426,24 @@ function createInitialPlan(
     grounding,
     related,
     playerInterestIds: [],
-    currentTension:
-      "How will the player's choices redirect established pressures and their early Awakening?",
-    assumptions: horizon === "low" ? [{
+    currentTension: horizon === "high"
+      ? `How might ${playerLabel}'s choices alter the established pressures without predetermining an ending?`
+      : horizon === "medium"
+        ? `How will established people and institutions respond to ${openingLabel}?`
+        : statedGoal
+          ? `How will ${playerLabel} pursue or set aside the stated goal: ${statedGoal}?`
+          : `How will ${playerLabel} respond to ${openingLabel}?`,
+    assumptions: horizon === "low" && startingLocationFact &&
+      typeof startingLocation === "string" ? [{
       id: "assumption.player-starting-location",
       summary: "The player remains at the established starting location.",
       validation: {
-        kind: "exists" as const,
+        kind: "equals" as const,
         reference: {
-          kind: "fact" as const,
-          id: `state.fact.location.${playerActorId}`,
+          kind: "fact" as const, id: startingLocationFact.id,
+          path: ["value"],
         },
-        expected: false,
+        expectedValue: startingLocation,
       },
       status: "valid" as const,
       lastEvaluatedAt: reviewed,
@@ -448,22 +465,24 @@ function createInitialPlan(
     makeThread(
       "thread.campaign-direction",
       "high",
-      "Campaign direction",
-      "Develop the player's place in a changed world without prescribing an ending.",
+      `${playerLabel}'s changing world`,
+      `Explore plausible consequences for ${playerLabel} without prescribing an ending.`,
       60,
     ),
     makeThread(
       "thread.opening-arc",
       "medium",
-      "Opening arc",
-      "Follow grounded consequences of the opening situation and the player's early Awakening.",
+      `Consequences of ${openingLabel}`,
+      `Follow established responses to ${openingLabel} and the player's early Awakening.`,
       75,
     ),
     makeThread(
       "thread.near-term-choice",
       "low",
-      "Near-term choice",
-      "Attend to the player's immediate choices while their personal Awakening remains a near-term obligation.",
+      `${playerLabel}'s next choices`,
+      statedGoal
+        ? `Preserve the player's stated goal (${statedGoal}) while presenting independent, optional opportunities.`
+        : "Attend to the player's immediate choices while their Awakening remains a near-term obligation.",
       90,
     ),
   ];
