@@ -168,6 +168,8 @@ export interface TurnDiagnostics {
     readonly delta: WorldRecordCounts;
   };
   readonly performance: TurnPerformanceDiagnostic;
+  /** Derived memory-work diagnostics. Actual provider tokens are in performance. */
+  readonly continuity?: ReturnType<typeof projectContinuity>["diagnostics"];
 }
 
 export interface PlaySessionView {
@@ -227,6 +229,7 @@ export class DesktopPlaySession {
   private turnProgress?: TurnProgress;
   private lastError?: string;
   private lastDiagnostics?: TurnDiagnostics;
+  private lastContinuityDiagnostics?: ReturnType<typeof projectContinuity>["diagnostics"];
   private readonly observedModelRuntime?: ModelRuntime;
   private activeCalls?: ModelCallDiagnostic[];
   private readonly recentPerformanceEntries: TurnPerformanceDiagnostic[] = [];
@@ -434,6 +437,7 @@ export class DesktopPlaySession {
       scope: { kind: "actor", id: this.playerActorId },
       maxCharacters: 1_000,
     });
+    this.lastContinuityDiagnostics = continuity.diagnostics;
     return classifyTurnDeclaration({
       declaration,
       actorId: this.playerActorId,
@@ -786,6 +790,7 @@ export class DesktopPlaySession {
     this.active = true;
     this.lastError = undefined;
     this.lastDiagnostics = undefined;
+    this.lastContinuityDiagnostics = undefined;
     const startedAt = nowMs();
     const turnId = `turn.${crypto.randomUUID()}`;
     const calls: ModelCallDiagnostic[] = [];
@@ -1076,6 +1081,9 @@ export class DesktopPlaySession {
               delta: recordDelta(beforeCounts, afterCounts),
             },
             performance,
+            ...(this.lastContinuityDiagnostics
+              ? { continuity: this.lastContinuityDiagnostics }
+              : {}),
           };
           this.recordPerformance(performance);
         } catch {
