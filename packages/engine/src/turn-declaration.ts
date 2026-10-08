@@ -78,6 +78,13 @@ function segmentText(
   const actual = text ?? original;
   const start = original.indexOf(actual, previousEnd);
   if (start < 0) throw new Error("The classified segment does not occur in the submitted declaration");
+  if (count > 1) {
+    // Clauses cannot disappear merely because the classifier omitted a segment.
+    const skipped = original.slice(previousEnd, start)
+      .replace(/\b(?:and|then|next|after|before|first)\b/gi, "")
+      .replace(/[\s,;:.!?]+/g, "");
+    if (skipped) throw new Error("The classifier omitted an actionable clause");
+  }
   return { text: actual, end: start + actual.length };
 }
 
@@ -206,7 +213,7 @@ export async function classifyTurnDeclaration(input: {
               })),
           });
         } else {
-          if (segment.utterance && !exactQuote(input.declaration, segment.utterance)) {
+          if (segment.utterance && !exactQuote(found.text, segment.utterance)) {
             throw new Error("A quoted utterance was not copied verbatim");
           }
           segments.push({
@@ -218,6 +225,10 @@ export async function classifyTurnDeclaration(input: {
             ...(segment.utterance ? { utterance: segment.utterance } : {}),
           });
         }
+      }
+      if (result.output.value.segments.length > 1) {
+        const tail = input.declaration.slice(offset).replace(/[\s,;:.!?]+/g, "");
+        if (tail) throw new Error("The classifier omitted the final declaration clause");
       }
       return {
         kind: "interpreted",
