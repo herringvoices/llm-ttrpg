@@ -43,6 +43,7 @@ export const recordCommunicationOperation: RulesOperation<
   metadata: {
     id: "rules.social.record-communication",
     kind: "ordinary",
+    retentionClass: "continuity",
     description:
       "Record consequential communication semantics and perspective-grounded testimony without making a spoken proposition world truth.",
     category: {
@@ -153,11 +154,17 @@ export const recordCommunicationOperation: RulesOperation<
       act: input.act,
       recipientBeliefIds,
     });
+    const material = mutations.length > 0 ||
+      input.act.materialCommitments.length > 0 ||
+      input.act.intendedSocialEffect !== undefined ||
+      input.act.containsNonSpeechAction ||
+      input.act.semanticKinds.some((kind) =>
+        ["disclosure", "promise", "threat", "offer", "agreement"].includes(kind));
     return {
       result,
       advanceTimeByMs: fictionalDurationMs(input.durationMs),
       proposedMutations: mutations,
-      proposedEvents: [{
+      proposedEvents: material ? [{
         type: "rules.communication-recorded",
         schemaVersion: 1,
         summary:
@@ -175,7 +182,7 @@ export const recordCommunicationOperation: RulesOperation<
         },
         payload,
         access: "gm-only",
-      }],
+      }] : [],
     };
   },
 };
