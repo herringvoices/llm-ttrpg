@@ -81,6 +81,49 @@ describe("LM-06 package-owned materiality and event-sparse persistence", () => {
     expect(reopened.snapshot().entities).toHaveLength(priorEntityCount + 1);
   });
 
+  it("reopens an event-rich legacy world without deleting routine-event history", async () => {
+    const { persistence, dependencies } = setup();
+    const legacyEvent = {
+      id: "legacy.event.routine-1",
+      type: "rules.routine-task-completed",
+      schemaVersion: 1,
+      occurredAt: referenceGameDefinition.campaign.startTime,
+      relatedEntityIds: ["campaign.entity.amelia"],
+      scopeIds: [],
+      causedByEventIds: [],
+      origin: { kind: "campaign-initialization", id: "legacy-routine-snapshot" },
+      summary: "Amelia completed a recorded routine task.",
+      payload: {
+        actorId: "campaign.entity.amelia",
+        actionSummary: "Restock a shelf",
+      },
+      access: "public" as const,
+    };
+    const oldGame = loadGameDefinition({
+      ...referenceGameDefinition,
+      campaign: {
+        ...referenceGameDefinition.campaign,
+        content: {
+          ...referenceGameDefinition.campaign.content,
+          events: [...referenceGameDefinition.campaign.content.events, legacyEvent],
+        },
+      },
+    });
+    const runtimeDependencies = { ...dependencies, game: oldGame };
+    const world = await createGameRuntime(runtimeDependencies).createWorld("Legacy event history");
+    const before = await world.eventHistory();
+    expect(before.some((event) => event.id === legacyEvent.id)).toBe(true);
+    await world.save("Legacy save");
+    const reopened = await createGameRuntime({ ...runtimeDependencies, persistence })
+      .openWorld(world.worldId);
+    expect(await reopened.eventHistory()).toEqual(before);
+    const legacy = (await reopened.eventHistory()).find((event) =>
+      event.id === legacyEvent.id
+    );
+    expect(legacy?.payload).toEqual(legacyEvent.payload);
+    expect(legacy?.type).toBe("rules.routine-task-completed");
+  });
+
   it("keeps the old routine event type registered for historical saves", async () => {
     const { dependencies } = setup();
     const eventType = dependencies.game.eventTypeRegistry.resolve(
