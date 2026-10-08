@@ -41,6 +41,7 @@ import {
   type ResolutionEnvelope,
   type ResolutionRequest,
 } from "./resolution.js";
+import { prepareModelBrief, resolveBriefReference } from "./model-brief.js";
 import type { JsonValue } from "./json.js";
 import { jsonValueSchema } from "./json.js";
 import {
@@ -74,9 +75,7 @@ import {
   assembleContext,
   createContextQueryExecutionOptions,
   queryAuthorizationFromContext,
-  prepareModelBrief,
-  resolveBriefReference,
-  type SceneSourceProvider,
+   type SceneSourceProvider,
 } from "./context.js";
 import type {
   ContextAssemblyRequest,
