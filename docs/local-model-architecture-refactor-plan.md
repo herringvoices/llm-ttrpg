@@ -53,7 +53,8 @@ Do not automatically label a GitHub issue Ready for Dev merely because it has be
 - **Batch 1 (specified):** [LM-01 — Turn diagnostics](https://github.com/herringvoices/llm-ttrpg/issues/46), [LM-02 — Compact model briefs](https://github.com/herringvoices/llm-ttrpg/issues/47), [LM-03 — Unified routing](https://github.com/herringvoices/llm-ttrpg/issues/48). GitHub issues are the authoritative, detailed ticket specifications; no separate ticket Markdown is maintained.
 - **Batch 2 (specified):** [LM-04 — Engine-owned mechanical derivation](https://github.com/herringvoices/llm-ttrpg/issues/49), [LM-05 — Lightweight NPC conversations](https://github.com/herringvoices/llm-ttrpg/issues/50), [LM-06 — Durable state materiality](https://github.com/herringvoices/llm-ttrpg/issues/51). Specifications are in the issues, not separate Markdown files.
 - **Batch 3 (specified):** [LM-07 — Bounded continuity memory](https://github.com/herringvoices/llm-ttrpg/issues/52), [LM-08 — Boundary-driven campaign planning](https://github.com/herringvoices/llm-ttrpg/issues/53), [LM-09 — Compact campaign seed](https://github.com/herringvoices/llm-ttrpg/issues/54). These are the authoritative specifications; no parallel Markdown ticket file.
-- **Next batch:** LM-10, LM-11, LM-12. Flesh these out directly as GitHub issues.
+- **Batch 4 (specified):** [LM-10 — Lazy realization](https://github.com/herringvoices/llm-ttrpg/issues/55), [LM-11 — Scene-driven Action Pressure](https://github.com/herringvoices/llm-ttrpg/issues/56), [LM-12 — Committed-outcome narration](https://github.com/herringvoices/llm-ttrpg/issues/57). Detailed specifications live in the GitHub issues.
+- **Next batch:** LM-13 (quality gates, compatibility, rollout), followed by a cross-ticket integration/dependency review.
 
 ## Backlog overview (high-level only)
 
@@ -203,6 +204,7 @@ Some work can run in parallel once shared contracts are agreed. Final implementa
 ## Decision log
 
 - **2026-10-08:** Initial proposed backlog created from repo audit. No tickets are fully specified or marked Ready for Dev.
+- **2026-10-08:** Specified LM-10 through LM-12 directly as GitHub issues #55–#57, grounding lazy realization in existing no-retcon rules, keeping 1–9 pressure horizons unchanged, and preventing narration from inventing playable world state.
 - **2026-10-08:** Favor simplification of model-facing responsibilities, not elimination of determinism or package modularity.
 - **2026-10-08:** Baseline measurement and compact context contracts precede hot-path rewrite.
 - **2026-10-08:** Detailed specifications for LM-01 through LM-03 moved to GitHub issues #46–#48; the separate ticket Markdown file was retired. Future tickets should be authored directly as issues.
