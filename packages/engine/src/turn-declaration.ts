@@ -95,7 +95,7 @@ export function deterministicTurnClassification(
 ): ClassifiedTurn | undefined {
   if (!/^I (?:look around|take a look around)\.?$/i.test(declaration.trim())) return undefined;
   const pressure = context.situation.actionPressure;
-  if (!pressure || typeof pressure !== "object" || pressure.status !== "assessed" ||
+  if (!pressure || typeof pressure !== "object" || Array.isArray(pressure) || pressure.status !== "assessed" ||
       typeof pressure.level !== "number") return undefined;
   return {
     kind: "interpreted",
