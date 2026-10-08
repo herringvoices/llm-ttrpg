@@ -4,6 +4,7 @@ import {
   createCampaignPlanContextItem,
   deriveSceneRegister,
   jsonValueSchema,
+  observeModelRuntime,
   performConversationTurn,
   renderContextForModel,
   runPlannerPass,
@@ -13,6 +14,7 @@ import {
   type GameSession,
   type JsonValue,
   type ModelRuntime,
+  type ModelCallDiagnostic,
   type PlanRevisionDiagnostic,
 } from "@llm-ttrpg/engine";
 import {
@@ -47,6 +49,59 @@ export interface TurnProgress {
 
 export type TurnProgressListener = (view: PlaySessionView) => void;
 
+export type WorldRecordCounts = Readonly<Record<
+  "entities" | "facts" | "beliefs" | "actorSocialStates" | "documents" |
+    "simulationCursors" | "mechanicalRealizations" | "events",
+  number
+>>;
+
+export interface TurnPerformanceDiagnostic {
+  readonly turnId: string;
+  readonly totalWallMs: number;
+  /** Sum of measured invocation durations; overlapping calls are counted separately. */
+  readonly modelWorkMs: number;
+  readonly modelCallCount: number;
+  readonly failedModelCallCount: number;
+  readonly callsByPhase: Readonly<Record<string, number>>;
+  readonly calls: readonly (ModelCallDiagnostic & { readonly attemptIndex: number })[];
+  /** Only provider-reported token counts. Missing metadata is not inferred as zero. */
+  readonly reportedInputTokens?: number;
+  readonly reportedOutputTokens?: number;
+  readonly callsMissingInputTokens: number;
+  readonly callsMissingOutputTokens: number;
+  readonly promptCharacters: number;
+  readonly outcome: "resolved" | "needs-player-input" | "failed" | "committed-presentation-failed";
+}
+
+function recordCounts(
+  world: ReturnType<GameSession["snapshot"]>,
+  eventSequence: number,
+): WorldRecordCounts {
+  return {
+    entities: world.entities.length,
+    facts: world.facts.length,
+    beliefs: world.beliefs.length,
+    actorSocialStates: world.actorSocialStates.length,
+    documents: world.documents.length,
+    simulationCursors: world.simulationCursors.length,
+    mechanicalRealizations: world.mechanicalRealizations.length,
+    events: eventSequence,
+  };
+}
+
+function recordDelta(before: WorldRecordCounts, after: WorldRecordCounts): WorldRecordCounts {
+  return {
+    entities: after.entities - before.entities,
+    facts: after.facts - before.facts,
+    beliefs: after.beliefs - before.beliefs,
+    actorSocialStates: after.actorSocialStates - before.actorSocialStates,
+    documents: after.documents - before.documents,
+    simulationCursors: after.simulationCursors - before.simulationCursors,
+    mechanicalRealizations: after.mechanicalRealizations - before.mechanicalRealizations,
+    events: after.events - before.events,
+  };
+}
+
 export interface TurnDiagnostics {
   readonly declaration: string;
   readonly route: "action" | "conversation";
@@ -62,16 +117,14 @@ export interface TurnDiagnostics {
   readonly actionTrace?: JsonValue;
   readonly planner?: PlanRevisionDiagnostic | { readonly error: string };
   readonly narrationStatus: "complete" | "failed";
-  readonly growth: {
-    readonly entities: number;
-    readonly facts: number;
-    readonly beliefs: number;
-    readonly actorSocialStates: number;
-    readonly documents: number;
-    readonly simulationCursors: number;
-    readonly mechanicalRealizations: number;
-    readonly events: number;
+  /** Legacy absolute after-state totals; retained for existing developer consumers. */
+  readonly growth: WorldRecordCounts;
+  readonly stateCounts: {
+    readonly before: WorldRecordCounts;
+    readonly after: WorldRecordCounts;
+    readonly delta: WorldRecordCounts;
   };
+  readonly performance: TurnPerformanceDiagnostic;
 }
 
 export interface PlaySessionView {
@@ -131,22 +184,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function reportedModelMs(trace: JsonValue | undefined): number | undefined {
-  if (!trace || typeof trace !== "object" || Array.isArray(trace)) return undefined;
-  const entries = (trace as Record<string, JsonValue>).entries;
-  if (!Array.isArray(entries)) return undefined;
-  const values = entries.flatMap((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-    const detail = (entry as Record<string, JsonValue>).detail;
-    if (!detail || typeof detail !== "object" || Array.isArray(detail)) return [];
-    const metadata = (detail as Record<string, JsonValue>).metadata;
-    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
-    const elapsed = (metadata as Record<string, JsonValue>).elapsedMs;
-    return typeof elapsed === "number" ? [elapsed] : [];
-  });
-  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) : undefined;
-}
-
 export class DesktopPlaySession {
   private transcriptEntries: TranscriptEntry[];
   private preference: NarrationPreference;
@@ -156,6 +193,10 @@ export class DesktopPlaySession {
   private turnProgress?: TurnProgress;
   private lastError?: string;
   private lastDiagnostics?: TurnDiagnostics;
+  private readonly observedModelRuntime?: ModelRuntime;
+  private activeCalls?: ModelCallDiagnostic[];
+  private readonly recentPerformanceEntries: TurnPerformanceDiagnostic[] = [];
+  private readonly diagnosticsEnabled: boolean;
   private lastActionRequest?: {
     readonly actionId: string;
     readonly actorId: string;
@@ -178,15 +219,29 @@ export class DesktopPlaySession {
       readonly transcript?: readonly TranscriptEntry[];
       readonly narrationPreference?: NarrationPreference;
       readonly openingProgression?: OpeningProgressionState;
+      readonly diagnosticsEnabled?: boolean;
     } = {},
     private readonly presentationPersistence?: PlaySessionPersistence,
     private readonly openingNarration?: () => Promise<TranscriptEntry>,
   ) {
+    this.diagnosticsEnabled = initial.diagnosticsEnabled ?? true;
+    this.observedModelRuntime = this.modelRuntime && this.diagnosticsEnabled
+      ? observeModelRuntime(
+          this.modelRuntime,
+          (call) => { this.activeCalls?.push(call); },
+          () => this.turnProgress?.phase ?? "understanding",
+        )
+      : this.modelRuntime;
     this.transcriptEntries = [...(initial.transcript ?? [])];
     this.preference = initial.narrationPreference ?? "standard";
     this.openingProgression = initial.openingProgression
       ? openingProgressionStateSchema.parse(initial.openingProgression)
       : undefined;
+  }
+
+  /** Recent sanitized performance records; never persisted or exported with saves. */
+  recentPerformance(): readonly TurnPerformanceDiagnostic[] {
+    return [...this.recentPerformanceEntries];
   }
 
   engineSession(): GameSession {
@@ -254,7 +309,7 @@ export class DesktopPlaySession {
         "No local model runtime is configured; the world was not changed.",
       );
     }
-    return this.modelRuntime;
+    return this.observedModelRuntime ?? this.modelRuntime;
   }
 
   private reportTurnProgress(
@@ -615,6 +670,18 @@ export class DesktopPlaySession {
     if (this.active) throw new Error("A player turn is already running");
     this.active = true;
     this.lastError = undefined;
+    this.lastDiagnostics = undefined;
+    const startedAt = nowMs();
+    const turnId = `turn.${crypto.randomUUID()}`;
+    const calls: ModelCallDiagnostic[] = [];
+    if (this.diagnosticsEnabled) this.activeCalls = calls;
+    let beforeWorld: ReturnType<GameSession["snapshot"]> | undefined;
+    let beforeBasis: ReturnType<GameSession["planningBasis"]> | undefined;
+    let routeKind: "action" | "conversation" = "action";
+    let actionTrace: JsonValue | undefined;
+    let narrationStatus: "complete" | "failed" = "complete";
+    let planner: PlanRevisionDiagnostic | { readonly error: string } | undefined;
+    let turnOutcome: TurnPerformanceDiagnostic["outcome"] = "failed";
     const pendingClarification = this.pendingActionClarification;
     this.pendingActionClarification = undefined;
     const declaration = pendingClarification
@@ -623,11 +690,9 @@ export class DesktopPlaySession {
     this.add("player", submittedDeclaration);
     this.reportTurnProgress("understanding", onProgress);
     try {
-      const beforeBasis = this.session.planningBasis();
+      beforeBasis = this.session.planningBasis();
       const before = this.session.snapshot();
-      const historyBefore = await this.session.eventHistory();
-      const startedAt = nowMs();
-      let routeKind: "action" | "conversation" = "action";
+      beforeWorld = before;
       let meaningfulTurn = false;
       let openingEvidenceEventIds: string[] = [];
       const routed = !pendingClarification && mayBeConversation(declaration)
@@ -635,8 +700,6 @@ export class DesktopPlaySession {
         : undefined;
       const route = routed?.route ?? { kind: "action" as const };
       routeKind = route.kind;
-      let actionTrace: JsonValue | undefined;
-      let narrationStatus: "complete" | "failed" = "complete";
       if (route.kind === "conversation") {
         const recipientIds = route.recipientRefs
           .map((ref) => routed!.context.diagnostics.localReferences[ref])
@@ -670,6 +733,7 @@ export class DesktopPlaySession {
         });
         this.workingConversation = result.workingState;
         meaningfulTurn = true;
+        turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
         openingEvidenceEventIds = [
           ...result.communicationEventIds,
           ...result.extractionEventIds,
@@ -704,6 +768,7 @@ export class DesktopPlaySession {
         });
         actionTrace = asJson(result.trace);
         if (result.kind === "needs-player-input") {
+          turnOutcome = "needs-player-input";
           this.pendingActionClarification = {
             declaration,
             question: result.question,
@@ -716,12 +781,14 @@ export class DesktopPlaySession {
               result.developmentSignal.eventIds.length > 0;
             openingEvidenceEventIds = [...result.developmentSignal.eventIds];
             narrationStatus = "failed";
+            turnOutcome = "committed-presentation-failed";
             this.add("system", "The action changed the world, but presentation failed. You may retry narration without replaying it.");
           } else throw new Error(result.failure.message);
         } else {
           meaningfulTurn = result.developmentSignal.operationIds.length > 0 ||
             result.developmentSignal.eventIds.length > 0;
           openingEvidenceEventIds = [...result.developmentSignal.eventIds];
+          turnOutcome = result.narration ? "resolved" : "committed-presentation-failed";
           if (result.narration) this.add("narrator", result.narration);
           else {
             narrationStatus = "failed";
@@ -743,39 +810,8 @@ export class DesktopPlaySession {
           );
         }
       }
-      const planner = await this.replanIfInvalidated(onProgress)
+      planner = await this.replanIfInvalidated(onProgress)
         .catch((error: unknown) => ({ error: errorMessage(error) }));
-      const after = this.session.snapshot();
-      const afterBasis = this.session.planningBasis();
-      const historyAfter = await this.session.eventHistory();
-      const totalMs = Math.max(0, nowMs() - startedAt);
-      const modelMs = reportedModelMs(actionTrace);
-      this.lastDiagnostics = {
-        declaration,
-        route: routeKind,
-        worldRevisionBefore: beforeBasis.worldRevision,
-        worldRevisionAfter: afterBasis.worldRevision,
-        fictionalTimeBefore: before.fictionalTime,
-        fictionalTimeAfter: after.fictionalTime,
-        modelMs: modelMs ?? 0,
-        deterministicAndApplicationMs: Math.max(0, totalMs - (modelMs ?? 0)),
-        modelTimingAvailable: modelMs !== undefined,
-        eventCountBefore: historyBefore.length,
-        eventCountAfter: historyAfter.length,
-        ...(actionTrace ? { actionTrace } : {}),
-        ...(planner ? { planner } : {}),
-        narrationStatus,
-        growth: {
-          entities: after.entities.length,
-          facts: after.facts.length,
-          beliefs: after.beliefs.length,
-          actorSocialStates: after.actorSocialStates.length,
-          documents: after.documents.length,
-          simulationCursors: after.simulationCursors.length,
-          mechanicalRealizations: after.mechanicalRealizations.length,
-          events: historyAfter.length,
-        },
-      };
     } catch (error) {
       this.lastError = errorMessage(error);
     } finally {
@@ -784,6 +820,75 @@ export class DesktopPlaySession {
       await this.persistPresentation().catch((error: unknown) => {
         if (!this.lastError) this.lastError = errorMessage(error);
       });
+      this.activeCalls = undefined;
+      if (this.diagnosticsEnabled && beforeWorld && beforeBasis) {
+        try {
+          const after = this.session.snapshot();
+          const afterBasis = this.session.planningBasis();
+          const beforeCounts = recordCounts(beforeWorld, beforeBasis.eventSequence);
+          const afterCounts = recordCounts(after, afterBasis.eventSequence);
+          const totalWallMs = Math.max(0, nowMs() - startedAt);
+          const modelWorkMs = calls.reduce((sum, call) => sum + call.elapsedWallMs, 0);
+          const countsByPhase: Record<string, number> = {};
+          const attempts = new Map<string, number>();
+          const measuredCalls = calls.map((call) => {
+            countsByPhase[call.phase] = (countsByPhase[call.phase] ?? 0) + 1;
+            const key = `${call.phase}:${call.operation ?? ""}:${call.schemaId ?? ""}`;
+            const attemptIndex = (attempts.get(key) ?? 0) + 1;
+            attempts.set(key, attemptIndex);
+            return { ...call, attemptIndex };
+          });
+          const reportedInput = calls.filter((call) => call.inputTokens !== undefined);
+          const reportedOutput = calls.filter((call) => call.outputTokens !== undefined);
+          const performance: TurnPerformanceDiagnostic = {
+            turnId,
+            totalWallMs,
+            modelWorkMs,
+            modelCallCount: calls.length,
+            failedModelCallCount: calls.filter((call) => call.status !== "ok").length,
+            callsByPhase: countsByPhase,
+            calls: measuredCalls,
+            ...(reportedInput.length
+              ? { reportedInputTokens: reportedInput.reduce((sum, call) => sum + call.inputTokens!, 0) }
+              : {}),
+            ...(reportedOutput.length
+              ? { reportedOutputTokens: reportedOutput.reduce((sum, call) => sum + call.outputTokens!, 0) }
+              : {}),
+            callsMissingInputTokens: calls.length - reportedInput.length,
+            callsMissingOutputTokens: calls.length - reportedOutput.length,
+            promptCharacters: calls.reduce((sum, call) => sum + call.promptCharacters, 0),
+            outcome: turnOutcome,
+          };
+          this.lastDiagnostics = {
+            declaration,
+            route: routeKind,
+            worldRevisionBefore: beforeBasis.worldRevision,
+            worldRevisionAfter: afterBasis.worldRevision,
+            fictionalTimeBefore: beforeWorld.fictionalTime,
+            fictionalTimeAfter: after.fictionalTime,
+            modelMs: modelWorkMs,
+            deterministicAndApplicationMs: Math.max(0, totalWallMs - modelWorkMs),
+            modelTimingAvailable: calls.length > 0,
+            eventCountBefore: beforeBasis.eventSequence,
+            eventCountAfter: afterBasis.eventSequence,
+            ...(actionTrace ? { actionTrace } : {}),
+            ...(planner ? { planner } : {}),
+            narrationStatus,
+            growth: afterCounts,
+            stateCounts: {
+              before: beforeCounts,
+              after: afterCounts,
+              delta: recordDelta(beforeCounts, afterCounts),
+            },
+            performance,
+          };
+          this.recentPerformanceEntries.push(performance);
+          if (this.recentPerformanceEntries.length > 20) this.recentPerformanceEntries.shift();
+        } catch {
+          // Diagnostics are not authoritative; never convert a successful turn
+          // into an error because measurement failed.
+        }
+      }
     }
     return this.view();
   }
