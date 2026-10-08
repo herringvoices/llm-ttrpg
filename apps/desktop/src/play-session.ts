@@ -743,6 +743,7 @@ export class DesktopPlaySession {
       ? `${pendingClarification.declaration}\n\nPlayer clarification in response to "${pendingClarification.question}": ${submittedDeclaration}`
       : submittedDeclaration;
     this.add("player", submittedDeclaration);
+    const playerMessageId = this.transcriptEntries.at(-1)!.id;
     this.reportTurnProgress("understanding", onProgress);
     try {
       beforeBasis = this.session.planningBasis();
@@ -773,7 +774,6 @@ export class DesktopPlaySession {
       for (const [index, segment] of segments.entries()) {
         // IDs are derived from the persisted player transcript identity, not
         // random per-operation IDs. Each segment is a distinct action run.
-        const playerMessageId = this.transcriptEntries.at(-1)!.id;
         const segmentId = `action.${playerMessageId}.segment.${index + 1}`;
         if (segment.kind === "communication") {
           routeKind = "conversation";
