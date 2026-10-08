@@ -798,6 +798,63 @@ describe("desktop playable session integration", () => {
   });
 
 
+  it("awakens on the third meaningful event-sparse turn using one sourced opening anchor", async () => {
+    const { database } = await createMigratedSqlitePersistence();
+    let id = 0;
+    const model = generatedCampaignModel({
+      openingSituation: {
+        openingMode: "mundane-manifestation",
+        supernaturalFocus: "none",
+        awakeningEvent: "An otherwise ordinary morning gives way to a personal Awakening.",
+        manifestationOpportunity: "The first power appears during the player's current declared activity.",
+        manifestationTargetTurn: 3,
+        manifestationDeadlineTurns: 3,
+      },
+      turnSteps: [
+        ...openingActionSteps("sparse-first"),
+        ...openingActionSteps("sparse-second"),
+        ...openingActionSteps("sparse-third", { includePowerManifestation: true }),
+      ],
+    });
+    const app = createDesktopApplication(createSqlJsClient(database), {
+      modelRuntime: model,
+      now: () => generatedStart,
+      randomId: () => `sparse-opening-${++id}`,
+      nextSeed: () => 0x6060_6060,
+    });
+    const play = await app.createWorld({
+      characterName: "Rowan",
+      locationDescription: "Medium-sized city in the Pacific Northwest.",
+      allowGeneratedDetails: true,
+    });
+    const initialHistory = await play.engineSession().eventHistory();
+    const first = await play.performTurn("I eat a quick breakfast.");
+    expect(first.error).toBeUndefined();
+    expect(first.openingProgression?.playerTurnsSinceStart).toBe(1);
+    expect(first.openingProgression?.firstPowerManifested).toBe(false);
+    expect(await play.engineSession().eventHistory()).toEqual(initialHistory);
+
+    const second = await play.performTurn("I look around at the shelves.");
+    expect(second.error).toBeUndefined();
+    expect(second.openingProgression?.playerTurnsSinceStart).toBe(2);
+    expect(second.openingProgression?.firstPowerManifested).toBe(false);
+    expect(await play.engineSession().eventHistory()).toEqual(initialHistory);
+
+    const third = await play.performTurn("I straighten the grocery display.");
+    expect(third.error).toBeUndefined();
+    expect(third.openingProgression?.playerTurnsSinceStart).toBe(3);
+    expect(third.openingProgression?.firstPowerManifested).toBe(true);
+    const history = await play.engineSession().eventHistory();
+    const anchors = history.filter((event) => event.type === "rules.opening-turn-evidenced");
+    const manifestations = history.filter((event) => event.type === "rules.first-power-manifested");
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]?.access).toBe("gm-only");
+    expect(manifestations).toHaveLength(1);
+    expect(manifestations[0]?.causedByEventIds).toContain(anchors[0]!.id);
+    expect(history.filter((event) => event.type === "rules.routine-task-completed")).toHaveLength(0);
+    expect(third.transcript.filter((entry) => entry.speaker === "player")).toHaveLength(3);
+  });
+
   it("starts with an inciting phenomenon and commits the first power through the real rules path on turn 1", async () => {
     const { database } = await createMigratedSqlitePersistence();
     let id = 0;
