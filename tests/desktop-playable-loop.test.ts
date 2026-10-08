@@ -1204,9 +1204,10 @@ describe("desktop playable session integration", () => {
     const { runtime } = setup();
     const engine = await runtime.createWorld("Desktop smoke");
     const savedPresentation: unknown[] = [];
+    const model = actionModel();
     const play = new DesktopPlaySession(
       engine,
-      actionModel(),
+      model,
       "campaign.entity.amelia",
       undefined,
       {},
@@ -1228,6 +1229,21 @@ describe("desktop playable session integration", () => {
       eventCountAfter: expect.any(Number),
       growth: expect.objectContaining({ entities: before.entities.length }),
     }));
+    expect(view.diagnostics?.performance).toEqual(expect.objectContaining({
+      modelCallCount: model.invocations.length,
+      failedModelCallCount: 0,
+      outcome: "resolved",
+      callsMissingInputTokens: model.invocations.length,
+    }));
+    expect(view.diagnostics?.performance.calls.map((call) => call.schemaId))
+      .toEqual(model.invocations.map((call) => call.schemaId));
+    expect(view.diagnostics?.stateCounts.delta.entities).toBe(0);
+    expect(view.diagnostics?.stateCounts.delta.events).toBe(
+      view.diagnostics!.eventCountAfter - view.diagnostics!.eventCountBefore,
+    );
+    expect(view.diagnostics?.stateCounts.before.entities).toBe(before.entities.length);
+    expect(play.recentPerformance()).toHaveLength(1);
+    expect(JSON.stringify(play.recentPerformance())).not.toContain("Authorized context");
     expect(JSON.stringify(await engine.eventHistory())).not.toContain("Authorized context");
 
     play.setNarrationPreference("concise");
@@ -1486,6 +1502,13 @@ describe("desktop playable session integration", () => {
     }));
     const view = await pending;
     expect(view.error).toContain("No local model runtime");
+    expect(view.diagnostics?.performance).toEqual(expect.objectContaining({
+      modelCallCount: 0,
+      outcome: "failed",
+    }));
+    expect(Object.values(view.diagnostics!.stateCounts.delta)).toEqual(
+      Array(8).fill(0),
+    );
     expect(view.busy).toBe(false);
     expect(view.turnProgress).toBeUndefined();
     expect(updates).toEqual(["understanding"]);
@@ -1505,6 +1528,11 @@ describe("desktop playable session integration", () => {
     );
     const failed = await play.performTurn("I test my footing.");
     expect(failed.diagnostics?.narrationStatus).toBe("failed");
+    expect(failed.diagnostics?.performance.outcome).toBe("committed-presentation-failed");
+    expect(failed.diagnostics?.performance.modelCallCount).toBe(firstModel.invocations.length);
+    expect(failed.diagnostics?.performance.calls.some((call) =>
+      call.status === "failed" && call.operation === "player-action.narration.v1"
+    )).toBe(true);
     const basisAfterCommit = engine.planningBasis();
     const historyAfterCommit = await engine.eventHistory();
 
