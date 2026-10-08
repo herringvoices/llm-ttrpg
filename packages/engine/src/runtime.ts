@@ -98,6 +98,8 @@ import {
   interpretedIntentDecisionSchema,
   intentInterpretationDecisionSchema,
   playerActionRequestSchema,
+  preinterpretedPlayerActionSchema,
+  type PreinterpretedPlayerAction,
   type ActionRun,
   type CommittedOperationReceipt,
   type ExecutionDecision,
@@ -152,6 +154,10 @@ export interface PerformPlayerActionOptions {
   readonly modelRuntime: ModelRuntime;
   readonly maxModelTurns?: number;
   readonly toolPolicy?: ToolAvailabilityPolicy;
+  /** LM-03: validated interpretation from the shared turn classifier. */
+  readonly preinterpreted?: PreinterpretedPlayerAction;
+  /** Disallow language-model-led domain/tool discovery on the gameplay path. */
+  readonly registeredOnly?: boolean;
   readonly narrationPreference?: NarrationPreference;
   readonly onProgress?: (
     phase: "understanding" | "resolving" | "presenting",
@@ -1164,7 +1170,46 @@ function openSession(
           requiredOverflow: interpretationBrief.diagnostics.requiredOverflow,
           usedUnits: context.diagnostics.usedUnits,
         }, { worldRevision: revision });
-        let decision = await structuredModelDecision(
+        const pre = options.preinterpreted
+          ? preinterpretedPlayerActionSchema.parse(options.preinterpreted)
+          : undefined;
+        if (pre && (
+          pre.declaration !== request.declaration ||
+          pre.worldRevision !== revision ||
+          pre.eventSequence !== eventSequence
+        )) {
+          return fail("external-revision", "The preinterpreted declaration no longer matches this authoritative world snapshot");
+        }
+        // Convert engine-held canonical targets back to authorized local aliases.
+        // Revalidation is essential when a preceding compound segment moved the actor.
+        const toVisibleRef = (id: string): string => {
+          const alias = Object.entries(interpretationBrief.localReferences)
+            .find(([, canonical]) => canonical === id)?.[0];
+          if (!alias) throw new Error("A preinterpreted target is no longer visible or authorized");
+          return alias;
+        };
+        let preRefs: string[] = [];
+        try {
+          preRefs = pre?.targetIds.map(toVisibleRef) ?? [];
+        } catch (error) {
+          return fail("proposal", error instanceof Error ? error.message : "Preinterpreted targets are no longer authorized");
+        }
+        let decision = pre
+          ? {
+              ok: true as const,
+              value: intentInterpretationDecisionSchema.parse({
+                kind: "interpreted",
+                goal: pre.goal,
+                targetRefs: preRefs,
+                modes: pre.modes,
+                statedMeans: pre.statedMeans,
+                pressureLevel: pre.pressureLevel,
+                requestedHorizonMs: pre.requestedHorizonMs,
+              }),
+              attempts: 0,
+              metadata: { runtimeId: "preinterpreted", elapsedMs: 0 },
+            }
+          : await structuredModelDecision(
           options.modelRuntime,
           "player-action.intent-interpretation.v1",
           intentInterpretationDecisionSchema,
@@ -1186,6 +1231,7 @@ function openSession(
         let rejectedClarification: string | undefined;
         let interpretationAttempts = decision.attempts;
         if (
+          !pre &&
           decision.ok &&
           decision.value.kind === "player-decision-required" &&
           (
@@ -1265,7 +1311,7 @@ function openSession(
             targetIds = withoutActor;
           }
         }
-        const inferredModes = inferredDeclaredActionModes(request.declaration);
+        const inferredModes = pre ? [] : inferredDeclaredActionModes(request.declaration);
         const normalizedModes = [
           ...new Set<SemanticActionMode>([
             ...interpretedDecision.modes,
