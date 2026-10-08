@@ -8,6 +8,7 @@ import {
   type NpcReply,
 } from "./conversation-contracts.js";
 import { prepareModelBrief, redactModelBriefText } from "./model-brief.js";
+import { projectContinuity } from "./continuity.js";
 import { maximumResolutionHorizon } from "./action-pressure.js";
 import type { PerformConversationTurnInput, ConversationTurnResult } from "./conversation.js";
 import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
@@ -56,21 +57,8 @@ function npcKnowledge(
   playerId: string,
   working: ConversationWorkingState,
 ) {
-  const social = world.actorSocialStates.find((item) => item.actorId === actorId);
   const localState = working.npcStates.find((item) => item.actorId === actorId);
   return {
-    // Propositions are *subjective*. Do not pass truthStatus or hidden
-    // source facts from the canonical knowledge store.
-    beliefs: world.beliefs.filter((belief) =>
-      belief.holder.kind === "actor" && belief.holder.id === actorId
-    ).slice(0, 6).map((belief) => ({
-      proposition: short(belief.proposition, 240),
-      confidence: belief.confidence,
-      status: "character-belief-not-world-truth",
-    })),
-    goals: (social?.goals ?? []).filter((goal) => goal.status === "active")
-      .slice(0, 3).map((goal) => short(goal.description, 180)),
-    memories: (social?.memories ?? []).slice(-3).map((memory) => short(memory.summary, 160)),
     ...(localState ? { stance: short(localState.stance, 100) } : {}),
     // The legacy compactedSummary is interaction-wide without per-actor
     // provenance; including it could leak another NPC's private information.
@@ -127,8 +115,18 @@ export async function tryOrdinaryNpcConversation(
     },
     budget: { maxUnits: Math.min(8_000, request.budget.maxUnits) },
   });
+  const basis = input.session.planningBasis();
+  const continuity = projectContinuity({
+    worldId: input.session.worldId,
+    world, worldRevision: basis.worldRevision,
+    eventSequence: basis.eventSequence,
+    perspective: { kind: "actor", id: actorId },
+    scope: { kind: "actor", id: actorId },
+    maxCharacters: 900,
+  });
   const brief = prepareModelBrief({
     purpose: "npc-response",
+    continuity: continuity.summary,
     perspective: { kind: "actor", id: actorId },
     context,
     maxCharacters: FAST_BRIEF_BUDGET,
@@ -176,6 +174,7 @@ export async function tryOrdinaryNpcConversation(
             speaker: "player",
             actor: "current-npc",
             knowledge: npcContext,
+            continuitySourceCount: continuity.diagnostics.selectedSourceCount,
           }),
         },
         output: { kind: "structured", schemaId: "conversation.npc-reply.v1", schema: npcReplySchema },
