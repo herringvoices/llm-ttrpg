@@ -21,6 +21,7 @@ import type {
   WorldSimulationRegistry,
 } from "./simulation.js";
 import type { NarrationProfile } from "./presentation.js";
+import type { ActionAttemptPreparer } from "./action-attempt.js";
 
 export interface EventTypeProvider {
   readonly eventTypes: readonly RegisteredEventType[];
@@ -39,6 +40,8 @@ export interface Ruleset
   readonly identity: ComponentIdentity;
   readonly description: string;
   readonly operations: readonly RegisteredRulesOperation[];
+  /** Trusted ruleset-owned construction of complete mechanical operation inputs. */
+  readonly prepareActionAttempt?: ActionAttemptPreparer;
 }
 
 export interface Setting
