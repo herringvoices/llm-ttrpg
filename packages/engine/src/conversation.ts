@@ -37,6 +37,7 @@ import { fictionalDurationMs } from "./time.js";
 import type { WorldState } from "./world.js";
 import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
 import { tryOrdinaryNpcConversation } from "./conversation-ordinary.js";
+import { projectContinuity, type ContinuitySummary } from "./continuity.js";
 
 export interface ConversationAuthorityBindings {
   readonly recordCommunicationOperationId: string;
@@ -224,78 +225,50 @@ function validateInterpretation(
   });
 }
 
+const RECENT_WORKING_BEATS = 12;
+const NPC_VISIBLE_BEATS = 6;
+
+/** Only actor-visible working dialogue and a derived source-checked projection.
+ * Never pass the entire social state or belief database to the model.
+ * The legacy cross-actor compactedSummary lacks access labels and is excluded. */
 function actorKnowledgeItems(
-  world: WorldState,
   actorId: string,
   workingState: ConversationWorkingState,
+  continuity: ContinuitySummary,
 ): readonly ContextItem[] {
   const access = {
     audience: ["actor" as const],
     perspective: { kind: "actor" as const, id: actorId },
-    actorAware: true,
-    identityRecognized: true,
-    privileged: false,
+    actorAware: true, identityRecognized: true, privileged: false,
   };
-  const social = world.actorSocialStates.find((item) => item.actorId === actorId);
-  const beliefs = world.beliefs
-    .filter((item) => item.holder.kind === "actor" && item.holder.id === actorId)
-    .map(({ truthStatus: _privateTruthStatus, ...belief }) => belief);
   const localState = workingState.npcStates.find((item) => item.actorId === actorId);
   const visibleTranscript = workingState.recentTranscript.filter((entry) =>
     entry.kind !== "narration" &&
     (entry.speakerId === actorId || entry.audienceIds.includes(actorId))
-  );
-  return [
-    contextItemSchema.parse({
-      localId: `conversation.social.${actorId}`,
-      kind: "actor-social-state",
-      salience: "required",
-      content: jsonValueSchema.parse(social ?? {
-        actorId,
-        goals: [],
-        relationships: [],
-        memories: [],
-        commitments: [],
-      }),
-      provenance: {
-        sourceKind: "tool-result",
-        sourceIds: [actorId],
-      },
-      access,
-      derivation: "projected",
-      relevance: 100,
+  ).slice(-NPC_VISIBLE_BEATS).map((entry) => ({
+    speakerId: entry.speakerId === actorId ? "self" : "participant",
+    kind: entry.kind,
+    content: redactModelBriefText(entry.content.slice(0, 250)),
+  }));
+  return [contextItemSchema.parse({
+    localId: `conversation.continuity.${actorId}`,
+    kind: "actor-continuity",
+    salience: "required",
+    content: jsonValueSchema.parse({
+      continuity: continuity.summaryText,
+      recentTranscript: visibleTranscript,
+      ...(localState ? { stance: localState.stance.slice(0, 120) } : {}),
     }),
-    contextItemSchema.parse({
-      localId: `conversation.beliefs.${actorId}`,
-      kind: "actor-beliefs",
-      salience: "required",
-      content: jsonValueSchema.parse(beliefs),
-      provenance: {
-        sourceKind: "belief",
-        sourceIds: beliefs.length > 0 ? beliefs.map((item) => item.id) : [actorId],
-      },
-      access,
-      derivation: "projected",
-      relevance: 100,
-    }),
-    contextItemSchema.parse({
-      localId: `conversation.working.${actorId}`,
-      kind: "conversation-working-state",
-      salience: "required",
-      content: jsonValueSchema.parse({
-        ...(localState ? { sceneLocalState: localState } : {}),
-        compactedSummary: workingState.compactedSummary ?? null,
-        recentTranscript: visibleTranscript,
-      }),
-      provenance: {
-        sourceKind: "working-context",
-        sourceIds: [workingState.interactionId],
-      },
-      access,
-      derivation: "raw",
-      relevance: 100,
-    }),
-  ];
+    provenance: {
+      sourceKind: "tool-result",
+      sourceIds: continuity.sourceRefs.length
+        ? continuity.sourceRefs.map((item) => item.id)
+        : [actorId],
+    },
+    access,
+    derivation: "summarized",
+    relevance: 100,
+  })];
 }
 
 function replaceLocalReferences(
@@ -428,7 +401,7 @@ function initialWorkingState(
     participantIds,
     beat: prior?.beat ?? 0,
     npcStates: prior?.npcStates ?? [],
-    recentTranscript: prior?.recentTranscript ?? [],
+    recentTranscript: (prior?.recentTranscript ?? []).slice(-RECENT_WORKING_BEATS),
     ...(prior?.compactedSummary
       ? { compactedSummary: prior.compactedSummary }
       : {}),
@@ -676,7 +649,7 @@ export async function performConversationTurn(
   working = conversationWorkingStateSchema.parse({
     ...working,
     beat,
-    recentTranscript: [...working.recentTranscript, playerTranscript],
+    recentTranscript: [...working.recentTranscript, playerTranscript].slice(-RECENT_WORKING_BEATS),
   });
 
   const responderIds = [...new Set([
@@ -701,7 +674,18 @@ export async function performConversationTurn(
       },
       budget: request.budget,
     }, {
-      retrieved: actorKnowledgeItems(world, actorId, working),
+      retrieved: actorKnowledgeItems(
+        actorId, working,
+        projectContinuity({
+          worldId: input.session.worldId,
+          world,
+          worldRevision: input.session.planningBasis().worldRevision,
+          eventSequence: input.session.planningBasis().eventSequence,
+          perspective: { kind: "actor", id: actorId },
+          scope: { kind: "actor", id: actorId },
+          maxCharacters: 900,
+        }).summary,
+      ),
     });
     const actorRef = Object.entries(actorContext.diagnostics.localReferences)
       .find(([, canonical]) => canonical === actorId)?.[0];
@@ -779,8 +763,8 @@ export async function performConversationTurn(
             kind: "npc-semantics",
             content: decision.intendedSpeechSemantics,
             exactQuoteFragments: [],
-          }]
-        : working.recentTranscript,
+          }].slice(-RECENT_WORKING_BEATS)
+        : working.recentTranscript.slice(-RECENT_WORKING_BEATS),
     });
     if (decision.intendedSpeechSemantics) {
       const npcAct = communicationActSchema.parse({
@@ -849,7 +833,14 @@ export async function performConversationTurn(
         input: JSON.stringify({
           participantIds: working.participantIds,
           availableEventIds: [...eventIds],
-          recentTranscript: working.recentTranscript,
+          recentTranscript: working.recentTranscript.slice(-RECENT_WORKING_BEATS)
+            .map((entry) => ({
+              ...entry,
+              content: entry.content.slice(0, 600),
+              // Exact quotes remain authoritative in the player act and UI,
+              // not in a duplicated all-history extraction payload.
+              exactQuoteFragments: [],
+            })),
         }),
       },
       input.modelOptions,
