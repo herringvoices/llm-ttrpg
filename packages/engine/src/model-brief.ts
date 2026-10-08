@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ContinuitySummary } from "./continuity.js";
 import type { ContextPackage, KnowledgePerspective, SceneElement } from "./context-contracts.js";
 
 /**
@@ -23,6 +24,8 @@ export interface ModelBriefRequest {
   readonly maxCharacters?: number;
   /** Public/actor-visible committed receipts, never proposal or private events. */
   readonly committedOutcomes?: readonly string[];
+  /** Derived source-checked continuity for precisely this actor perspective. */
+  readonly continuity?: ContinuitySummary;
 }
 
 export interface PreparedModelBrief {
@@ -130,6 +133,13 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
       focalCanonicalId !== perspective.id) {
     throw new Error("Model brief focal actor must match its knowledge perspective");
   }
+  if (request.continuity && (
+    request.continuity.status !== "current" ||
+    !samePerspective(request.continuity.perspective, perspective) ||
+    request.continuity.basis.gameFingerprint.length === 0
+  )) {
+    throw new Error("A model brief cannot reuse stale or cross-perspective continuity");
+  }
   const forbidden = [...new Set(Object.values(context.diagnostics.localReferences))];
   const requiredIds = new Set(request.requiredEntityIds ?? []);
   const focalRef = context.situation.focalActorRef;
@@ -199,6 +209,9 @@ export function prepareModelBrief(request: ModelBriefRequest): PreparedModelBrie
         ) }
       : {}),
     ...(recentQueryResults.length ? { recentQueryResults } : {}),
+    ...(request.continuity?.summaryText
+      ? { continuity: cleanText(request.continuity.summaryText, forbidden).slice(0, 1_200) }
+      : {}),
     note: "Unmentioned details are unknown, not absent. Never invent new canonical facts.",
   };
   // Fail safely if indispensable text cannot fit even the explicit hard ceiling.
