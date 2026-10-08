@@ -308,8 +308,12 @@ function constrainedExecutionDecisionSchema(
 }
 
 function modelOperationInputSchema(schema: z.ZodType<unknown>): z.ZodType<unknown> {
-  if (!(schema instanceof z.ZodObject) || !("actorId" in schema.shape)) return schema;
-  const { actorId: _actorId, ...modelShape } = schema.shape;
+  // Some packages refine their input object with ZodEffects. The model still
+  // must never invent an actorId: unwrap only for the model-facing argument
+  // schema; authoritative execution validates the original refined contract.
+  const objectSchema = schema instanceof z.ZodEffects ? schema.innerType() : schema;
+  if (!(objectSchema instanceof z.ZodObject) || !("actorId" in objectSchema.shape)) return schema;
+  const { actorId: _actorId, ...modelShape } = objectSchema.shape;
   return z.object(modelShape).strict();
 }
 
