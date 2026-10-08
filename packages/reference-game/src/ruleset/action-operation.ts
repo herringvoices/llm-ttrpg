@@ -911,6 +911,7 @@ export const resolveActionOperation: ResolutionOperation<
     },
     applicability: {
       actionModes: ["interaction", "manipulation", "observation", "attack", "power-use"],
+      generalFallback: true,
     },
   },
   inputSchema: resolveActionInputSchema,
