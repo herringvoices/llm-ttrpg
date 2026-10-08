@@ -33,6 +33,7 @@ export const completeRoutineTaskOperation: RulesOperation<
   metadata: {
     id: "rules.actions.complete-routine-task",
     kind: "ordinary",
+    retentionClass: "continuity",
     description:
       "Complete a concrete, ordinary, uncontested task when the established fiction gives it no meaningful uncertainty, opposition, danger, or mechanical consequence. Do not use for risky or resisted actions.",
     category: {
@@ -59,20 +60,8 @@ export const completeRoutineTaskOperation: RulesOperation<
       result,
       advanceTimeByMs: fictionalDurationMs(input.durationMs),
       proposedMutations: [],
-      proposedEvents: [{
-        type: "rules.routine-task-completed",
-        schemaVersion: 1,
-        summary: `${actor.name} completed a routine task: ${input.actionSummary}`,
-        relatedEntityIds: [input.actorId],
-        scopeIds: [],
-        causedByEventIds: [],
-        origin: {
-          kind: "rules-operation",
-          id: "rules.actions.complete-routine-task",
-        },
-        payload: result,
-        access: "public",
-      }],
-    };
+      // Ordinary no-effect work consumes time and has a committed execution
+      // receipt. It is not itself a durable narrative world event.
+      proposedEvents: [],    };
   },
 };
