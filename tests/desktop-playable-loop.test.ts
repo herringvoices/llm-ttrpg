@@ -1408,65 +1408,18 @@ describe("desktop playable session integration", () => {
           },
         },
         {
-          id: "interpret-conversation",
-          match: { schemaId: "conversation.player-communication.v1" },
+          id: "npc-reply",
+          match: { schemaId: "conversation.npc-reply.v1" },
           result: {
             kind: "structured",
             value: {
-              inputMode: "described",
-              exactQuoteFragments: [],
-              semanticKinds: ["question"],
-              authorizedContent: "Ask what is happening at the loading dock.",
-              testimonyIds: [],
-              materialCommitments: [],
-              deliveryIntent: "honest",
-              containsNonSpeechAction: false,
-              estimatedDurationMs: 1_000,
-              pressureLevel: 3,
+              kind: "ordinary",
+              speech: "Stay back from the loading dock.",
+              visibleManner: "They glance toward the frost.",
+              continueConversation: true,
+              materialSignal: "none",
             },
           },
-        },
-        {
-          id: "npc-response",
-          match: { schemaId: "conversation.npc-decision.v1" },
-          result: (request: ModelRequest<unknown>) => {
-            const input = JSON.parse(request.prompt.input) as { actorRef: string };
-            return {
-              kind: "structured",
-              value: {
-                actorId: input.actorRef,
-                interpretation: "The player asks about the immediate danger.",
-                responseKind: "speak",
-                intendedSpeechSemantics: "The NPC warns the player to stay back.",
-                speechSemanticKinds: ["assertion"],
-                estimatedSpeechDurationMs: 500,
-                disclosure: { mode: "none" },
-                sceneState: {
-                  actorId: input.actorRef,
-                  interpretation: "The danger at the loading dock has everyone's attention.",
-                  attention: ["the player", "the loading dock"],
-                  immediatePriorities: ["keep people safe"],
-                  stance: "worried",
-                  wants: ["avoid escalation"],
-                  reluctantToRevealIds: [],
-                  considering: ["whether to call for help"],
-                  unresolvedQuestions: ["what caused the frost"],
-                },
-                requiresAuthoritativeResolution: false,
-                stopReason: "answer-expected",
-              },
-            };
-          },
-        },
-        {
-          id: "extract-conversation",
-          match: { schemaId: "conversation.durable-extraction.v1" },
-          result: { kind: "structured", value: { proposals: [] } },
-        },
-        {
-          id: "narrate-conversation",
-          match: { operation: "conversation.narration.v1" },
-          result: { kind: "text", text: "The NPC looks toward the frost and tells you to stay back." },
         },
       ],
     });
@@ -1495,7 +1448,7 @@ describe("desktop playable session integration", () => {
     const calls = view.diagnostics?.performance.calls ?? [];
     expect(calls).toHaveLength(model.invocations.length - invocationsBeforeTurn);
     expect(calls.some((call) => call.schemaId === "turn.declaration.v1")).toBe(true);
-    expect(calls.some((call) => call.schemaId === "conversation.npc-decision.v1")).toBe(true);
+    expect(calls.some((call) => call.schemaId === "conversation.npc-reply.v1")).toBe(true);
     expect(calls.some((call) => call.phase === "responding")).toBe(true);
   });
 
@@ -1549,65 +1502,18 @@ describe("desktop playable session integration", () => {
           result: { kind: "text", text: "You test your footing before speaking." },
         },
         {
-          id: "interpret-conversation",
-          match: { schemaId: "conversation.player-communication.v1" },
+          id: "npc-reply",
+          match: { schemaId: "conversation.npc-reply.v1" },
           result: {
             kind: "structured",
             value: {
-              inputMode: "described",
-              exactQuoteFragments: [],
-              semanticKinds: ["question"],
-              authorizedContent: "Ask what is happening at the loading dock.",
-              testimonyIds: [],
-              materialCommitments: [],
-              deliveryIntent: "honest",
-              containsNonSpeechAction: false,
-              estimatedDurationMs: 1_000,
-              pressureLevel: 3,
+              kind: "ordinary",
+              speech: "Stay back from the loading dock.",
+              visibleManner: "They glance toward the frost.",
+              continueConversation: true,
+              materialSignal: "none",
             },
           },
-        },
-        {
-          id: "npc-response",
-          match: { schemaId: "conversation.npc-decision.v1" },
-          result: (request: ModelRequest<unknown>) => {
-            const input = JSON.parse(request.prompt.input) as { actorRef: string };
-            return {
-              kind: "structured",
-              value: {
-                actorId: input.actorRef,
-                interpretation: "The player asks about the immediate danger.",
-                responseKind: "speak",
-                intendedSpeechSemantics: "The NPC warns the player to stay back.",
-                speechSemanticKinds: ["assertion"],
-                estimatedSpeechDurationMs: 500,
-                disclosure: { mode: "none" },
-                sceneState: {
-                  actorId: input.actorRef,
-                  interpretation: "The danger at the loading dock has everyone's attention.",
-                  attention: ["the player", "the loading dock"],
-                  immediatePriorities: ["keep people safe"],
-                  stance: "worried",
-                  wants: ["avoid escalation"],
-                  reluctantToRevealIds: [],
-                  considering: ["whether to call for help"],
-                  unresolvedQuestions: ["what caused the frost"],
-                },
-                requiresAuthoritativeResolution: false,
-                stopReason: "answer-expected",
-              },
-            };
-          },
-        },
-        {
-          id: "extract-conversation",
-          match: { schemaId: "conversation.durable-extraction.v1" },
-          result: { kind: "structured", value: { proposals: [] } },
-        },
-        {
-          id: "narrate-conversation",
-          match: { operation: "conversation.narration.v1" },
-          result: { kind: "text", text: "The NPC looks toward the frost and tells you to stay back." },
         },
         {
           id: "manifest-power",
@@ -1662,7 +1568,7 @@ describe("desktop playable session integration", () => {
     const calls = view.diagnostics?.performance.calls ?? [];
     expect(calls).toHaveLength(model.invocations.length - invocationsBeforeTurn);
     expect(calls.filter((call) => call.schemaId === "turn.declaration.v1")).toHaveLength(1);
-    expect(calls.some((call) => call.schemaId === "conversation.npc-decision.v1")).toBe(true);
+    expect(calls.some((call) => call.schemaId === "conversation.npc-reply.v1")).toBe(true);
     expect(calls.some((call) => call.phase === "responding")).toBe(true);
   });
 
