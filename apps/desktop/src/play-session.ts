@@ -271,6 +271,7 @@ export class DesktopPlaySession {
   private turnProgress?: TurnProgress;
   private lastError?: string;
   private lastDiagnostics?: TurnDiagnostics;
+  private pendingPlannerEscalation = false;
   private lastContinuityDiagnostics?: ReturnType<typeof projectContinuity>["diagnostics"];
   private lastBoundaryContinuityDiagnostics?: TurnDiagnostics["continuityBoundary"];
   private readonly observedModelRuntime?: ModelRuntime;
@@ -887,6 +888,7 @@ export class DesktopPlaySession {
       afterLocationId: currentLocationId,
       playerActorId: this.playerActorId,
       events,
+      deferUntilBoundary: this.pendingPlannerEscalation,
     });
     if (!trigger.reason) return { review: {
       reason: "unrelated",
@@ -901,6 +903,7 @@ export class DesktopPlaySession {
       historyQueryCount: hasNewEventEvidence ? 1 : 0,
       modelRuntime: this.requireModel(),
     });
+    this.pendingPlannerEscalation = Boolean(reviewed.diagnostic.deferredEscalation);
     if (reviewed.plan) {
       try {
         await this.session.commitCampaignPlan(plan.planRevision, reviewed.plan);
