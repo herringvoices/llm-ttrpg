@@ -175,6 +175,27 @@ describe("LM-02 compact model-facing briefs", () => {
   });
 });
 
+describe("LM-03 classification authorization", () => {
+  it("rejects forged local recipients after only one corrective retry", async () => {
+    const { get } = setup();
+    const context = get(bobId);
+    const model = new ScriptedModelRuntime([1, 2].map((n) => ({
+      id: `forged-${n}`,
+      match: { schemaId: "turn.declaration.v1" },
+      result: { kind: "structured" as const, value: {
+        kind: "interpreted",
+        segments: [{ kind: "communication", recipientRefs: ["scene.999"] }],
+      } },
+    })));
+    await expect(classifyTurnDeclaration({
+      declaration: "I speak to the figure.",
+      actorId: bobId,
+      context, modelRuntime: model, worldRevision: 7, eventSequence: 11,
+    })).rejects.toThrow(/invalid or stale references/);
+    expect(model.invocations).toHaveLength(2);
+  });
+});
+
 describe("LM-03 ordered interpretation", () => {
   it("preserves movement before quoted speech and resolves local recipients once", async () => {
     const { get } = setup();
