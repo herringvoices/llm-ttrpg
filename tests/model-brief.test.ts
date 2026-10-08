@@ -174,3 +174,32 @@ describe("LM-02 compact model-facing briefs", () => {
     expect(brief.modelText).not.toContain("Concealed service door");
   });
 });
+
+describe("LM-03 classifier smoke", () => {
+  it("uses one model classification and keeps actor-local aliases", async () => {
+    const { get } = setup();
+    const context = get(bobId);
+    const model = new ScriptedModelRuntime([{
+      id: "interpret",
+      match: { schemaId: "turn.declaration.v1" },
+      result: { kind: "structured", value: { kind: "interpreted", segments: [{
+        kind: "action", goal: "observe", modes: ["observation"],
+        targetRefs: [], statedMeans: [], pressureLevel: 3, requestedHorizonMs: 1000,
+      }] } },
+    }]);
+    const decision = await classifyTurnDeclaration({
+      declaration: "I observe.", actorId: bobId, context,
+      modelRuntime: model, worldRevision: 7, eventSequence: 11,
+    });
+    expect(decision.kind).toBe("interpreted");
+    expect(model.invocations).toHaveLength(1);
+  });
+  it("only fast paths observations under assessed pressure", () => {
+    const { world, get } = setup();
+    expect(deterministicTurnClassification("I look around.", get(bobId))).toBeUndefined();
+    world.actionPressure = { status: "assessed", level: 9 };
+    expect(deterministicTurnClassification("I look around.", get(bobId))).toMatchObject({
+      kind: "interpreted", source: "deterministic",
+    });
+  });
+});
