@@ -354,6 +354,7 @@ export const placeCallOperation: RulesOperation<
       subsystem: { id: "social", label: "Social" },
       tags: ["communication", "call", "time"],
     },
+    applicability: { actionModes: ["communication"] },
   },
   inputSchema: placeCallInputSchema,
   outputSchema: placeCallResultSchema,
