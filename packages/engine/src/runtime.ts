@@ -1835,6 +1835,7 @@ function openSession(
           return narrate(run);
         }
 
+        let trustedMechanicalArguments = false;
         // LM-04: the rules package supplies complete numerical mechanics.
         // A language model may select among registered capabilities, but its
         // proposed numbers never override the trusted preparer.
@@ -1875,6 +1876,7 @@ function openSession(
             return fail("proposal", prepared.reason, run);
           }
           if (prepared.status === "ready") {
+            trustedMechanicalArguments = true;
             const operation = dependencies.game.operationRegistry.get(decision.toolId);
             const trustedInput = operation.inputSchema.parse(prepared.input);
             decision = {
@@ -2029,7 +2031,7 @@ function openSession(
             decision.toolId,
             options.toolPolicy,
           );
-          rejectModelAuthoredCanonicalEntityIds(
+          if (!trustedMechanicalArguments) rejectModelAuthoredCanonicalEntityIds(
             decision.arguments,
             new Set(state.entities.map((entity) => entity.id)),
           );
@@ -2051,11 +2053,13 @@ function openSession(
               for (const entry of Object.values(value)) validateAliases(entry);
             }
           };
-          validateAliases(decision.arguments);
-          argumentsValue = replaceLocalReferences(
-            decision.arguments,
-            executionBrief.localReferences,
-          );
+          if (!trustedMechanicalArguments) validateAliases(decision.arguments);
+          argumentsValue = trustedMechanicalArguments
+            ? decision.arguments
+            : replaceLocalReferences(
+                decision.arguments,
+                executionBrief.localReferences,
+              );
           if (binding.kind !== "engine-query") {
             argumentsValue = injectActor(argumentsValue, run.actorId);
           }
