@@ -71,9 +71,8 @@ function npcKnowledge(
       .slice(0, 3).map((goal) => short(goal.description, 180)),
     memories: (social?.memories ?? []).slice(-3).map((memory) => short(memory.summary, 160)),
     ...(localState ? { stance: short(localState.stance, 100) } : {}),
-    ...(working.compactedSummary
-      ? { continuitySummary: short(working.compactedSummary, 300) }
-      : {}),
+    // The legacy compactedSummary is interaction-wide without per-actor
+    // provenance; including it could leak another NPC's private information.
     recentUtterances: working.recentTranscript.filter((entry) =>
       entry.kind !== "narration" &&
       (entry.speakerId === actorId || entry.audienceIds.includes(actorId))
@@ -188,7 +187,12 @@ export async function tryOrdinaryNpcConversation(
       if (MATERIAL_CLAIM.test(parsed.data.speech) || MATERIAL_CLAIM.test(parsed.data.visibleManner ?? "")) {
         return undefined;
       }
-      reply = parsed.data;
+      reply = { ...parsed.data,
+        speech: redactModelBriefText(parsed.data.speech),
+        ...(parsed.data.visibleManner
+          ? { visibleManner: redactModelBriefText(parsed.data.visibleManner) }
+          : {}),
+      };
       break;
     } catch {
       // Malformed local-model responses get one bounded repair; no state changes.
