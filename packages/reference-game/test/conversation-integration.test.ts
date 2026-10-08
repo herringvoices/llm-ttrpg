@@ -312,7 +312,9 @@ describe("LM-07 long-play dialogue projection", () => {
     await session.applyActionPressureAssessment({ level: 3 });
     const historyBefore = await session.eventHistory();
     const model = new ConversationModelRuntime((request) => {
-      expect(request.output.kind).toBe("structured");
+      if (request.output.kind !== "structured") {
+        throw new Error("Long-play dialogue must use the ordinary structured reply");
+      }
       expect(request.output.schemaId).toBe("conversation.npc-reply.v1");
       const input = JSON.parse(request.prompt.input) as {
         knowledge: { recentUtterances: Array<{ content: string }> };
