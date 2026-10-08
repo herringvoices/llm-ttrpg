@@ -764,6 +764,9 @@ export class DesktopPlaySession {
       beforeBasis = this.session.planningBasis();
       const before = this.session.snapshot();
       beforeWorld = before;
+      // Preserve the asynchronous progress boundary even when diagnostics no
+      // longer need an expensive event-history read before model routing.
+      await Promise.resolve();
       let meaningfulTurn = false;
       let openingEvidenceEventIds: string[] = [];
       const routed = !pendingClarification && mayBeConversation(declaration)
