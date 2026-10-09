@@ -749,6 +749,27 @@ export async function performConversationTurn(
       );
     }
     validateNpcKnowledge(decision, world);
+    const elapsedCommittedSpeech = act.durationMs + decisions.reduce(
+      (total, prior) => total + prior.estimatedSpeechDurationMs, 0,
+    );
+    const proposedNpcCost = decision.estimatedSpeechDurationMs +
+      (decision.proposedAction?.estimatedDurationMs ?? 0);
+    if (input.availableWindowMs !== undefined &&
+        elapsedCommittedSpeech + proposedNpcCost > input.availableWindowMs) {
+      // Player speech is already canonical; refuse the *next* NPC speech or
+      // action before committing it, never allow a later utterance to consume
+      // an exhausted scene window.
+      return {
+        act, communicationCommitted: true, decisions, committedActions,
+        communicationEventIds, extractionEventIds: [],
+        stopReason: "pressure-boundary", elapsedMs: elapsedCommittedSpeech,
+        narrationTarget: selectNarrationTarget(
+          request.narrationPreference, request.beatComplexity,
+        ),
+        narration: "You have spoken, but the scene's remaining time does not permit a reply.",
+        workingState: working,
+      };
+    }
     if (decision.intendedSpeechSemantics) {
       const speechIntent = boundInterpretedIntent({
         actorId,
