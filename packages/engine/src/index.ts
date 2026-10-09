@@ -21,6 +21,7 @@ export * from "./action-attempt.js";
 export * from "./turn-declaration.js";
 export * from "./player-action-contracts.js";
 export * from "./presentation.js";
+export * from "./presentation-beat.js";
 export * from "./time.js";
 export * from "./tool-catalog.js";
 export * from "./events.js";
