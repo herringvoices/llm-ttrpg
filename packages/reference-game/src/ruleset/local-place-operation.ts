@@ -13,6 +13,8 @@ import { z } from "zod";
 export const enterLocalPlaceInputSchema = z.object({
   actorId: stableIdSchema,
   placeName: z.string().trim().min(1).max(120),
+  /** Stable prior source identity when entering an authored location hint. */
+  sourceFactId: stableIdSchema.optional(),
   travelDurationMs: z.number().int().nonnegative().max(60 * 60_000),
 }).strict();
 
@@ -95,6 +97,21 @@ export const enterLocalPlaceOperation: RulesOperation<
     }
 
     const normalizedName = normalizedPlaceName(input.placeName);
+    const sourceFact = input.sourceFactId
+      ? context.world.facts.find((fact) => fact.id === input.sourceFactId)
+      : undefined;
+    const sourceValue = sourceFact?.value;
+    const sourceName = sourceValue && typeof sourceValue === "object" && !Array.isArray(sourceValue)
+      ? (sourceValue as Readonly<Record<string, unknown>>).name : undefined;
+    const immediateParent = typeof parent.data.parentLocationId === "string"
+      ? parent.data.parentLocationId : undefined;
+    if (input.sourceFactId && (
+      !sourceFact || sourceFact.predicate !== "location.hint" ||
+      sourceFact.visibility !== "public" ||
+      (sourceFact.subjectId !== currentLocationValue && sourceFact.subjectId !== immediateParent) ||
+      typeof sourceName !== "string" ||
+      normalizedPlaceName(sourceName) !== normalizedName
+    )) throw new OperationValidationError("Canonical location hint does not authorize this named entry");
     // Re-entering the exact room where the actor already stands must not
     // manufacture a nested duplicate or a spurious location-change event.
     if (
@@ -103,7 +120,9 @@ export const enterLocalPlaceOperation: RulesOperation<
         typeof parent.data.localPlaceName === "string"
           ? parent.data.localPlaceName
           : parent.name,
-      ) === normalizedName)
+      ) === normalizedName) &&
+      (!input.sourceFactId ||
+        parent.data["location-source-fact-id"] === input.sourceFactId)
     ) {
       const result = enterLocalPlaceResultSchema.parse({
         actorId: input.actorId,
@@ -128,11 +147,18 @@ export const enterLocalPlaceOperation: RulesOperation<
     );
     // Reuse an exact canonical child first, then a known sibling. A shared
     // display name in a different parent scope is NOT the same place.
-    const existing = candidates.find((item) =>
-      item.data.parentLocationId === currentLocationValue
-    ) ?? (parentOfCurrent ? candidates.find((item) =>
-      item.data.parentLocationId === parentOfCurrent
-    ) : undefined);
+    const existing = input.sourceFactId
+      ? candidates.find((item) =>
+          item.data["location-source-fact-id"] === input.sourceFactId &&
+          (item.data.parentLocationId === currentLocationValue ||
+            item.data.parentLocationId === parentOfCurrent))
+      : candidates.find((item) =>
+          item.data.parentLocationId === currentLocationValue &&
+          item.data["location-source-fact-id"] === undefined
+        ) ?? (parentOfCurrent ? candidates.find((item) =>
+          item.data.parentLocationId === parentOfCurrent &&
+          item.data["location-source-fact-id"] === undefined
+        ) : undefined);
     let toLocationId = existing?.id;
     if (!toLocationId) {
       const base = `${currentLocationValue}.place.${placeSlug(input.placeName)}`;
@@ -160,9 +186,13 @@ export const enterLocalPlaceOperation: RulesOperation<
           id: toLocationId,
           kind: "location",
           name: input.placeName,
-          summary: `${input.placeName} is a specific place within ${parent.name}.`,
+          summary: sourceValue && typeof sourceValue === "object" && !Array.isArray(sourceValue) &&
+              typeof (sourceValue as Readonly<Record<string, unknown>>).summary === "string"
+              ? (sourceValue as Readonly<Record<string, string>>).summary
+              : `${input.placeName} is a specific place within ${parent.name}.`,
           data: {
             parentLocationId: currentLocationValue,
+            ...(input.sourceFactId ? { "location-source-fact-id": input.sourceFactId } : {}),
             localPlaceName: input.placeName,
             generatedLocalPlace: true,
             context: {
