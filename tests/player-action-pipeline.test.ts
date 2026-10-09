@@ -752,7 +752,9 @@ describe("LM-04 reference ruleset mechanics without model-authored inputs", () =
                 locationId: "campaign.location.brownbag-groceries",
                 category: "participant", prominence: "prominent",
                 observable: true, activeParticipant: true,
-                orchestratorVisible: true, knownBy: [], identities: [],
+                orchestratorVisible: true,
+                knownBy: [{ kind: "actor", id: "campaign.entity.amelia" }],
+                identities: [],
               },
             },
           }],
@@ -788,8 +790,9 @@ describe("LM-04 reference ruleset mechanics without model-authored inputs", () =
         ...basis,
       },
     });
-    expect(result.kind).toBe("resolved");
-    if (result.kind !== "resolved") return;
+    if (result.kind !== "resolved") {
+      throw new Error(`LM-10 opposed check failed: ${JSON.stringify(result).slice(0, 4000)}`);
+    }
     expect(result.run.receipts).toHaveLength(1);
     expect(result.trace.entries).toContainEqual(expect.objectContaining({
       phase: "commit",
