@@ -407,7 +407,7 @@ export async function generateCompactStartingRegion(
   }
   if (!state.region || !state.settlement || !state.playerContext || !state.pressures) {
     state = materializeCompactSeed(request, state, state.compactSeed);
-    await checkpoint("expand-seed", 0);
+    await checkpoint("expand-seed", 1);
   }
   if (!state.openingSituation) {
     const raw = await model.propose("compact-opening", state);
@@ -430,7 +430,7 @@ export async function generateCompactStartingRegion(
   if (issues.length) throw new Error(
     `Compact campaign cannot become playable: ${issues.map((item) => item.message).join("; ")}`);
   state = { ...state, ...seed };
-  await checkpoint("finalize-seed", 0);
+  await checkpoint("finalize-seed", 1);
   const campaign = compileStartingRegionCampaign(request, seed, diagnostics);
   return { kind: "generated", seed, campaign, diagnostics, audit: { issues: [] } };
 }
