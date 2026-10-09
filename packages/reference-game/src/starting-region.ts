@@ -219,7 +219,7 @@ export function promoteObservedPerson(
 
 export const generatedEntityDensificationSchema = z.object({
   entityId: stableIdSchema,
-  candidateData: z.record(stableIdSchema, jsonValueSchema),
+  candidateData: z.record(z.string().trim().min(1), jsonValueSchema),
   requiredPaths: z.array(z.string().trim().min(1)).min(1),
   provenance: provenanceSchema.extend({
     class: z.literal("later-densification"),
