@@ -22,6 +22,7 @@ import type {
 } from "./simulation.js";
 import type { NarrationProfile } from "./presentation.js";
 import type { ActionAttemptPreparer } from "./action-attempt.js";
+import type { RealizationPreparer } from "./realization.js";
 
 export interface EventTypeProvider {
   readonly eventTypes: readonly RegisteredEventType[];
@@ -42,6 +43,8 @@ export interface Ruleset
   readonly operations: readonly RegisteredRulesOperation[];
   /** Trusted ruleset-owned construction of complete mechanical operation inputs. */
   readonly prepareActionAttempt?: ActionAttemptPreparer;
+  /** Optional package-specific, validated on-demand realization contract. */
+  readonly prepareRealization?: RealizationPreparer;
 }
 
 export interface Setting
