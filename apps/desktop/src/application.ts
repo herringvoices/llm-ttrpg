@@ -7,6 +7,9 @@ import {
   generationIssueSchema,
   generationStageDiagnosticSchema,
   deriveSceneRegister,
+  buildPresentationBeat,
+  prepareModelBrief,
+  validatePresentedText,
   loadGameDefinition,
   renderContextForModel,
   type CampaignPlanDocument,
@@ -755,6 +758,28 @@ export function createDesktopApplication(
         "Establish grounded ordinary modern life, activity, obligations, and relationships. Do not introduce a supernatural incident or reveal a power yet; those are not committed presentation facts.";
     }
 
+    const basis = session.planningBasis();
+    const brief = prepareModelBrief({
+      purpose: "narration",
+      context,
+      perspective: { kind: "actor", id: row.player_actor_id },
+      maxCharacters: 3_800,
+    });
+    const beat = buildPresentationBeat({
+      id: `opening.${session.worldId}`,
+      kind: "opening",
+      scene: {
+        schemaVersion: 1, sceneBrief: brief.modelText,
+        worldRevision: basis.worldRevision,
+        eventSequence: basis.eventSequence,
+      },
+      observableOutcomes: [
+        // Derived exclusively from already realized opening content, not a
+        // generator proposal or hidden campaign-planning narrative.
+        JSON.stringify(openingMaterial),
+      ],
+      elapsedMs: 0,
+    });
     let narration = fallback;
     if (options.modelRuntime) {
       const pressure = world.actionPressure.status === "assessed"
@@ -780,8 +805,7 @@ export function createDesktopApplication(
             "Do not ask a meta-level question such as what the player wants to do.",
             "Target 500-900 characters.",
           ],
-          context: renderContextForModel(context),
-          input: JSON.stringify(openingMaterial),
+          input: beat.modelText,
         },
         output: { kind: "text" },
         trace: { operation: "desktop.opening-narration.v1" },
@@ -789,7 +813,10 @@ export function createDesktopApplication(
         timeoutMs: 5 * 60 * 1_000,
         generation: { temperature: 0.4, maxOutputTokens: 512 },
       });
-      if (result.ok && result.output.text.trim()) narration = result.output.text.trim();
+      if (result.ok) {
+        const validated = validatePresentedText(result.output.text, beat);
+        if (validated.ok) narration = validated.text;
+      }
     }
     const entry = transcriptEntrySchema.parse({
       id: `transcript.${randomId().toLowerCase()}`,
