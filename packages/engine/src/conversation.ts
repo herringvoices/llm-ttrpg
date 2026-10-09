@@ -964,7 +964,7 @@ export async function performConversationTurn(
     perspective: { kind: "actor", id: request.playerActorId },
     maxCharacters: 4_000,
   });
-  const beat = buildPresentationBeat({
+  const presentationBeat = buildPresentationBeat({
     id: request.turnId,
     kind: "conversation",
     scene: {
@@ -1006,7 +1006,7 @@ export async function performConversationTurn(
         "Do not invent actionable objects, routes, hazards, witnesses, resources, or clues.",
         `Target ${narrationTarget.minimumCharacters}-${narrationTarget.maximumCharacters} characters (${narrationTarget.preference}/${narrationTarget.band}); this is guidance, never a truncation limit.`,
       ],
-      input: beat.modelText,
+      input: presentationBeat.modelText,
     },
     output: { kind: "text" },
     trace: { operation: "conversation.narration.v1" },
@@ -1016,7 +1016,7 @@ export async function performConversationTurn(
   if (!narrationResult.ok) {
     narrationError = `${narrationResult.error.kind}: ${narrationResult.error.message}`;
   } else {
-    const validated = validatePresentedText(narrationResult.output.text, beat);
+    const validated = validatePresentedText(narrationResult.output.text, presentationBeat);
     if (!validated.ok) {
       narrationError = validated.reason === "missing-verbatim-quote"
         ? "Narration omitted or rewrote exact player quote"
