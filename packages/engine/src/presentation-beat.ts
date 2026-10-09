@@ -17,7 +17,7 @@ export const presentationSceneSnapshotSchema = z.object({
   worldRevision: z.number().int().nonnegative(),
   eventSequence: z.number().int().nonnegative(),
   /** Frozen observable source sentences to prevent later-scene drift. */
-  observableOutcomes: z.array(z.string().max(460)).max(16).optional(),
+  observableOutcomes: z.array(z.string().max(4_000)).max(16).optional(),
 }).strict();
 export type PresentationSceneSnapshot = z.infer<typeof presentationSceneSnapshotSchema>;
 
@@ -51,7 +51,7 @@ export function buildPresentationBeat(input: PresentationBeatInput): Presentatio
   const kind = presentationBeatKindSchema.parse(input.kind);
   const scene = presentationSceneSnapshotSchema.parse(input.scene);
   const observableOutcomes = input.observableOutcomes.slice(0, 12)
-    .map((part) => safe(part, 460)).filter(Boolean);
+    .map((part) => safe(part, 3_800)).filter(Boolean);
   const quotedSpeech = (input.quotedSpeech ?? []).slice(0, 12)
     .map((quote) => safe(quote, 400)).filter(Boolean);
   const declaration = input.declaration ? safe(input.declaration, 1_500) : undefined;
