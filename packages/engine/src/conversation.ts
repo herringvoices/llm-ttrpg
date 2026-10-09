@@ -53,6 +53,8 @@ export interface PerformConversationTurnInput {
   readonly workingState?: ConversationWorkingState;
   /** LM-05: opt into a short NPC-perspective response before the exceptional path. */
   readonly ordinaryFastPath?: boolean;
+  /** Remaining fictional time from the enclosing ordered player turn. */
+  readonly availableWindowMs?: number;
   readonly modelOptions?: ModelInvocationOptions;
   readonly onProgress?: (
     phase: "understanding" | "responding" | "updating" | "presenting",
@@ -75,6 +77,8 @@ export interface ConversationTurnResult {
   readonly communicationEventIds: readonly string[];
   readonly extractionEventIds: readonly string[];
   readonly stopReason: ConversationStopReason;
+  /** Actor-visible speech time consumed by this exchange, not an extra world-clock tick. */
+  readonly elapsedMs?: number;
   readonly narrationTarget: NarrationTarget;
   readonly narration?: string;
   readonly narrationError?: string;
@@ -571,7 +575,9 @@ export async function performConversationTurn(
     targetIds: act.recipientIds,
     requestedHorizonMs: fictionalDurationMs(act.durationMs),
   }, input.session.snapshot().actionPressure);
-  if (act.durationMs > speechIntent.authorizedHorizonMs) {
+  const actualSpeechLimit = Math.min(speechIntent.authorizedHorizonMs,
+    input.availableWindowMs ?? speechIntent.authorizedHorizonMs);
+  if (act.durationMs > actualSpeechLimit) {
     return {
       act,
       communicationCommitted: false,
@@ -918,6 +924,14 @@ export async function performConversationTurn(
     (total, decision) => total + decision.estimatedSpeechDurationMs,
     0,
   );
+  if (conversationElapsedMs > (input.availableWindowMs ?? Number.POSITIVE_INFINITY)) {
+    // Any already-authorized material commits cannot be rewound. Report
+    // exhaustion without inventing completion or additional player actions.
+    return { act, communicationCommitted: true, decisions, committedActions,
+      communicationEventIds, extractionEventIds, stopReason: "pressure-boundary",
+      elapsedMs: conversationElapsedMs, narrationTarget, workingState: working,
+      narrationError: "The scene pressure window ended during this exchange." };
+  }
   const pressure = input.session.snapshot().actionPressure;
   if (pressure.status !== "assessed") {
     throw new ConversationValidationError("Conversation narration requires assessed Action Pressure");
@@ -997,6 +1011,7 @@ export async function performConversationTurn(
     communicationEventIds,
     extractionEventIds,
     stopReason,
+    elapsedMs: conversationElapsedMs,
     narrationTarget,
     ...(narration ? { narration } : {}),
     ...(narrationError ? { narrationError } : {}),
