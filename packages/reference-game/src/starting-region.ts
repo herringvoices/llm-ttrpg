@@ -2698,7 +2698,9 @@ function initialMechanicalRealizations(
       fromLevel: "unrealized",
       toLevel: "complete",
       sourceComponent: { id: "reference-rules", version: "0.3.0" },
-      generatorVersion: "starting-region-v1",
+      generatorVersion: generationDiagnostics.some((item) => item.stageId === "compact-seed")
+        ? "starting-region-v2"
+        : "starting-region-v1",
       addedPaths: ["attributes", "skills", "stress", "statuses", "progression"],
       constraintIds: playerConstraints.map((constraint) => constraint.id),
       reason: "Generated mundane player mechanics from the established biography.",
