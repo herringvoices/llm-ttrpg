@@ -733,4 +733,90 @@ describe("LM-04 reference ruleset mechanics without model-authored inputs", () =
     expect(session.snapshot().randomness).toEqual(before);
     expect(await session.eventHistory({ types: ["rules.action-resolved"] })).toHaveLength(1);
   });
+  it("materializes a missing opponent before the opposed roll, then resumes without duplicate prerequisites", async () => {
+    const persistence = createInMemoryPersistence();
+    let id = 0;
+    const npcId = "campaign.entity.lm10-unrealized-opponent";
+    const base = referenceGameDefinition;
+    const game = loadGameDefinition({
+      ...base,
+      campaign: {
+        ...base.campaign,
+        content: {
+          ...base.campaign.content,
+          entities: [...base.campaign.content.entities, {
+            id: npcId, kind: "actor" as const,
+            name: "Visible Opponent", summary: "A present nearby opponent.",
+            data: {
+              context: {
+                locationId: "campaign.location.brownbag-groceries",
+                category: "participant", prominence: "prominent",
+                observable: true, activeParticipant: true,
+                orchestratorVisible: true,
+                knownBy: [{ kind: "actor", id: "campaign.entity.amelia" }],
+                identities: [],
+              },
+            },
+          }],
+        },
+      },
+    });
+    const runtime = createGameRuntime({
+      persistence,
+      wallClock: { now: () => "2042-01-01T00:00:00.000Z" },
+      idGenerator: { next: (kind) => `${kind}.lm10-action-${++id}` },
+      worldSeedSource: { nextSeed: () => 0x13579bdf },
+      game, context: { sceneSource: referenceSceneSource },
+    });
+    const session = await runtime.createWorld("Foreground opposed check");
+    const basis = session.planningBasis();
+    const declaration = "I swing a punch at the opponent.";
+    const model = new QueueModelRuntime([
+      { kind: "stop", reason: "goal-achieved" },
+      "You strike at the visible opponent as they move to block.",
+    ]);
+    const result = await session.performPlayerAction({
+      actionId: "action.lm10.opposed",
+      actorId: "campaign.entity.amelia",
+      declaration, budget: { maxUnits: 50_000 },
+    }, {
+      modelRuntime: model,
+      registeredOnly: true,
+      preinterpreted: {
+        declaration, goal: "Punch the opponent",
+        targetIds: [npcId],
+        modes: ["attack"], statedMeans: [],
+        pressureLevel: 8, requestedHorizonMs: fictionalDurationMs(10_000),
+        ...basis,
+      },
+    });
+    if (result.kind !== "resolved") {
+      throw new Error(`LM-10 opposed check failed: ${JSON.stringify(result).slice(0, 4000)}`);
+    }
+    expect(result.run.receipts).toHaveLength(2);
+    expect(result.run.receipts.map((receipt) => receipt.toolId)).toEqual([
+      "rules.realization.realize-mechanics",
+      "rules.actions.resolve-action",
+    ]);
+    expect(result.trace.entries).toContainEqual(expect.objectContaining({
+      phase: "commit",
+      detail: expect.objectContaining({
+        kind: "foreground-realization", sourceId: npcId, modelCalls: 0,
+      }),
+    }));
+    const realizationEvents = await session.eventHistory({ types: ["rules.mechanics-realized"] });
+    const checks = await session.eventHistory({ types: ["rules.action-resolved"] });
+    expect(realizationEvents).toHaveLength(1);
+    expect(checks).toHaveLength(1);
+    expect(realizationEvents[0]!.sequence).toBeLessThan(checks[0]!.sequence);
+    const snapshot = session.snapshot().randomness;
+    const replay = await session.performPlayerAction({
+      actionId: "action.lm10.opposed", actorId: "campaign.entity.amelia",
+      declaration, budget: { maxUnits: 50_000 },
+    }, { modelRuntime: new QueueModelRuntime([]), registeredOnly: true });
+    expect(replay.kind).toBe("resolved");
+    expect((await session.eventHistory({ types: ["rules.mechanics-realized"] }))).toHaveLength(1);
+    expect(session.snapshot().randomness).toEqual(snapshot);
+  });
+
 });

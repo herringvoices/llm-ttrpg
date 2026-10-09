@@ -1,5 +1,8 @@
 import type { Ruleset } from "@llm-ttrpg/engine";
 import { prepareReferenceActionAttempt } from "./attempt-preparer.js";
+import { prepareReferenceRealization } from "./realization-preparer.js";
+import { personRealizedEventType, realizeObservedPersonOperation } from "./person-realization.js";
+import { realizeSourcedDetailOperation, sourcedDetailRealizedEventType } from "./sourced-detail-operation.js";
 import {
   actionResolvedEventType,
   resolveActionOperation,
@@ -62,6 +65,9 @@ import {
 
 export * from "./action-operation.js";
 export * from "./attempt-preparer.js";
+export * from "./realization-preparer.js";
+export * from "./person-realization.js";
+export * from "./sourced-detail-operation.js";
 export * from "./awakening-operation.js";
 export * from "./opening-evidence-operation.js";
 export * from "./conversation-operations.js";
@@ -78,6 +84,7 @@ export * from "./traversal-operation.js";
 
 export const referenceRuleset: Ruleset = {
   prepareActionAttempt: prepareReferenceActionAttempt,
+  prepareRealization: prepareReferenceRealization,
   identity: { id: "reference-rules", version: "0.3.0" },
   description:
     "Reusable, inspectable Performance-versus-Resistance rules for physical, mental, social, environmental, competitive, and high-pressure play.",
@@ -151,6 +158,8 @@ export const referenceRuleset: Ruleset = {
     activateInvincibleOperation,
     recordPowerDiscoveryOperation,
     realizeMechanicsOperation,
+    realizeObservedPersonOperation,
+    realizeSourcedDetailOperation,
     applyCreatureGrowthOperation,
     validateExtendedTaskOperation,
     validateRepeatAttemptOperation,
@@ -172,6 +181,8 @@ export const referenceRuleset: Ruleset = {
     invincibleActivatedEventType,
     powerBehaviorDiscoveredEventType,
     mechanicsRealizedEventType,
+    personRealizedEventType,
+    sourcedDetailRealizedEventType,
     creatureGrewEventType,
     routeTraversedEventType,
     localPlaceEnteredEventType,
