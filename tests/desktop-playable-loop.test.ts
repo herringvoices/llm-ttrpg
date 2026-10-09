@@ -183,7 +183,7 @@ function generatedCampaignModel(options: {
     focus: originalOpening.supernaturalFocus,
     visibleSituation: originalOpening.awakeningEvent,
     manifestationOpportunity: originalOpening.manifestationOpportunity,
-    targetTurn: originalOpening.manifestationTargetTurn,
+    targetTurn: 1, // Existing first-turn integration scenarios; separate coverage tests later deadlines.
     unresolvedConsequence: originalOpening.unresolvedConsequences[0]!,
     socialDirection: originalOpening.actionableDirections.social[0]!,
     investigativeDirection: originalOpening.actionableDirections.investigative[0]!,
@@ -215,17 +215,20 @@ function generatedCampaignModel(options: {
           return found;
         };
         const player = outputs["player-context"].entity;
-        const playerName = options.playerName ?? player.name;
+        const playerName = options.playerName ?? (
+          scene.some((entry) => entry.displayIdentity === player.name)
+            ? player.name : "Player"
+        );
         const npc = { name: "Alice" };
         const creature = { entity: { name: "Emergent Local Anomaly" },
           observedTraits: ["an observable unusual effect"] };
-        const location = { name: compactSeed.publicPlace.name };
+        const location = { name: "Player's initial location" };
         return {
           kind: "structured" as const,
           value: {
             incident: {
               name: "Desktop Opening Incident",
-              summary: "A grounded supernatural threat emerges at the generated grocery.",
+              summary: "A grounded supernatural threat emerges at the established opening location.",
               locationRef: refForName(location.name),
               involvedRefs: [
                 refForName(playerName),
