@@ -100,6 +100,7 @@ export const enterLocalPlaceOperation: RulesOperation<
     const sourceFact = input.sourceFactId
       ? context.world.facts.find((fact) => fact.id === input.sourceFactId)
       : undefined;
+    const placeParentId = sourceFact?.subjectId ?? currentLocationValue;
     const sourceValue = sourceFact?.value;
     const sourceName = sourceValue && typeof sourceValue === "object" && !Array.isArray(sourceValue)
       ? (sourceValue as Readonly<Record<string, unknown>>).name : undefined;
@@ -161,7 +162,7 @@ export const enterLocalPlaceOperation: RulesOperation<
         ) : undefined);
     let toLocationId = existing?.id;
     if (!toLocationId) {
-      const base = `${currentLocationValue}.place.${placeSlug(input.placeName)}`;
+      const base = `${placeParentId}.place.${placeSlug(input.placeName)}`;
       toLocationId = base;
       let suffix = 2;
       while (context.world.entities.some((item) => item.id === toLocationId)) {
@@ -191,7 +192,7 @@ export const enterLocalPlaceOperation: RulesOperation<
               ? (sourceValue as Readonly<Record<string, string>>).summary
               : `${input.placeName} is a specific place within ${parent.name}.`,
           data: {
-            parentLocationId: currentLocationValue,
+            parentLocationId: placeParentId,
             ...(input.sourceFactId ? { "location-source-fact-id": input.sourceFactId } : {}),
             localPlaceName: input.placeName,
             generatedLocalPlace: true,
@@ -214,7 +215,7 @@ export const enterLocalPlaceOperation: RulesOperation<
           id: `state.fact.parent.${toLocationId}`,
           subjectId: toLocationId,
           predicate: "location.parent",
-          value: currentLocationValue,
+          value: placeParentId,
           visibility: "public",
           tags: ["location", "hierarchy"],
         }),
@@ -223,7 +224,7 @@ export const enterLocalPlaceOperation: RulesOperation<
     // New and revisited nested places require a stable traversable route,
     // but a revisit must never duplicate or rewrite an existing route.
     const actualParentId = existing && typeof existing.data.parentLocationId === "string"
-      ? existing.data.parentLocationId : currentLocationValue;
+      ? existing.data.parentLocationId : placeParentId;
     const routeId = `state.fact.route.${toLocationId}`;
     if (!context.world.facts.some((fact) => fact.id === routeId)) {
       proposedMutations.push({
