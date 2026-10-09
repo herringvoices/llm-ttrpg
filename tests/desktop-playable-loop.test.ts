@@ -893,6 +893,7 @@ describe("desktop playable session integration", () => {
         };
         pressures: Array<{ id: string; category: string }>;
       };
+      diagnostics: Array<{ stageId: string; attempts: number; issues: unknown[]; accepted: boolean }>;
       openingProposal: {
         incident: {
           locationRef: string;
@@ -930,6 +931,13 @@ describe("desktop playable session integration", () => {
     const supernaturalPressureId = descriptor.seed.pressures.find((pressure) =>
       pressure.category === "supernatural"
     )!.id;
+    // This block explicitly simulates an older descriptor without a compact
+    // generator version marker. V2 descriptors must reject ID-valued guidance
+    // rather than silently changing an accepted opening mode.
+    descriptor.diagnostics = descriptor.diagnostics.filter(
+      (stage) => !["compact-seed", "compact-opening", "expand-seed", "finalize-seed"]
+        .includes(stage.stageId),
+    );
     descriptor.seed.openingSituation.awakeningEvent = supernaturalPressureId;
     descriptor.seed.openingSituation.manifestationOpportunity = supernaturalPressureId;
     descriptor.openingProposal.incident.locationRef = "scene.999";
