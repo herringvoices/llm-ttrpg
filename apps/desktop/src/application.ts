@@ -204,6 +204,15 @@ function parseGeneratedPackageDescriptor(value: unknown): GeneratedPackageDescri
     return generatedPackageDescriptorSchema.parse(value);
   }
   const descriptor = value as Record<string, unknown>;
+  // V2 openings have already passed the strict compact opening schema. The
+  // legacy compatibility normalizer can *reinterpret their mode* when an
+  // ordinary power manifestation sounds supernatural; never run it on v2.
+  if (Array.isArray(descriptor.diagnostics) &&
+      descriptor.diagnostics.some((item) =>
+        item && typeof item === "object" &&
+        (item as Record<string, unknown>).stageId === "compact-seed")) {
+    return generatedPackageDescriptorSchema.parse(value);
+  }
   if (!descriptor.seed || typeof descriptor.seed !== "object" || Array.isArray(descriptor.seed)) {
     return generatedPackageDescriptorSchema.parse(value);
   }
