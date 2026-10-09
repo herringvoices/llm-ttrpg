@@ -36,6 +36,7 @@ import {
   rulesActorStateSchema,
   type OpeningProgressionState,
 } from "@llm-ttrpg/reference-game";
+import { projectCharacterSheet, type CharacterSheetView } from "./character-sheet.js";
 
 export type NarrationPreference = "concise" | "standard" | "expansive";
 
@@ -200,6 +201,7 @@ export interface PlaySessionView {
   readonly worldId: string;
   readonly playerActorId: string;
   readonly playerName: string;
+  readonly characterSheet?: CharacterSheetView;
   readonly currentLocationId?: string;
   readonly currentLocationName?: string;
   readonly fictionalTime: string;
@@ -368,6 +370,7 @@ export class DesktopPlaySession {
   view(): PlaySessionView {
     const world = this.session.snapshot();
     const player = world.entities.find((entity) => entity.id === this.playerActorId);
+    const characterSheet = projectCharacterSheet(player?.data.mechanics);
     const locationId = world.facts.find((fact) =>
       fact.subjectId === this.playerActorId && fact.predicate === "actor.current-location"
     )?.value ?? player?.data.currentLocation;
@@ -377,6 +380,7 @@ export class DesktopPlaySession {
       worldId: this.session.worldId,
       playerActorId: this.playerActorId,
       playerName: player?.name ?? "Player",
+      ...(characterSheet ? { characterSheet } : {}),
       ...(normalizedLocationId ? { currentLocationId: normalizedLocationId } : {}),
       ...(location ? { currentLocationName: location.name } : {}),
       fictionalTime: world.fictionalTime,
