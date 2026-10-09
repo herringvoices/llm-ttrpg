@@ -1,6 +1,7 @@
 import type { Ruleset } from "@llm-ttrpg/engine";
 import { prepareReferenceActionAttempt } from "./attempt-preparer.js";
 import { prepareReferenceRealization } from "./realization-preparer.js";
+import { personRealizedEventType, realizeObservedPersonOperation } from "./person-realization.js";
 import {
   actionResolvedEventType,
   resolveActionOperation,
@@ -64,6 +65,7 @@ import {
 export * from "./action-operation.js";
 export * from "./attempt-preparer.js";
 export * from "./realization-preparer.js";
+export * from "./person-realization.js";
 export * from "./awakening-operation.js";
 export * from "./opening-evidence-operation.js";
 export * from "./conversation-operations.js";
@@ -154,6 +156,7 @@ export const referenceRuleset: Ruleset = {
     activateInvincibleOperation,
     recordPowerDiscoveryOperation,
     realizeMechanicsOperation,
+    realizeObservedPersonOperation,
     applyCreatureGrowthOperation,
     validateExtendedTaskOperation,
     validateRepeatAttemptOperation,
@@ -175,6 +178,7 @@ export const referenceRuleset: Ruleset = {
     invincibleActivatedEventType,
     powerBehaviorDiscoveredEventType,
     mechanicsRealizedEventType,
+    personRealizedEventType,
     creatureGrewEventType,
     routeTraversedEventType,
     localPlaceEnteredEventType,
