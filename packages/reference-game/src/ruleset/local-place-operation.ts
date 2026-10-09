@@ -114,17 +114,25 @@ export const enterLocalPlaceOperation: RulesOperation<
       });
       return {
         result,
-        advanceTimeByMs: fictionalDurationMs(input.travelDurationMs),
+        advanceTimeByMs: fictionalDurationMs(0),
         proposedMutations: [],
         proposedEvents: [],
       };
     }
-    const existing = context.world.entities.find((item) =>
+    const parentOfCurrent = typeof parent.data.parentLocationId === "string"
+      ? parent.data.parentLocationId : undefined;
+    const candidates = context.world.entities.filter((item) =>
       item.kind === "location" &&
-      item.data.parentLocationId === currentLocationValue &&
       typeof item.data.localPlaceName === "string" &&
       normalizedPlaceName(item.data.localPlaceName) === normalizedName
     );
+    // Reuse an exact canonical child first, then a known sibling. A shared
+    // display name in a different parent scope is NOT the same place.
+    const existing = candidates.find((item) =>
+      item.data.parentLocationId === currentLocationValue
+    ) ?? (parentOfCurrent ? candidates.find((item) =>
+      item.data.parentLocationId === parentOfCurrent
+    ) : undefined);
     let toLocationId = existing?.id;
     if (!toLocationId) {
       const base = `${currentLocationValue}.place.${placeSlug(input.placeName)}`;
@@ -179,6 +187,28 @@ export const enterLocalPlaceOperation: RulesOperation<
           value: currentLocationValue,
           visibility: "public",
           tags: ["location", "hierarchy"],
+        }),
+      });
+    }
+    // New and revisited nested places require a stable traversable route,
+    // but a revisit must never duplicate or rewrite an existing route.
+    const actualParentId = existing && typeof existing.data.parentLocationId === "string"
+      ? existing.data.parentLocationId : currentLocationValue;
+    const routeId = `state.fact.route.${toLocationId}`;
+    if (!context.world.facts.some((fact) => fact.id === routeId)) {
+      proposedMutations.push({
+        kind: "upsert-fact",
+        fact: canonicalFactSchema.parse({
+          id: routeId,
+          subjectId: toLocationId,
+          predicate: "location.route",
+          value: {
+            fromId: actualParentId, toId: toLocationId,
+            summary: `Ordinary accessible passage between the parent place and ${input.placeName}.`,
+            traversable: true, bidirectional: true,
+          },
+          visibility: "public",
+          tags: ["location", "route"],
         }),
       });
     }
