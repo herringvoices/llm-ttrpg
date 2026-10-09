@@ -101,6 +101,13 @@ describe("LM-12 committed presentation beats", () => {
       ok: false, reason: "ungrounded-actionable-detail",
     });
     expect(validatePresentedText(" ", beat)).toMatchObject({ ok: false, reason: "empty" });
+    const spaced = '  No, not today.  ';
+    const exact = buildPresentationBeat({
+      ...base, quotedSpeech: [spaced], kind: "conversation",
+    });
+    expect(exact.quotedSpeech[0]).toBe(spaced);
+    expect(validatePresentedText('You reply: "  No, not today.  "', exact).ok).toBe(true);
+    expect(validatePresentedText('You reply: "No, not today."', exact).ok).toBe(false);
   });
 
   it("composes multiple direct NPC lines without altering speaker order or words", () => {
