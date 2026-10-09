@@ -1299,7 +1299,9 @@ function openSession(
           {
             instructions: [
               "Interpret the player's declaration once. Do not plan an operation chain.",
-              "Use only context-local scene references for targets. Assess current action pressure from 1 (low) to 9 (immediate).",
+              state.actionPressure.status === "assessed"
+                ? `Use only context-local scene references for targets. Reuse assessed Action Pressure level ${state.actionPressure.level} without inventing a new value.`
+                : "Use only context-local scene references for targets. Give one conservative initial pressure estimate from 1 (low) to 9 (immediate); the engine checks authoritative hazards.",
               "The focal actor reference identifies who is acting, not the target. Never return it as a target unless the declaration explicitly targets the actor themself.",
               "Include every applicable action mode. A declaration that moves to a place and then performs a task normally has both movement and task modes.",
               "Treat omitted implementation details as intentionally delegated to the game. Infer the smallest reasonable detail from the declaration and current fiction; do not ask the player to specify a room, object instance, route, tool, order, or method they did not care to specify.",
@@ -1334,7 +1336,9 @@ function openSession(
                 "If a minor implementation detail is unstated, choose the smallest reasonable first step from the authorized scene context.",
                 "Assume omitted detail was intentionally delegated. Never ask the player to choose a room, object instance, route, tool, order, or method unless proceeding would materially replace their declared intent.",
                 "Never ask the player to author an external outcome, sensory result, NPC response, creature reaction, or environmental change. Interpret the declared attempt; the rules and simulation determine the response.",
-                "Use only context-local scene references for targets and assess current action pressure from 1 (low) to 9 (immediate).",
+                state.actionPressure.status === "assessed"
+                  ? `Use only context-local scene references and reuse current Action Pressure level ${state.actionPressure.level}; do not reassess it for this turn.`
+                  : "Use context-local scene references and give a conservative initial pressure estimate; the engine validates authoritative threats.",
                 "The focal actor reference identifies who is acting, not the target. Never return it as a target unless the declaration explicitly targets the actor themself.",
                 "Include every applicable action mode. A declaration that moves to a place and then performs a task normally has both movement and task modes.",
               ],
