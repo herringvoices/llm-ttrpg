@@ -57,6 +57,8 @@ The 5.7 GB model is deliberately not embedded in the NSIS setup executable: NSIS
 
 The desktop application accepts an optional provider-neutral `ModelRuntime` dependency. It does not import Ollama types, and the headless game runtime remains independent of model transport.
 
+Sign in with ChatGPT is not implemented or enabled for release. Its unresolved eligibility and live-inference gates are tracked in the [provider readiness note](chatgpt-provider-readiness.md).
+
 The bundled llama.cpp transport requests token streaming from the local HTTP server so long
 CPU-bound generations continuously carry data and are not mistaken for dead connections by the
 desktop webview. It buffers those chunks internally and exposes the same complete, non-streaming,

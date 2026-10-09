@@ -51,6 +51,7 @@ See:
 - [Game package contracts](docs/game-package-contracts.md)
 - [Context assembly and knowledge retrieval](docs/context-assembly.md)
 - [Local model runtime](docs/model-runtime.md)
+- [Sign in with ChatGPT provider readiness](docs/chatgpt-provider-readiness.md)
 - [Player action execution pipeline](docs/player-action-pipeline.md)
 - [Lazy world simulation and catch-up](docs/lazy-world-simulation.md)
 - [Simulation and test harness](docs/simulation-test-harness.md)
@@ -86,6 +87,8 @@ npm run check
 ```
 
 Run the developer harness with `npm run harness`. The CLI ships with a tiny package-neutral fantasy fixture; additional plain-TypeScript scenarios can be registered by developer tooling. Set `HARNESS_MODEL_MODULE` to an ESM module exporting a provider-neutral `ModelRuntime` as `default` or `modelRuntime` to use a configured real local model interactively.
+
+Run the isolated, development-only Sign in with ChatGPT proof of concept with `npm run siwc:poc`. It requires a browser and an eligible account, makes two inference requests, and does not integrate ChatGPT with gameplay. See [the readiness and manual test guide](docs/chatgpt-provider-readiness.md) before running it.
 
 Run the playable desktop web shell with `npm run dev --workspace @llm-ttrpg/desktop`. It connects to Ollama at `VITE_OLLAMA_BASE_URL` (default `http://localhost:11434`) and uses `VITE_OLLAMA_MODEL` (default `qwen3:8b`). The Tauri host supplies the persistent SQLite database and the same UI/application boundary.
 
