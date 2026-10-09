@@ -7,6 +7,7 @@ import type {
   DesktopApplication,
 } from "./application.js";
 import type { DesktopPlaySession, PlaySessionView } from "./play-session.js";
+import { CharacterSheet } from "./CharacterSheet.js";
 
 export function App({ application }: { readonly application: DesktopApplication }) {
   const [worlds, setWorlds] = useState<readonly WorldMetadata[]>([]);
@@ -35,6 +36,7 @@ export function App({ application }: { readonly application: DesktopApplication 
   const [playSession, setPlaySession] = useState<DesktopPlaySession>();
   const [playView, setPlayView] = useState<PlaySessionView>();
   const [declaration, setDeclaration] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
   const transcriptEnd = useRef<HTMLDivElement>(null);
 
   async function refresh() {
@@ -255,6 +257,7 @@ export function App({ application }: { readonly application: DesktopApplication 
             <p>{playView.currentLocationName ?? playView.currentLocationId ?? "Unknown location"} · {new Date(playView.fictionalTime).toLocaleString()}</p>
           </div>
           <div className="header-actions">
+            <button type="button" onClick={() => setSheetOpen(true)}>Character sheet</button>
             <fieldset className="preference" disabled={playView.busy}>
               <legend>Narration</legend>
               {(["concise", "standard", "expansive"] as const).map((preference) => (
@@ -270,7 +273,7 @@ export function App({ application }: { readonly application: DesktopApplication 
               ))}
             </fieldset>
             <button disabled={playView.busy} onClick={() => void run(() => playSession.save())}>Save</button>
-            <button disabled={playView.busy} onClick={() => { setPlaySession(undefined); setPlayView(undefined); void refresh(); }}>Return</button>
+            <button disabled={playView.busy} onClick={() => { setSheetOpen(false); setPlaySession(undefined); setPlayView(undefined); void refresh(); }}>Return</button>
           </div>
         </header>
 
@@ -340,6 +343,14 @@ export function App({ application }: { readonly application: DesktopApplication 
             </button>
           )}
         </div>
+
+        {sheetOpen && (
+          <CharacterSheet
+            name={playView.playerName}
+            sheet={playView.characterSheet}
+            onClose={() => setSheetOpen(false)}
+          />
+        )}
 
         {import.meta.env.DEV && playView.diagnostics && (
           <details className="diagnostics">
