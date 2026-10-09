@@ -128,7 +128,8 @@ export function scenePressureSources(
   world: Pick<WorldState, "facts" | "scheduledTriggers" | "fictionalTime">,
   actorId: string,
   locationId?: string,
-): { readonly fingerprint: string; readonly level?: ActionPressureLevel;
+): { readonly fingerprint: string; readonly locationId?: string;
+     readonly level?: ActionPressureLevel;
      readonly deadlineMs?: FictionalDurationMs; readonly sourceCount: number } {
   const scopes = new Set([actorId, ...(locationId ? [locationId] : [])]);
   const facts = world.facts.filter((fact) =>
@@ -156,6 +157,7 @@ export function scenePressureSources(
     return acc === undefined || level > acc ? level : acc;
   }, undefined);
   return {
+    ...(locationId ? { locationId } : {}),
     // Time isn't part of the fingerprint except where a deadline crosses a
     // meaningful pressure band. No spurious revision on every ordinary turn.
     fingerprint: JSON.stringify({
@@ -185,9 +187,16 @@ export function chooseScenePressure(
   proposal: ActionPressureLevel,
   previous?: ReturnType<typeof scenePressureSources>,
 ): { readonly level: ActionPressureLevel; readonly reason:
-    "authoritative-source" | "source-ended" | "scene-reused" | "initial-assessment" } {
+    "authoritative-source" | "source-ended" | "scene-transition" |
+    "scene-reused" | "initial-assessment" } {
   if (sources.level !== undefined) return { level: sources.level, reason: "authoritative-source" };
   if (pressure.status === "assessed") {
+    if (previous && previous.locationId !== sources.locationId &&
+        previous.locationId !== undefined && sources.locationId !== undefined) {
+      // Leaving a scene without an active local pressure source may relax
+      // urgency; persisted canonical hazards and clocks win above.
+      return { level: 3, reason: "scene-transition" };
+    }
     if (previous && previous.fingerprint !== sources.fingerprint &&
         previous.sourceCount > 0) {
       return { level: 3, reason: "source-ended" };
