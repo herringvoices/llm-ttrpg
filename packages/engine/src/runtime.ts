@@ -1940,11 +1940,28 @@ function openSession(
                   throw new Error("Mechanical prerequisite cannot consume action time");
                 }
                 const events = await applyOutcome(candidate, materialized);
+                // An action-linked world commit MUST append a durable receipt.
+                // A zero-duration prerequisite receipt records its own operation
+                // and does not cover any player-declared action mode.
+                const sequence = run.receipts.length + 1;
+                const prerequisiteReceipt: CommittedOperationReceipt = {
+                  stepId: `${run.id}.step.${sequence}`,
+                  sequence,
+                  toolId: plan.operationId,
+                  kind: "ordinary-operation",
+                  sourceComponent: dependencies.game.ruleset.identity,
+                  input: jsonValueSchema.parse(clone(plan.input)),
+                  result: jsonValueSchema.parse(clone(materialized.result)),
+                  advanceTimeByMs: fictionalDurationMs(0),
+                  mutations: materialized.proposedMutations.map((mutation) => clone(mutation)),
+                  events: clone(events),
+                  worldRevisionBefore: revision,
+                  worldRevisionAfter: revision + 1,
+                };
                 const updated = actionRunSchema.parse({
                   ...run, lastWorldRevision: revision + 1,
+                  receipts: [...run.receipts, prerequisiteReceipt],
                 });
-                // Exactly one prerequisite per atomic revision; its event and
-                // persisted action-run revision move together, before any roll.
                 await commitCandidate(candidate, events, updated);
                 run = updated;
                 foregroundRealizations += 1;
