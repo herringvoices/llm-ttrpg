@@ -96,7 +96,8 @@ export async function tryOrdinaryNpcConversation(
   if (world.actionPressure.status !== "assessed") return undefined;
 
   const playerDuration = spokenMs(request.declaration);
-  const limit = maximumResolutionHorizon(world.actionPressure.level);
+  const limit = Math.min(maximumResolutionHorizon(world.actionPressure.level),
+    input.availableWindowMs ?? Number.POSITIVE_INFINITY);
   if (playerDuration >= limit) return undefined;
   const start = input.session.planningBasis();
   const context = input.session.assembleContext({
@@ -289,6 +290,7 @@ export async function tryOrdinaryNpcConversation(
     committedActions: [],
     communicationEventIds: [],
     extractionEventIds: [],
+    elapsedMs: playerDuration + npcDuration,
     stopReason: reply.continueConversation ? "answer-expected" : "no-material-reaction",
     narrationTarget: { preference: request.narrationPreference, band: "small", minimumCharacters: 0, maximumCharacters: 900, hardLimit: false },
     narration,

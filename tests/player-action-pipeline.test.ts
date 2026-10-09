@@ -14,6 +14,7 @@ import {
 } from "@llm-ttrpg/engine";
 import { contractTestGameDefinition } from "./support/contract-game.js";
 import { referenceGameDefinition, referenceSceneSource } from "@llm-ttrpg/reference-game";
+import { ScriptedModelRuntime } from "@llm-ttrpg/harness";
 import { createMigratedSqlitePersistence } from "./support/sqlite.js";
 
 type QueuedAnswer = unknown | { failure: "invalid-output" | "timeout" };
@@ -817,6 +818,99 @@ describe("LM-04 reference ruleset mechanics without model-authored inputs", () =
     expect(replay.kind).toBe("resolved");
     expect((await session.eventHistory({ types: ["rules.mechanics-realized"] }))).toHaveLength(1);
     expect(session.snapshot().randomness).toEqual(snapshot);
+  });
+
+  it("keeps a five-second pressure-9 attempt distinct from a stated whole-morning search without an LLM stop vote", async () => {
+    let id = 0;
+    const runtime = createGameRuntime({
+      persistence: createInMemoryPersistence(),
+      wallClock: { now: () => "2045-01-01T00:00:00Z" },
+      idGenerator: { next: (kind) => `${kind}.lm11-${++id}` },
+      worldSeedSource: { nextSeed: () => 418 },
+      game: loadGameDefinition(referenceGameDefinition),
+      context: { sceneSource: referenceSceneSource },
+    });
+    const session = await runtime.createWorld("High pressure search");
+    await session.applyActionPressureAssessment({ level: 9 });
+    const basis = session.planningBasis();
+    const declaration = "I look around all morning for Jonny Blonny.";
+    const model = new ScriptedModelRuntime([
+      { id: "choose", match: { schemaId: "player-action.execution-decision.v1" },
+        result: { kind: "structured", value: {
+          kind: "invoke-tool", toolId: "rules.actions.resolve-action",
+        } } },
+      { id: "narration", match: { operation: "player-action.narration.v1" },
+        result: { kind: "text", text: "You search your immediate surroundings for five seconds, but cannot complete an all-morning search." } },
+    ]);
+    const result = await session.performPlayerAction({
+      actionId: "action.lm11.bounded-search",
+      actorId: "campaign.entity.amelia",
+      declaration, budget: { maxUnits: 50_000 },
+    }, { modelRuntime: model, registeredOnly: true, preinterpreted: {
+      declaration, goal: "Look around for Jonny Blonny",
+      targetIds: [], modes: ["observation"], statedMeans: ["look around"],
+      pressureLevel: 1, requestedHorizonMs: fictionalDurationMs(4 * 60 * 60_000),
+      ...basis,
+    } });
+    if (result.kind !== "resolved") {
+      throw new Error(`High pressure search failed: ${JSON.stringify(result).slice(0, 1400)}`);
+    }
+    expect(result.run.interpretedIntent.requestedHorizonMs).toBe(14_400_000);
+    expect(result.run.executableIntent.pressureLevel).toBe(9);
+    expect(result.run.executableIntent.authorizedHorizonMs).toBe(5_000);
+    expect(result.run.executableIntent.wasNarrowed).toBe(true);
+    expect(result.run.elapsedMs).toBeLessThanOrEqual(5_000);
+    expect(result.run.stopReason).toBe("budget-exhausted");
+    // One operation-selection decision is permitted when several registered
+    // operations fit. There must be no second *post-commit* stop-only vote.
+    expect(model.invocations.filter((call) =>
+      call.schemaId === "player-action.execution-decision.v1")).toHaveLength(1);
+    expect(result.trace.entries.filter((entry) =>
+      entry.phase === "stop" &&
+      typeof entry.detail === "object" && entry.detail !== null &&
+      "source" in entry.detail &&
+      entry.detail.source === "validated-committed-effect"
+    )).toHaveLength(1);
+    expect(result.narration).not.toMatch(/searched all morning/i);
+    const originalHistory = await session.eventHistory();
+    const replay = await session.performPlayerAction({
+      actionId: "action.lm11.bounded-search", actorId: "campaign.entity.amelia",
+      declaration, budget: { maxUnits: 50_000 },
+    }, { modelRuntime: new ScriptedModelRuntime([]), registeredOnly: true });
+    expect(replay.kind).toBe("resolved");
+    expect(await session.eventHistory()).toEqual(originalHistory);
+  });
+
+  it("does not silently extend the authorized horizon for a later compound segment", async () => {
+    const { runtime } = makeRuntime();
+    const session = await runtime.createWorld("Shared budget clamp");
+    await session.applyActionPressureAssessment({ level: 9 });
+    const basis = session.planningBasis();
+    const declaration = "I inspect the nearby area for an hour.";
+    const model = new QueueModelRuntime([
+      { kind: "invoke-tool", toolId: "test.actions.resolve-effort",
+        arguments: { base: 8, modifier: 2, difficulty: 7, durationMs: 1_000 } },
+      { kind: "stop", reason: "goal-achieved" },
+      "You inspect only a nearby area.",
+    ]);
+    const outcome = await session.performPlayerAction({
+      actionId: "action.lm11.partial", actorId: request.actorId,
+      declaration, budget: request.budget,
+    }, { modelRuntime: model, maxAuthorizedHorizonMs: 2_000,
+      preinterpreted: {
+        declaration, goal: "Inspect nearby area",
+        targetIds: [], modes: ["observation"], statedMeans: [],
+        pressureLevel: 1, requestedHorizonMs: fictionalDurationMs(3_600_000),
+        ...basis,
+      },
+    });
+    if (outcome.kind !== "resolved") {
+      throw new Error(`Partial segment failed: ${JSON.stringify(outcome).slice(0, 1200)}`);
+    }
+    expect(outcome.run.interpretedIntent.requestedHorizonMs).toBe(3_600_000);
+    expect(outcome.run.executableIntent.authorizedHorizonMs).toBe(2_000);
+    expect(outcome.run.elapsedMs).toBeLessThanOrEqual(2_000);
+    expect(outcome.run.executableIntent.wasNarrowed).toBe(true);
   });
 
 });

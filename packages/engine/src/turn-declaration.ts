@@ -152,12 +152,20 @@ export async function classifyTurnDeclaration(input: {
     perspective: { kind: "actor", id: input.actorId },
     context: input.context,
   });
+  const scenePressure = input.context.situation.actionPressure;
+  const knownPressure = scenePressure && typeof scenePressure === "object" &&
+    !Array.isArray(scenePressure) && scenePressure.status === "assessed" &&
+    typeof scenePressure.level === "number"
+    ? actionPressureLevelSchema.safeParse(scenePressure.level).data
+    : undefined;
   const instructions = [
     "Classify the whole player declaration once into ordered action or communication segments.",
     "Keep movement/action before speech if the declaration says first/then/before. Do not add steps or invent results.",
     "Use only authorized scene.### references for targets or recipients; do not use canonical IDs.",
     "Keep stated action means and semantic modes exactly relevant. Modes: movement, interaction, manipulation, observation, communication, recovery, power-use, attack, other.",
-    "Assess pressure 1 (loose) through 9 (immediate), and requested fictional horizon for each action. The engine will bound the horizon.",
+    knownPressure !== undefined
+      ? `The current scene already has Action Pressure ${knownPressure}. Return this exact pressureLevel for every segment without re-assessing it; only estimate each requested duration.`
+      : "Only for this unassessed opening scene, provide one bounded initial pressure estimate from 1 (loose) through 9 (immediate), and the requested duration. The engine enforces hazards and deadlines.",
     "For multiple segments, copy the exact original substring to each text. For a single segment, text may be omitted.",
     "Preserve explicitly quoted player speech exactly in utterance; never paraphrase it.",
     "Only request a decision for genuinely material ambiguity; infer minor implementation details from the visible scene.",
@@ -210,7 +218,7 @@ export async function classifyTurnDeclaration(input: {
             kind: "action", text: found.text, goal: segment.goal,
             modes: segment.modes, statedMeans: segment.statedMeans,
             requestedHorizonMs: segment.requestedHorizonMs,
-            pressureLevel: segment.pressureLevel,
+            pressureLevel: knownPressure ?? segment.pressureLevel,
             targetIds: segment.targetRefs.map((ref) =>
               resolveBriefReference(brief, ref, {
                 worldRevision: input.worldRevision, eventSequence: input.eventSequence,

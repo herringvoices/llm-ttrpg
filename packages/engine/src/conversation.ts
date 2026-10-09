@@ -53,6 +53,8 @@ export interface PerformConversationTurnInput {
   readonly workingState?: ConversationWorkingState;
   /** LM-05: opt into a short NPC-perspective response before the exceptional path. */
   readonly ordinaryFastPath?: boolean;
+  /** Remaining fictional time from the enclosing ordered player turn. */
+  readonly availableWindowMs?: number;
   readonly modelOptions?: ModelInvocationOptions;
   readonly onProgress?: (
     phase: "understanding" | "responding" | "updating" | "presenting",
@@ -75,6 +77,8 @@ export interface ConversationTurnResult {
   readonly communicationEventIds: readonly string[];
   readonly extractionEventIds: readonly string[];
   readonly stopReason: ConversationStopReason;
+  /** Actor-visible speech time consumed by this exchange, not an extra world-clock tick. */
+  readonly elapsedMs?: number;
   readonly narrationTarget: NarrationTarget;
   readonly narration?: string;
   readonly narrationError?: string;
@@ -497,6 +501,14 @@ export async function performConversationTurn(
     }
   };
   const request = conversationTurnRequestSchema.parse(input.request);
+  // NPC speech consumes the same authoritative scene pressure as actions.
+  // A routine utterance cannot lower an established danger level.
+  if (input.session.snapshot().actionPressure.status === "assessed") {
+    await input.session.ensureScenePressure({
+      actorId: request.playerActorId,
+      ...(request.locationId ? { locationId: request.locationId } : {}),
+    });
+  }
   if (input.ordinaryFastPath) {
     const ordinary = await tryOrdinaryNpcConversation(input);
     if (ordinary) return ordinary;
@@ -548,12 +560,13 @@ export async function performConversationTurn(
   );
   const act = validateInterpretation(request, interpretation);
 
-  if (
-    worldAtStart.actionPressure.status === "unassessed" ||
-    worldAtStart.actionPressure.level !== interpretation.pressureLevel
-  ) {
-    await input.session.applyActionPressureAssessment({
-      level: interpretation.pressureLevel,
+  if (worldAtStart.actionPressure.status === "unassessed") {
+    // Only the genuinely unknown first scene accepts a bounded semantic
+    // estimate. All subsequent speech inherits the authoritative basis.
+    await input.session.ensureScenePressure({
+      actorId: request.playerActorId,
+      ...(request.locationId ? { locationId: request.locationId } : {}),
+      proposedLevel: interpretation.pressureLevel,
     });
   }
   const speechIntent = boundInterpretedIntent({
@@ -562,7 +575,9 @@ export async function performConversationTurn(
     targetIds: act.recipientIds,
     requestedHorizonMs: fictionalDurationMs(act.durationMs),
   }, input.session.snapshot().actionPressure);
-  if (act.durationMs > speechIntent.authorizedHorizonMs) {
+  const actualSpeechLimit = Math.min(speechIntent.authorizedHorizonMs,
+    input.availableWindowMs ?? speechIntent.authorizedHorizonMs);
+  if (act.durationMs > actualSpeechLimit) {
     return {
       act,
       communicationCommitted: false,
@@ -734,6 +749,27 @@ export async function performConversationTurn(
       );
     }
     validateNpcKnowledge(decision, world);
+    const elapsedCommittedSpeech = act.durationMs + decisions.reduce(
+      (total, prior) => total + prior.estimatedSpeechDurationMs, 0,
+    );
+    const proposedNpcCost = decision.estimatedSpeechDurationMs +
+      (decision.proposedAction?.estimatedDurationMs ?? 0);
+    if (input.availableWindowMs !== undefined &&
+        elapsedCommittedSpeech + proposedNpcCost > input.availableWindowMs) {
+      // Player speech is already canonical; refuse the *next* NPC speech or
+      // action before committing it, never allow a later utterance to consume
+      // an exhausted scene window.
+      return {
+        act, communicationCommitted: true, decisions, committedActions,
+        communicationEventIds, extractionEventIds: [],
+        stopReason: "pressure-boundary", elapsedMs: elapsedCommittedSpeech,
+        narrationTarget: selectNarrationTarget(
+          request.narrationPreference, request.beatComplexity,
+        ),
+        narration: "You have spoken, but the scene's remaining time does not permit a reply.",
+        workingState: working,
+      };
+    }
     if (decision.intendedSpeechSemantics) {
       const speechIntent = boundInterpretedIntent({
         actorId,
@@ -909,6 +945,14 @@ export async function performConversationTurn(
     (total, decision) => total + decision.estimatedSpeechDurationMs,
     0,
   );
+  if (conversationElapsedMs > (input.availableWindowMs ?? Number.POSITIVE_INFINITY)) {
+    // Any already-authorized material commits cannot be rewound. Report
+    // exhaustion without inventing completion or additional player actions.
+    return { act, communicationCommitted: true, decisions, committedActions,
+      communicationEventIds, extractionEventIds, stopReason: "pressure-boundary",
+      elapsedMs: conversationElapsedMs, narrationTarget, workingState: working,
+      narrationError: "The scene pressure window ended during this exchange." };
+  }
   const pressure = input.session.snapshot().actionPressure;
   if (pressure.status !== "assessed") {
     throw new ConversationValidationError("Conversation narration requires assessed Action Pressure");
@@ -988,6 +1032,7 @@ export async function performConversationTurn(
     communicationEventIds,
     extractionEventIds,
     stopReason,
+    elapsedMs: conversationElapsedMs,
     narrationTarget,
     ...(narration ? { narration } : {}),
     ...(narrationError ? { narrationError } : {}),

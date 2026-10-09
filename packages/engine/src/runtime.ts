@@ -2,6 +2,9 @@ import { z } from "zod";
 import {
   actionPressureAssessmentSchema,
   boundInterpretedIntent,
+  chooseScenePressure,
+  declaredDurationMs,
+  scenePressureSources,
   intentStopReasonSchema,
   type ActionPressureAssessment,
   type ActionPressureState,
@@ -156,6 +159,8 @@ export interface ExecuteOperationOptions {
 export interface PerformPlayerActionOptions {
   readonly modelRuntime: ModelRuntime;
   readonly maxModelTurns?: number;
+  /** Remaining shared time for ordered segments in the same player turn. */
+  readonly maxAuthorizedHorizonMs?: number;
   readonly toolPolicy?: ToolAvailabilityPolicy;
   /** LM-03: validated interpretation from the shared turn classifier. */
   readonly preinterpreted?: PreinterpretedPlayerAction;
@@ -181,6 +186,13 @@ export interface GameSession {
   applyActionPressureAssessment(
     assessment: ActionPressureAssessment,
   ): Promise<ActionPressureState>;
+  /** Reuse a pressure scene, or react once to authoritative scene sources. */
+  ensureScenePressure(input: {
+    readonly actorId: string;
+    readonly locationId?: string;
+    readonly proposedLevel?: import("./action-pressure.js").ActionPressureLevel;
+  }): Promise<{ level: import("./action-pressure.js").ActionPressureLevel;
+    reason: string; sourceCount: number; changed: boolean }>;
   advanceTime(durationMs: number): Promise<WorldState>;
   setSimulationCursor(
     scopeId: string,
@@ -425,6 +437,18 @@ function openSession(
   let state = clone(persisted.state);
   let revision = persisted.revision;
   let eventSequence = persisted.eventSequence;
+  // This fingerprint is derived solely from authoritative scene sources.
+  // Older saves have no basis: keep their assessed pressure until a real source
+  // demands otherwise. Persisted pressure levels remain schema-compatible.
+  let lastPressureBasis: ReturnType<typeof scenePressureSources> | undefined;
+  const actorLocation = (actorId: string, locationId?: string): string | undefined => {
+    if (locationId) return locationId;
+    const fact = [...state.facts].reverse().find((item) =>
+      item.subjectId === actorId &&
+      item.predicate === "actor.current-location" &&
+      typeof item.value === "string");
+    return typeof fact?.value === "string" ? fact.value : undefined;
+  };
 
   async function commitCandidate(
     candidate: WorldState,
@@ -629,6 +653,8 @@ function openSession(
     },
     async applyActionPressureAssessment(assessment) {
       const parsed = actionPressureAssessmentSchema.parse(assessment);
+      if (state.actionPressure.status === "assessed" &&
+          state.actionPressure.level === parsed.level) return clone(state.actionPressure);
       const candidate = clone(state);
       candidate.actionPressure = {
         status: "assessed",
@@ -636,6 +662,22 @@ function openSession(
       };
       await commitCandidate(candidate);
       return clone(state.actionPressure);
+    },
+    async ensureScenePressure(input) {
+      const sources = scenePressureSources(state, input.actorId,
+        actorLocation(input.actorId, input.locationId));
+      const selected = chooseScenePressure(
+        state.actionPressure, sources,
+        input.proposedLevel ?? (state.actionPressure.status === "assessed"
+          ? state.actionPressure.level : 3),
+        lastPressureBasis,
+      );
+      lastPressureBasis = sources;
+      const changed = state.actionPressure.status !== "assessed" ||
+        state.actionPressure.level !== selected.level;
+      if (changed) await this.applyActionPressureAssessment({ level: selected.level });
+      return { level: selected.level, reason: selected.reason,
+        sourceCount: sources.sourceCount, changed };
     },
     async advanceTime(durationMs) {
       const duration = fictionalDurationMs(durationMs);
@@ -1257,7 +1299,9 @@ function openSession(
           {
             instructions: [
               "Interpret the player's declaration once. Do not plan an operation chain.",
-              "Use only context-local scene references for targets. Assess current action pressure from 1 (low) to 9 (immediate).",
+              state.actionPressure.status === "assessed"
+                ? `Use only context-local scene references for targets. Reuse assessed Action Pressure level ${state.actionPressure.level} without inventing a new value.`
+                : "Use only context-local scene references for targets. Give one conservative initial pressure estimate from 1 (low) to 9 (immediate); the engine checks authoritative hazards.",
               "The focal actor reference identifies who is acting, not the target. Never return it as a target unless the declaration explicitly targets the actor themself.",
               "Include every applicable action mode. A declaration that moves to a place and then performs a task normally has both movement and task modes.",
               "Treat omitted implementation details as intentionally delegated to the game. Infer the smallest reasonable detail from the declaration and current fiction; do not ask the player to specify a room, object instance, route, tool, order, or method they did not care to specify.",
@@ -1292,7 +1336,9 @@ function openSession(
                 "If a minor implementation detail is unstated, choose the smallest reasonable first step from the authorized scene context.",
                 "Assume omitted detail was intentionally delegated. Never ask the player to choose a room, object instance, route, tool, order, or method unless proceeding would materially replace their declared intent.",
                 "Never ask the player to author an external outcome, sensory result, NPC response, creature reaction, or environmental change. Interpret the declared attempt; the rules and simulation determine the response.",
-                "Use only context-local scene references for targets and assess current action pressure from 1 (low) to 9 (immediate).",
+                state.actionPressure.status === "assessed"
+                  ? `Use only context-local scene references and reuse current Action Pressure level ${state.actionPressure.level}; do not reassess it for this turn.`
+                  : "Use context-local scene references and give a conservative initial pressure estimate; the engine validates authoritative threats.",
                 "The focal actor reference identifies who is acting, not the target. Never return it as a target unless the declaration explicitly targets the actor themself.",
                 "Include every applicable action mode. A declaration that moves to a place and then performs a task normally has both movement and task modes.",
               ],
@@ -1370,18 +1416,34 @@ function openSession(
             normalizedModes,
           });
         }
+        const explicitDuration = declaredDurationMs(request.declaration);
         const interpretedIntent = {
           actorId: request.actorId,
           goal: interpretedDecision.goal,
           targetIds,
-          requestedHorizonMs: fictionalDurationMs(interpretedDecision.requestedHorizonMs),
+          requestedHorizonMs: explicitDuration ??
+            fictionalDurationMs(interpretedDecision.requestedHorizonMs),
         };
-        const candidate = clone(state);
-        candidate.actionPressure = { status: "assessed", level: interpretedDecision.pressureLevel };
-        const executableIntent = boundInterpretedIntent(
-          interpretedIntent,
-          candidate.actionPressure,
+        const sources = scenePressureSources(
+          state, request.actorId, actorLocation(request.actorId, request.locationId),
         );
+        const pressureChoice = chooseScenePressure(
+          state.actionPressure, sources, interpretedDecision.pressureLevel, lastPressureBasis,
+        );
+        lastPressureBasis = sources;
+        const candidate = clone(state);
+        candidate.actionPressure = { status: "assessed", level: pressureChoice.level };
+        const boundedIntent = boundInterpretedIntent(interpretedIntent, candidate.actionPressure);
+        const sharedWindow = options.maxAuthorizedHorizonMs === undefined
+          ? boundedIntent.authorizedHorizonMs
+          : fictionalDurationMs(options.maxAuthorizedHorizonMs);
+        const capped = fictionalDurationMs(Math.min(
+          boundedIntent.authorizedHorizonMs, sharedWindow,
+          sources.deadlineMs ?? boundedIntent.authorizedHorizonMs,
+        ));
+        const executableIntent = capped === boundedIntent.authorizedHorizonMs
+          ? boundedIntent : { ...boundedIntent,
+            authorizedHorizonMs: capped, wasNarrowed: true };
         const newRun = actionRunSchema.parse({
           schemaVersion: 1,
           id: request.actionId,
@@ -1402,12 +1464,23 @@ function openSession(
         try {
           await commitCandidate(candidate, [], newRun);
           run = newRun;
-          record("pressure", { level: interpretedDecision.pressureLevel }, { worldRevision: revision });
+          record("pressure", {
+            level: pressureChoice.level,
+            reason: pressureChoice.reason,
+            sceneSourceCount: sources.sourceCount,
+            previousLevel: state.actionPressure.status === "assessed"
+              ? state.actionPressure.level : "unassessed",
+            modelAssessmentCalls: pressureChoice.reason === "initial-assessment"
+              ? decision.attempts : 0,
+            ...(sources.deadlineMs !== undefined ? { deadlineMs: sources.deadlineMs } : {}),
+          }, { worldRevision: revision });
           record("intent", {
             goal: executableIntent.goal,
             requestedHorizonMs: executableIntent.requestedHorizonMs,
             authorizedHorizonMs: executableIntent.authorizedHorizonMs,
             wasNarrowed: executableIntent.wasNarrowed,
+            ...(explicitDuration !== undefined ? { explicitDurationMs: explicitDuration } : {}),
+            ...(sources.deadlineMs !== undefined ? { deadlineMs: sources.deadlineMs } : {}),
           }, { worldRevision: revision });
         } catch (error) {
           return fail("persistence", error instanceof Error ? error.message : "Could not persist action run");
@@ -1534,6 +1607,7 @@ function openSession(
               "Narrate only what the focal actor can perceive.",
               "Do not reveal canonical IDs, hidden state, rejected proposals, private events, mechanics not exposed by the presentation, or GM reasoning.",
               "Do not invent additional world changes. The supplied committed outcomes are authoritative.",
+            "A success of a bounded attempt is not permission to claim the entire originally requested activity completed when Action Pressure clipped the window. State only the time and progress in receipts.",
               "Do not invent player thoughts, feelings, dialogue, decisions, or voluntary actions beyond the submitted declaration.",
               "Do not invent specific tools, equipment, actionable objects, routes, hazards, witnesses, resources, or clues. Harmless transient color must not create a future affordance.",
               "Use second person for the focal actor. If the committed outcomes are sparse, be concise instead of padding with invented attempts, complications, or details.",
@@ -1614,6 +1688,35 @@ function openSession(
           record("stop", { reason: "budget-exhausted" }, { worldRevision: revision });
           return narrate(run);
         }
+        if (run.receipts.length > 0) {
+          const nextSources = scenePressureSources(state, run.actorId,
+            actorLocation(run.actorId, request.locationId));
+          if (lastPressureBasis &&
+              nextSources.fingerprint !== lastPressureBasis.fingerprint) {
+            const updatedPressure = chooseScenePressure(
+              state.actionPressure, nextSources,
+              run.executableIntent.pressureLevel, lastPressureBasis,
+            );
+            const remainingMs = run.executableIntent.authorizedHorizonMs - run.elapsedMs;
+            if (updatedPressure.level !== run.executableIntent.pressureLevel ||
+                (nextSources.deadlineMs !== undefined &&
+                  nextSources.deadlineMs < remainingMs)) {
+              run = actionRunSchema.parse({
+                ...run, status: "stopped",
+                stopReason: "pressure-reassessment-required",
+              });
+              await dependencies.persistence.actionRuns.update(run);
+              record("stop", {
+                reason: "pressure-reassessment-required",
+                source: "material-scene-transition",
+                newLevel: updatedPressure.level,
+                deadlineMs: nextSources.deadlineMs ?? null,
+                committedElapsedMs: run.elapsedMs,
+              }, { worldRevision: revision });
+              return narrate(run);
+            }
+          }
+        }
         const contextRequest = {
           ...actorModelRequest,
           executableIntent: run.executableIntent,
@@ -1692,6 +1795,48 @@ function openSession(
         const modelCandidates = candidates.map(({ outputSchema: _outputSchema, ...candidate }) =>
           candidate
         );
+        // Only a *committed effect* can complete the player's attempt. The
+        // presence of a tool mode is NOT proof of success, and LM-10's
+        // zero-duration prerequisite receipts are not player action outcomes.
+        const actionReceipts = run.receipts.filter((receipt) =>
+          !dependencies.game.operationRegistry.get(receipt.toolId)
+            .metadata.category.tags.includes("realization")
+        );
+        const lastEffect = actionReceipts.at(-1);
+        const effect = lastEffect?.result;
+        const effectData = effect && typeof effect === "object" && !Array.isArray(effect)
+          ? effect as Record<string, JsonValue> : undefined;
+        const confirmedEffect = effectData && (
+          typeof effectData.success === "boolean" ||
+          typeof effectData.actionSummary === "string" ||
+          typeof effectData.toLocationId === "string" ||
+          typeof effectData.arrivedAt === "string"
+        );
+        const orderedMeans = /\\b(?:then|after that|next|before)\\b/i.test(run.declaration)
+          ? Math.max(2, run.semanticAction?.statedMeans.length ?? 0) : 1;
+        const completedModes = run.semanticAction?.modes.every((mode) =>
+          mode === "other" ? Boolean(lastEffect && confirmedEffect)
+            : !supportedModes.has(mode) || coveredModes.has(mode)) ?? false;
+        const deterministicCompletion = options.registeredOnly && confirmedEffect &&
+          completedModes && actionReceipts.length >= orderedMeans;
+        if (deterministicCompletion) {
+          const truncated = run.executableIntent.wasNarrowed &&
+            run.elapsedMs < run.executableIntent.requestedHorizonMs;
+          const reason = truncated ? "budget-exhausted"
+            : effectData!.success === false ? "material-circumstance-change"
+            : "goal-achieved";
+          run = actionRunSchema.parse({ ...run, status: "stopped", stopReason: reason });
+          await dependencies.persistence.actionRuns.update(run);
+          record("stop", {
+            reason, source: "validated-committed-effect",
+            committedSteps: actionReceipts.length,
+            coveredModes: [...coveredModes],
+            elapsedMs: run.elapsedMs,
+            authorizedHorizonMs: run.executableIntent.authorizedHorizonMs,
+            requestedHorizonMs: run.executableIntent.requestedHorizonMs,
+          }, { worldRevision: revision });
+          return narrate(run);
+        }
         const requireStopDecision = run.receipts.length > 0 &&
           ((hasTrackableDeclaredModes && pendingDeclaredModes.length === 0) ||
             (options.registeredOnly && !hasTrackableDeclaredModes));
