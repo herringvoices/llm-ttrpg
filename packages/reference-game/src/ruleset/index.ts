@@ -1,5 +1,6 @@
 import type { Ruleset } from "@llm-ttrpg/engine";
 import { prepareReferenceActionAttempt } from "./attempt-preparer.js";
+import { prepareReferenceRealization } from "./realization-preparer.js";
 import {
   actionResolvedEventType,
   resolveActionOperation,
@@ -62,6 +63,7 @@ import {
 
 export * from "./action-operation.js";
 export * from "./attempt-preparer.js";
+export * from "./realization-preparer.js";
 export * from "./awakening-operation.js";
 export * from "./opening-evidence-operation.js";
 export * from "./conversation-operations.js";
@@ -78,6 +80,7 @@ export * from "./traversal-operation.js";
 
 export const referenceRuleset: Ruleset = {
   prepareActionAttempt: prepareReferenceActionAttempt,
+  prepareRealization: prepareReferenceRealization,
   identity: { id: "reference-rules", version: "0.3.0" },
   description:
     "Reusable, inspectable Performance-versus-Resistance rules for physical, mental, social, environmental, competitive, and high-pressure play.",
