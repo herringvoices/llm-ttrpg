@@ -16,6 +16,8 @@ export const presentationSceneSnapshotSchema = z.object({
   sceneBrief: z.string().min(1).max(16_000),
   worldRevision: z.number().int().nonnegative(),
   eventSequence: z.number().int().nonnegative(),
+  /** Frozen observable source sentences to prevent later-scene drift. */
+  observableOutcomes: z.array(z.string().max(460)).max(16).optional(),
 }).strict();
 export type PresentationSceneSnapshot = z.infer<typeof presentationSceneSnapshotSchema>;
 
