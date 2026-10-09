@@ -497,6 +497,14 @@ export async function performConversationTurn(
     }
   };
   const request = conversationTurnRequestSchema.parse(input.request);
+  // NPC speech consumes the same authoritative scene pressure as actions.
+  // A routine utterance cannot lower an established danger level.
+  if (input.session.snapshot().actionPressure.status === "assessed") {
+    await input.session.ensureScenePressure({
+      actorId: request.playerActorId,
+      ...(request.locationId ? { locationId: request.locationId } : {}),
+    });
+  }
   if (input.ordinaryFastPath) {
     const ordinary = await tryOrdinaryNpcConversation(input);
     if (ordinary) return ordinary;
@@ -548,12 +556,13 @@ export async function performConversationTurn(
   );
   const act = validateInterpretation(request, interpretation);
 
-  if (
-    worldAtStart.actionPressure.status === "unassessed" ||
-    worldAtStart.actionPressure.level !== interpretation.pressureLevel
-  ) {
-    await input.session.applyActionPressureAssessment({
-      level: interpretation.pressureLevel,
+  if (worldAtStart.actionPressure.status === "unassessed") {
+    // Only the genuinely unknown first scene accepts a bounded semantic
+    // estimate. All subsequent speech inherits the authoritative basis.
+    await input.session.ensureScenePressure({
+      actorId: request.playerActorId,
+      ...(request.locationId ? { locationId: request.locationId } : {}),
+      proposedLevel: interpretation.pressureLevel,
     });
   }
   const speechIntent = boundInterpretedIntent({
