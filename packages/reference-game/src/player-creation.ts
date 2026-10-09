@@ -2,6 +2,7 @@ import {
   generationIssueSchema,
   mechanicalConstraintSchema,
   stableIdSchema,
+  presentationSceneSnapshotSchema,
   type GenerationIssue,
   type MechanicalConstraint,
 } from "@llm-ttrpg/engine";
@@ -460,6 +461,8 @@ export const openingProgressionStateSchema = z.object({
   firstPowerProposal: firstPowerProposalSchema.optional(),
   manifestationEvidenceEventId: stableIdSchema.optional(),
   manifestationEventId: stableIdSchema.optional(),
+  /** Immutable post-commit player view for a presentation-only restart. */
+  manifestationPresentationScene: presentationSceneSnapshotSchema.optional(),
   manifestationNarrationPending: z.boolean(),
 }).strict().superRefine((state, context) => {
   if (state.playerTurnsSinceStart > state.manifestationDeadlineTurns) {
