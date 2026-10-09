@@ -44,6 +44,7 @@ import {
 } from "./resolution.js";
 import { prepareModelBrief, redactModelBriefText, resolveBriefReference } from "./model-brief.js";
 import { semanticActionAttemptSchema, validatePreparedActionAttempt } from "./action-attempt.js";
+import { realizationRequestSchema, type RealizationRequest, type RealizationResult } from "./realization.js";
 import type { JsonValue } from "./json.js";
 import { jsonValueSchema } from "./json.js";
 import {
@@ -194,6 +195,8 @@ export interface GameSession {
     request: ContextAssemblyRequest,
     options?: AssembleSessionContextOptions,
   ): ContextPackage;
+  /** Commit at most one validated, package-owned foreground realization. */
+  realize(request: RealizationRequest): Promise<RealizationResult>;
   executeOperation<TResult = unknown>(
     operationId: string,
     input: unknown,
@@ -1006,6 +1009,38 @@ function openSession(
         ...(options.toolPolicy ? { toolPolicy: options.toolPolicy } : {}),
       });
     },
+    async realize(rawRequest) {
+      const request = realizationRequestSchema.parse(rawRequest);
+      if (request.perspective.kind === "actor" &&
+          request.perspective.id !== request.actorId) {
+        return { status: "unavailable", sourceId: request.sourceId,
+          reason: "Realization must use the validated acting perspective." };
+      }
+      const planner = dependencies.game.ruleset.prepareRealization;
+      if (!planner) return { status: "unavailable", sourceId: request.sourceId,
+        reason: "This game package has no registered realization policy." };
+      const plan = planner({ request, world: immutableOperationWorldView(state) });
+      if (plan.status === "already-sufficient") {
+        return { status: "already-sufficient", sourceId: request.sourceId };
+      }
+      if (plan.status === "unavailable") {
+        return { status: "unavailable", sourceId: request.sourceId, reason: plan.reason };
+      }
+      // No model can write state. The registered operation checks preconditions
+      // again against the candidate, then atomic optimistic commit enforces
+      // the world revision. Retry must re-read the resulting canonical state.
+      const candidate = clone(state);
+      const outcome = executeRulesOperation(
+        dependencies.game.operationRegistry, plan.operationId,
+        { world: candidate }, plan.input,
+      );
+      if (outcome.advanceTimeByMs !== 0) throw new Error(
+        "Foreground materialization must not advance world time or reroll an action");
+      const events = await applyOutcome(candidate, outcome);
+      await commitCandidate(candidate, events);
+      return { status: "realized", sourceId: request.sourceId,
+        operationId: plan.operationId, worldRevision: revision };
+    },
     async executeOperation<TResult>(
       operationId: string,
       input: unknown,
@@ -1556,6 +1591,7 @@ function openSession(
       );
       reportProgress("resolving");
       let rejectedPrematureStops = 0;
+      let foregroundRealizations = 0;
       for (let turn = 1; turn <= maxTurns; turn += 1) {
         const persistedWorld = await currentPersisted();
         if (!persistedWorld || persistedWorld.revision !== revision || run.lastWorldRevision !== revision) {
@@ -1859,7 +1895,7 @@ function openSession(
               0, run.executableIntent.authorizedHorizonMs - run.elapsedMs,
             ),
           });
-          const prepared = validatePreparedActionAttempt(
+          let prepared = validatePreparedActionAttempt(
             dependencies.game.ruleset.prepareActionAttempt({
               operationId: decision.toolId,
               attempt,
@@ -1868,8 +1904,74 @@ function openSession(
             decision.toolId,
           );
           if (prepared.status === "missing-required-data") {
-            record("rejection", { reason: "mechanics-not-realized", required: [...prepared.required] });
-            return fail("proposal", prepared.reason, run);
+            const planner = dependencies.game.ruleset.prepareRealization;
+            for (const requirement of prepared.required) {
+              if (!planner || foregroundRealizations >= 2) break;
+              const matched = /^entity:([a-z0-9.-]+):mechanics$/.exec(requirement);
+              if (!matched) break;
+              const sourceId = matched[1]!;
+              // LM-03 already checked target references; no free-text identity
+              // can enter this preflight. Never turn model input into source IDs.
+              if (sourceId !== run.actorId && !attempt.targetIds.includes(sourceId)) break;
+              const realizationRequest = realizationRequestSchema.parse({
+                kind: "mechanics",
+                sourceId,
+                actorId: run.actorId,
+                fictionalTime: state.fictionalTime,
+                trigger: { kind: "validated-action", id: run.id },
+                perspective: { kind: "actor", id: run.actorId },
+                required: [requirement],
+                targetLevel: "complete",
+                idempotencyKey: `realization.${run.id}.${sourceId}`,
+                budget: { maxModelCalls: 0, maxTargets: 1 },
+              });
+              const plan = planner({
+                request: realizationRequest,
+                world: immutableOperationWorldView(state),
+              });
+              if (plan.status !== "operation") break;
+              try {
+                const candidate = clone(state);
+                const materialized = executeRulesOperation(
+                  dependencies.game.operationRegistry, plan.operationId,
+                  { world: candidate }, plan.input,
+                );
+                if (materialized.advanceTimeByMs !== 0) {
+                  throw new Error("Mechanical prerequisite cannot consume action time");
+                }
+                const events = await applyOutcome(candidate, materialized);
+                const updated = actionRunSchema.parse({
+                  ...run, lastWorldRevision: revision + 1,
+                });
+                // Exactly one prerequisite per atomic revision; its event and
+                // persisted action-run revision move together, before any roll.
+                await commitCandidate(candidate, events, updated);
+                run = updated;
+                foregroundRealizations += 1;
+                record("commit", {
+                  kind: "foreground-realization",
+                  sourceId, operationId: plan.operationId,
+                  modelCalls: 0,
+                }, { worldRevision: revision });
+              } catch (error) {
+                record("rejection", {
+                  reason: "realization-commit-failed",
+                  message: error instanceof Error ? error.message : String(error),
+                });
+                return fail("persistence", "Required mechanics could not be committed safely", run);
+              }
+              prepared = validatePreparedActionAttempt(
+                dependencies.game.ruleset.prepareActionAttempt({
+                  operationId: decision.toolId, attempt,
+                  world: immutableOperationWorldView(state),
+                }), decision.toolId,
+              );
+              if (prepared.status !== "missing-required-data") break;
+            }
+            if (prepared.status === "missing-required-data") {
+              record("rejection", { reason: "mechanics-not-realized", required: [...prepared.required] });
+              return fail("proposal", prepared.reason, run);
+            }
           }
           if (prepared.status === "cannot-attempt") {
             record("rejection", { reason: "ruleset-cannot-attempt" });
