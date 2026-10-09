@@ -667,7 +667,7 @@ function compactStrings(values: readonly string[], maximum: number): string[] {
     .slice(0, maximum);
 }
 
-function expandPlayerContextProposal(
+export function expandPlayerContextProposal(
   rawProposal: unknown,
   context: Readonly<StartingRegionWorkingState>,
 ): PlayerContextSeed {
@@ -846,7 +846,7 @@ function expandPlayerContextProposal(
   });
 }
 
-function expandCompactInstitutionProposals(
+export function expandCompactInstitutionProposals(
   rawProposal: unknown,
   context: Readonly<StartingRegionWorkingState>,
 ): InstitutionSeed[] {
@@ -902,7 +902,7 @@ function expandCompactInstitutionProposals(
   });
 }
 
-function expandNpcProposals(
+export function expandNpcProposals(
   rawProposal: unknown,
   context: Readonly<StartingRegionWorkingState>,
 ): PersistentNpcSeed[] {
@@ -1016,7 +1016,7 @@ function expandNpcProposals(
   });
 }
 
-function expandPressureProposal(
+export function expandPressureProposal(
   rawProposal: unknown,
   context: Readonly<StartingRegionWorkingState>,
 ): z.infer<typeof pressureKnowledgeProcessSchema> {
@@ -1778,6 +1778,8 @@ export function createStartingRegionProposalModel(
 
 export interface StartingRegionWorkingState {
   readonly request: StartingRegionRequest;
+  readonly compactVersion?: 2;
+  readonly compactSeed?: unknown;
   readonly normalized?: NormalizedRegionConstraints;
   readonly region?: RegionalFrame;
   readonly settlement?: SettlementSeed;
@@ -1794,6 +1796,8 @@ export interface StartingRegionWorkingState {
 
 export const startingRegionWorkingStateSchema = z.object({
   request: startingRegionRequestSchema,
+  compactVersion: z.literal(2).optional(),
+  compactSeed: z.unknown().optional(),
   normalized: normalizedRegionConstraintsSchema.optional(),
   region: regionalFrameSchema.optional(),
   settlement: settlementSeedSchema.optional(),
@@ -1865,7 +1869,7 @@ const playerWorkplaceAnchors = [
   { pattern: /\b(?:office|library|hotel|salon|garage|farm)\b/i, term: "work", name: "Local Workplace", slug: "workplace" },
 ] as const;
 
-function ensurePlayerRoutineAnchors(
+export function ensurePlayerRoutineAnchors(
   state: StartingRegionWorkingState,
 ): StartingRegionWorkingState {
   if (!state.normalized || !state.locality || !state.playerContext) return state;
@@ -2068,7 +2072,7 @@ function hasModernInfrastructureEvidence(value: unknown): boolean {
   return modernInfrastructurePattern.test(JSON.stringify(value));
 }
 
-function normalizePlayerEstablishedFacts(
+export function normalizePlayerEstablishedFacts(
   candidate: unknown,
   state: Readonly<StartingRegionWorkingState>,
 ): NormalizedRegionConstraints {
@@ -2085,7 +2089,7 @@ function normalizePlayerEstablishedFacts(
   });
 }
 
-function stageIssues(
+export function stageIssues(
   stageId: string,
   candidate: unknown,
   state: Readonly<StartingRegionWorkingState>,
