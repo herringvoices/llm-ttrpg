@@ -51,6 +51,7 @@ See:
 - [Game package contracts](docs/game-package-contracts.md)
 - [Context assembly and knowledge retrieval](docs/context-assembly.md)
 - [Local model runtime](docs/model-runtime.md)
+- [Sign in with ChatGPT provider readiness](docs/chatgpt-provider-readiness.md)
 - [Player action execution pipeline](docs/player-action-pipeline.md)
 - [Lazy world simulation and catch-up](docs/lazy-world-simulation.md)
 - [Simulation and test harness](docs/simulation-test-harness.md)
