@@ -83,6 +83,13 @@ function materializeCompactSeed(
   const candidate = compactCampaignSeedProposalSchema.parse(raw);
   if (!state.normalized) throw new Error("Cannot materialize a campaign without accepted player constraints");
   const normalized = state.normalized;
+  if (normalized.geographyMode === "explicit-real-locality" &&
+      !request.locationDescription.toLocaleLowerCase().includes(
+        candidate.settlementName.toLocaleLowerCase())) {
+    throw new Error("Compact seed changed an explicitly named real-world locality; regenerate only the compact seed.");
+  }
+  // An accepted geographic scale is a player constraint, not a free model choice.
+  const settlementScale = normalized.settlementScale;
   const regionId = "generated.region.starting";
   const settlementId = "generated.settlement.starting";
   const localityId = "generated.locality.starting";
@@ -107,10 +114,10 @@ function materializeCompactSeed(
     rural: 900, "small-town": 4_000, town: 16_000,
     "small-city": 60_000, "medium-city": 190_000,
     "large-city": 600_000, "major-city": 1_500_000,
-  }[candidate.settlementScale];
+  }[settlementScale];
   const settlement = settlementSeedSchema.parse({
     id: settlementId, name: candidate.settlementName, approximatePopulation,
-    settlementType: candidate.settlementScale,
+    settlementType: settlementScale,
     economy: ["Modern local employment and services", candidate.settlementDetail],
     districts: [{ id: "generated.district.starting", name: candidate.localityName,
       summary: candidate.localityDetail }],
@@ -122,8 +129,8 @@ function materializeCompactSeed(
   });
   const home = entitySchema.parse({
     id: homeId, kind: "location",
-    name: "Player's established living space",
-    summary: `The player's private living situation in ${candidate.localityName}; any details not stated by the player remain unspecified.`,
+    name: "Player's initial location",
+    summary: `The player's starting point in ${candidate.localityName}. Housing and biographical details not supplied by the player remain unspecified.`,
     data: {},
   });
   const publicPlace = entitySchema.parse({
