@@ -144,10 +144,9 @@ export function scenePressureSources(
   const now = Date.parse(world.fictionalTime);
   const deadlines = world.scheduledTriggers.filter((trigger) =>
     trigger.scopeIds.some((scope) => scopes.has(scope)) &&
-    Date.parse(trigger.dueAt) >= now &&
     Date.parse(trigger.dueAt) - now <= maximumResolutionHorizon(1)
   ).map((trigger) => ({ id: trigger.id, dueAt: trigger.dueAt,
-    remainingMs: Date.parse(trigger.dueAt) - now }));
+    remainingMs: Math.max(0, Date.parse(trigger.dueAt) - now) }));
   const factLevel = [...facts].reverse().find((fact) => fact.level !== undefined)?.level;
   const imminent = deadlines.reduce<ActionPressureLevel | undefined>((acc, deadline) => {
     const level: ActionPressureLevel = deadline.remainingMs <= 5_000 ? 9
@@ -201,7 +200,7 @@ export function chooseScenePressure(
 /** Explicit time is a player-authored intention, never permission to bypass
  * Action Pressure. Unmentioned duration remains a rules/model estimate. */
 export function declaredDurationMs(declaration: string): FictionalDurationMs | undefined {
-  if (/\b(?:all|the whole) (?:morning|afternoon|evening)\b/i.test(declaration)) {
+  if (/\b(?:all|the whole|spend the|spent the|for the) (?:morning|afternoon|evening)\b/i.test(declaration)) {
     return fictionalDurationMs(4 * 60 * 60_000);
   }
   if (/\b(?:all|the whole) day\b/i.test(declaration)) {
