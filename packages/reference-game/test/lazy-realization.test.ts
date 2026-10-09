@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  createGameRuntime, createInMemoryPersistence, loadGameDefinition,
+  createGameRuntime, createInMemoryPersistence, loadGameDefinition, fictionalInstant,
   immutableOperationWorldView, type GameDefinition,
 } from "@llm-ttrpg/engine";
 import {
@@ -53,7 +53,7 @@ function personRequest(sourceId: string, level: "ephemeral" | "identified" | "pe
   time: string) {
   return {
     kind: "person-identity" as const, sourceId, actorId: playerId,
-    scopeId: locationId, fictionalTime: time,
+    scopeId: locationId, fictionalTime: fictionalInstant(time),
     trigger: { kind: "meaningful-interaction" as const, id: "event.lm10.actual-conversation" },
     perspective: { kind: "actor" as const, id: playerId },
     required: [`fact:${sourceId}:identity`], targetLevel: level,
@@ -64,7 +64,7 @@ function personRequest(sourceId: string, level: "ephemeral" | "identified" | "pe
 function mechanicRequest(time: string) {
   return {
     kind: "mechanics" as const, sourceId: extra.id, actorId: playerId,
-    fictionalTime: time,
+    fictionalTime: fictionalInstant(time),
     trigger: { kind: "validated-action" as const, id: "action.lm10.defense-check" },
     perspective: { kind: "actor" as const, id: playerId },
     required: [`entity:${extra.id}:mechanics`],
