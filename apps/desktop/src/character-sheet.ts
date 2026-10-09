@@ -74,7 +74,8 @@ export function projectCharacterSheet(rawMechanics: unknown): CharacterSheetView
       name: group.name,
       attributes: group.ids.map((id) => ({
         name: ATTRIBUTE_LABELS[id],
-        value: state.attributes[id],
+        // The parsed schema requires every ATTRIBUTE_ID; TS cannot infer its refinement.
+        value: state.attributes[id]!,
       })),
     })),
     skills: state.skills.map((skill) => {
