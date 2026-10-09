@@ -34,7 +34,19 @@ function setup() {
         ...base.campaign.content,
         entities: [...base.campaign.content.entities, extra],
         facts: [...base.campaign.content.facts,
-          observation(observationId), observation(observationTwoId)],
+          observation(observationId), observation(observationTwoId),
+          { id: "fact.detail.bystander-uniform", subjectId: extra.id,
+            predicate: "entity.detail.uniform-color", value: "navy",
+            visibility: "public", tags: ["detail"] },
+          { id: "fact.hint.office-a", subjectId: locationId,
+            predicate: "location.hint",
+            value: { name: "Back Office", summary: "A small workplace office with a desk." },
+            visibility: "public", tags: ["location", "hint"] },
+          { id: "fact.hint.office-b", subjectId: locationId,
+            predicate: "location.hint",
+            value: { name: "Back Office", summary: "A different office along the same hall." },
+            visibility: "public", tags: ["location", "hint"] },
+        ],
       },
     },
   };
@@ -175,6 +187,71 @@ describe("LM-10 source-grounded on-demand realization", () => {
     const routeId = `state.fact.route.${first.toLocationId}`;
     expect(session.snapshot().facts.filter((fact) => fact.id === routeId)).toHaveLength(1);
     expect(session.snapshot().facts.find((fact) => fact.id === routeId)?.predicate).toBe("location.route");
+  });
+
+  it("turns only an entered source hint into a stable room and keeps same-name sources separate", async () => {
+    const { runtime, dependencies } = setup();
+    const session = await runtime.createWorld("Scoped location hints");
+    const initial = session.snapshot();
+    const makeRequest = (sourceId: string) => ({
+      kind: "location" as const, sourceId, scopeId: locationId,
+      actorId: playerId, fictionalTime: initial.fictionalTime,
+      trigger: { kind: "location-entry" as const, id: "action.lm10.enter-authored-office" },
+      perspective: { kind: "actor" as const, id: playerId },
+      required: [`fact:${sourceId}:location`],
+      targetLevel: "minimal" as const,
+      idempotencyKey: `realization.location.${sourceId}`,
+      budget: { maxTargets: 1 as const, maxModelCalls: 0 },
+    });
+    const a = makeRequest("fact.hint.office-a");
+    const b = makeRequest("fact.hint.office-b");
+    const beforeEntities = session.snapshot().entities.length;
+    // Hints alone cannot materialize any locations.
+    expect(session.snapshot().entities).toHaveLength(beforeEntities);
+    expect((await session.realize(a)).status).toBe("realized");
+    const roomA = session.snapshot().entities.find((entity) =>
+      entity.data["location-source-fact-id"] === a.sourceId);
+    expect(roomA).toBeTruthy();
+    expect(await session.realize(a)).toMatchObject({ status: "already-sufficient" });
+    expect((await session.realize(b)).status).toBe("realized");
+    const roomB = session.snapshot().entities.find((entity) =>
+      entity.data["location-source-fact-id"] === b.sourceId);
+    expect(roomB).toBeTruthy();
+    expect(roomB?.id).not.toBe(roomA?.id);
+    expect(roomA?.data.parentLocationId).toBe(locationId);
+    expect(roomB?.data.parentLocationId).toBe(locationId);
+    const reopened = await createGameRuntime(dependencies).openWorld(session.worldId);
+    expect(await reopened.realize(b)).toMatchObject({ status: "already-sufficient" });
+    expect(reopened.snapshot().entities.filter((entity) =>
+      entity.data["location-source-fact-id"] === b.sourceId)).toHaveLength(1);
+    expect(reopened.snapshot().facts.find((fact) =>
+      fact.id === `state.fact.route.${roomB?.id}`)?.predicate).toBe("location.route");
+  });
+
+  it("realizes just one source-authored missing entity field, never a speculative detail", async () => {
+    const { runtime } = setup();
+    const session = await runtime.createWorld("Sourced entity detail");
+    const request = {
+      kind: "entity-detail" as const,
+      sourceId: extra.id, actorId: playerId,
+      fictionalTime: session.snapshot().fictionalTime,
+      trigger: { kind: "registered-operation" as const, id: "action.lm10.inspect-uniform" },
+      perspective: { kind: "actor" as const, id: playerId },
+      required: [`entity:${extra.id}:uniform-color`],
+      targetLevel: "minimal" as const,
+      idempotencyKey: "realization.detail.uniform-color",
+      budget: { maxTargets: 1 as const, maxModelCalls: 0 },
+    };
+    expect((await session.realize(request)).status).toBe("realized");
+    expect(session.snapshot().entities.find((entity) => entity.id === extra.id)
+      ?.data["uniform-color"]).toBe("navy");
+    expect(await session.realize(request)).toMatchObject({ status: "already-sufficient" });
+    expect((await session.realize({ ...request, required: [
+      `entity:${extra.id}:secret-exit` ],
+      idempotencyKey: "realization.detail.unsubstantiated",
+    })).status).toBe("unavailable");
+    expect(session.snapshot().entities.find((entity) => entity.id === extra.id)
+      ?.data["secret-exit"]).toBeUndefined();
   });
 
   it("does not make an unknown source canonical or fall back to package-specific engine defaults", async () => {
