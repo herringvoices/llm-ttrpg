@@ -12,7 +12,6 @@ import {
   regionalFrameSchema,
   settlementSeedSchema,
   startingLocalitySchema,
-  openingSituationSchema,
   expandPlayerContextProposal,
   expandCompactInstitutionProposals,
   expandNpcProposals,
@@ -25,8 +24,8 @@ import {
   stageIssues,
   compileStartingRegionCampaign,
 } from "./starting-region.js";
-import { entitySchema, type ModelRuntime, type GenerationIssue } from "@llm-ttrpg/engine";
-import { validateNormalizedPlayerSetup } from "./player-creation.js";
+import { entitySchema, type ModelRuntime, type GenerationIssue, type GenerationStageDiagnostic } from "@llm-ttrpg/engine";
+import { openingSituationSchema, validateNormalizedPlayerSetup } from "./player-creation.js";
 
 /** A compact *creative* proposal, not persisted world state. All IDs, graphs,
  * provenance, mechanics and social structures are deterministically expanded. */
@@ -71,8 +70,6 @@ export const compactOpeningProposalSchema = z.object({
   }
 });
 
-type Diagnostic = { readonly stageId: string; readonly attempts: number;
-  readonly issues: readonly GenerationIssue[]; readonly accepted: boolean };
 const provenance = (sourceIds: string[], rationale: string) => ({
   class: "generator-chosen" as const, sourceIds, rationale,
 });
@@ -297,31 +294,35 @@ export function createCompactStartingRegionProposalModel(runtime: ModelRuntime):
               category: pressure.category, summary: pressure.summary,
             })),
           };
-      const result = await runtime.generate({
-        prompt: {
-          instructions: stageId === "compact-seed"
-            ? [
-                "Create one small, coherent Awakening Earth contemporary starting neighborhood. Do not write full entities or IDs.",
-                "Preserve every explicit player fact and location constraint. Ordinary modern services and transport exist even in rural areas.",
-                "Propose one recognizable public place, 1-2 local contacts, and three short ordinary/social/supernatural tensions.",
-                "Do not invent player employment, relationships, goals, biography or secret knowledge as established fact.",
-                "Return only compact creative names, short observations and the consistent supernatural principle.",
-              ]
-            : [
-                "Choose one grounded playable opening, either a supernatural incident or mundane activity with an imminent first-power emergence.",
-                "Choose supernatural creature only when the accepted creature premise supports it; otherwise phenomenon. Mundane requires focus none.",
-                "The first power manifests during meaningful player turn 1, 2 or 3; do not award it now.",
-                "Describe what is observable, not what the player must do. Provide optional social, investigative and risky directions.",
-                "Never force combat, a quest, a player emotion or player action. Preserve ordinary-life grounding.",
-              ],
-          context: JSON.stringify(briefing),
-          input: `Provide the compact ${stageId} creative choices.`,
-        },
-        output: { kind: "structured",
-          schemaId: `starting-region.${stageId}.v2`, schema },
-        trace: { operation: "starting-region-generation",
-          invocationId: `starting-region.${stageId}.generate` },
-      }, { generation: { temperature: 0, maxOutputTokens: stageId === "compact-seed" ? 1_500 : 850 } });
+      const prompt = {
+        instructions: stageId === "compact-seed"
+          ? [
+              "Create a small, contemporary Awakening Earth starting neighborhood. Do not output canonical IDs or scaffolding.",
+              "Preserve all explicit player facts and geographic limits. Rural does not mean preindustrial.",
+              "Give one public place, one or two contacts, and concise ordinary, social, and supernatural pressures.",
+              "Never invent an established player biography, relationship, promise or goal.",
+            ]
+          : [
+              "Choose a playable supernatural incident or a mundane beginning where a first power will emerge.",
+              "Mundane mode uses focus none; supernatural uses creature or phenomenon.",
+              "First power manifests on meaningful turn 1, 2, or 3, not during generation.",
+              "Ground visible details in the accepted scene and offer optional social, investigative and risky directions.",
+              "Do not require combat, a quest, a response, or an outcome.",
+            ],
+        context: JSON.stringify(briefing),
+        input: `Provide compact ${stageId} creative choices.`,
+      };
+      const trace = { operation: "starting-region-generation" as const,
+        invocationId: `starting-region.${stageId}.generate` };
+      const result = stageId === "compact-seed"
+        ? await runtime.generate({
+            prompt, output: { kind: "structured",
+              schemaId: "starting-region.compact-seed.v2", schema: compactCampaignSeedProposalSchema }, trace,
+          }, { generation: { temperature: 0, maxOutputTokens: 1_500 } })
+        : await runtime.generate({
+            prompt, output: { kind: "structured",
+              schemaId: "starting-region.compact-opening.v2", schema: compactOpeningProposalSchema }, trace,
+          }, { generation: { temperature: 0, maxOutputTokens: 850 } });
       if (!result.ok) throw new Error(
         `Compact ${stageId} generation failed: ${result.error.message}`);
       return result.output.value;
@@ -349,7 +350,7 @@ export async function generateCompactStartingRegion(
   if (JSON.stringify(state.request) !== JSON.stringify(request)) {
     throw new Error("Compact campaign draft request changed unexpectedly");
   }
-  const diagnostics: Diagnostic[] = [...(options.previousDiagnostics ?? [])];
+  const diagnostics: GenerationStageDiagnostic[] = [...(options.previousDiagnostics ?? [])];
   const checkpoint = async (stageId: string, attempt = 1) => {
     diagnostics.push({ stageId, attempts: attempt, issues: [], accepted: true });
     await options.onCheckpoint?.({
@@ -406,7 +407,7 @@ export async function generateCompactStartingRegion(
     state = materializeCompactOpening(state, raw);
     await checkpoint("compact-opening");
   }
-  let seed = startingRegionSeedSchema.parse({
+  let seed: StartingRegionSeed = startingRegionSeedSchema.parse({
     normalized: state.normalized, region: state.region, settlement: state.settlement,
     institutions: state.institutions, locality: state.locality,
     playerContext: state.playerContext, npcs: state.npcs,
