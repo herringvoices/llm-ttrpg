@@ -1,5 +1,4 @@
 export const SIWC_ISSUER: string;
-export const SIWC_RESOURCE: string;
 export const BOOTSTRAP_CLIENT_ID: string;
 export const REQUESTED_SCOPES: readonly string[];
 export const operationSelectionJsonSchema: Record<string, unknown>;

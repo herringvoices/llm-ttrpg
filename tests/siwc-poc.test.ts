@@ -4,7 +4,6 @@ import {
   BOOTSTRAP_CLIENT_ID,
   REQUESTED_SCOPES,
   SIWC_ISSUER,
-  SIWC_RESOURCE,
   classifySiwcError,
   createAuthorizationUrl,
   createCallbackServer,
@@ -64,7 +63,7 @@ describe("Sign in with ChatGPT development proof of concept", () => {
     expect(url.searchParams.get("nonce")).toBe("nonce-value");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("code_challenge")).toBe("challenge-value");
-    expect(url.searchParams.get("resource")).toBe(SIWC_RESOURCE);
+    expect(url.searchParams.has("resource")).toBe(false);
     expect(url.searchParams.get("agent_name_hint")).toBe("llm-ttrpg");
     expect(url.searchParams.get("ext_agent_host_id")).toBe("stable-host-id");
     expect(url.searchParams.get("scope")?.split(" ")).toEqual(REQUESTED_SCOPES);

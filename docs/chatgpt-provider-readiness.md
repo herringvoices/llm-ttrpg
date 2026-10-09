@@ -22,7 +22,7 @@ npm ci
 npm run siwc:poc
 ```
 
-The script opens the system browser, listens only on `127.0.0.1` on an ephemeral port, and uses a one-time state, OIDC nonce, and PKCE S256 verifier. It requests `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct` and explicitly stops if the token response does not grant both inference scopes. It then verifies the ID token signature and issuer, audience, nonce, expiry, and subject; lists models returned by the signed-in account; and asks you to choose one.
+The script opens the system browser, listens only on `127.0.0.1` on an ephemeral port, and uses a one-time state, OIDC nonce, and PKCE S256 verifier. It discovers OAuth/OIDC endpoints at runtime, requests `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct`, and explicitly stops if the token response does not grant the inference scopes. It then verifies the ID token signature and issuer, audience, nonce, expiry, and subject; lists models returned by the signed-in account; and asks you to choose one. No OAuth `resource` parameter is sent because its SIWC-specific value could not be confirmed from official documentation in this environment.
 
 The test makes exactly two streamed requests to the public `/v1/responses` endpoint with `store: false`: one short text request, then a strict JSON Schema operation-selection example based on [the existing runtime test](../tests/model-runtime.test.ts). It accepts the structured result only after a completed response stream and local Zod validation. Reported token counts are diagnostics, not an account balance or price.
 

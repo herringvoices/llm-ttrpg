@@ -10,7 +10,6 @@ import { stdin, stdout } from "node:process";
 import { z } from "zod";
 
 export const SIWC_ISSUER = "https://auth.openai.com";
-export const SIWC_RESOURCE = "https://api.openai.com/v1";
 export const BOOTSTRAP_CLIENT_ID = "dynamic_agent_client";
 export const REQUESTED_SCOPES = [
   "openid",
@@ -90,7 +89,6 @@ export function createAuthorizationUrl({
     nonce,
     code_challenge: challenge,
     code_challenge_method: "S256",
-    resource: SIWC_RESOURCE,
     agent_name_hint: APP_NAME,
     ext_agent_host_id: hostId,
   }).toString();
@@ -397,7 +395,6 @@ async function exchangeCode(metadata, auth) {
     code: auth.code,
     redirect_uri: auth.redirectUri,
     code_verifier: auth.verifier,
-    resource: SIWC_RESOURCE,
   });
   return fetchJson(metadata.token_endpoint, {
     method: "POST",
