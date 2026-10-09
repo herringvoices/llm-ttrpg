@@ -268,7 +268,10 @@ function generatedCampaignModel(options: {
           request.prompt.protectedContext?.join("\n").includes('"kind":"opening"') === true,
       },
       result: (request: ModelRequest<unknown>) => {
-        const input = JSON.parse(request.prompt.input) as {
+        const beat = JSON.parse(request.prompt.input) as {
+          observableOutcomes?: string[];
+        };
+        const input = JSON.parse(beat.observableOutcomes?.[0] ?? "{}") as {
           mode?: string;
           phenomenon?: { summary?: string };
         };
