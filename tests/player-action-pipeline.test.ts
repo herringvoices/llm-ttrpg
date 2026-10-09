@@ -793,7 +793,11 @@ describe("LM-04 reference ruleset mechanics without model-authored inputs", () =
     if (result.kind !== "resolved") {
       throw new Error(`LM-10 opposed check failed: ${JSON.stringify(result).slice(0, 4000)}`);
     }
-    expect(result.run.receipts).toHaveLength(1);
+    expect(result.run.receipts).toHaveLength(2);
+    expect(result.run.receipts.map((receipt) => receipt.toolId)).toEqual([
+      "rules.realization.realize-mechanics",
+      "rules.actions.resolve-action",
+    ]);
     expect(result.trace.entries).toContainEqual(expect.objectContaining({
       phase: "commit",
       detail: expect.objectContaining({
