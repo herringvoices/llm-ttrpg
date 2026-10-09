@@ -399,20 +399,52 @@ export async function generateCompactStartingRegion(
     } };
   }
   if (!state.compactSeed) {
-    const candidate = await model.propose("compact-seed", state);
-    // Save the compact model proposal, not a partially materialized world.
-    const compact = compactCampaignSeedProposalSchema.parse(candidate);
-    state = { ...state, compactSeed: compact };
-    await checkpoint("compact-seed");
-  }
-  if (!state.region || !state.settlement || !state.playerContext || !state.pressures) {
+    let raw = await model.propose("compact-seed", state);
+    let expanded: StartingRegionWorkingState;
+    let attempts = 1;
+    try {
+      expanded = materializeCompactSeed(request, state, raw);
+    } catch (error) {
+      const errors: GenerationIssue[] = [{
+        code: "compact-seed-rejected",
+        severity: "error",
+        path: [],
+        message: error instanceof Error ? error.message : String(error),
+      }];
+      raw = await model.repair("compact-seed", raw, errors, state);
+      expanded = materializeCompactSeed(request, state, raw);
+      attempts = 2;
+    }
+    // Only checkpoint a seed after its deterministic graph and player-source
+    // validation succeeds; an invalid proposal must never become a draft.
+    state = { ...expanded, compactSeed: compactCampaignSeedProposalSchema.parse(raw) };
+    await checkpoint("compact-seed", attempts);
+    await checkpoint("expand-seed", 1);
+  } else if (!state.region || !state.settlement || !state.playerContext || !state.pressures) {
+    // Recovery for v2 drafts whose creative proposal was accepted before
+    // derived stages existed. No repeated model call is necessary.
     state = materializeCompactSeed(request, state, state.compactSeed);
     await checkpoint("expand-seed", 1);
   }
   if (!state.openingSituation) {
-    const raw = await model.propose("compact-opening", state);
-    state = materializeCompactOpening(state, raw);
-    await checkpoint("compact-opening");
+    let raw = await model.propose("compact-opening", state);
+    let openingState: StartingRegionWorkingState;
+    let attempts = 1;
+    try {
+      openingState = materializeCompactOpening(state, raw);
+    } catch (error) {
+      const errors: GenerationIssue[] = [{
+        code: "compact-opening-rejected",
+        severity: "error",
+        path: [],
+        message: error instanceof Error ? error.message : String(error),
+      }];
+      raw = await model.repair("compact-opening", raw, errors, state);
+      openingState = materializeCompactOpening(state, raw);
+      attempts = 2;
+    }
+    state = openingState;
+    await checkpoint("compact-opening", attempts);
   }
   let seed: StartingRegionSeed = startingRegionSeedSchema.parse({
     normalized: state.normalized, region: state.region, settlement: state.settlement,
