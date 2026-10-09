@@ -861,8 +861,16 @@ describe("LM-04 reference ruleset mechanics without model-authored inputs", () =
     expect(result.run.executableIntent.wasNarrowed).toBe(true);
     expect(result.run.elapsedMs).toBeLessThanOrEqual(5_000);
     expect(result.run.stopReason).toBe("budget-exhausted");
+    // One operation-selection decision is permitted when several registered
+    // operations fit. There must be no second *post-commit* stop-only vote.
     expect(model.invocations.filter((call) =>
-      call.schemaId === "player-action.execution-decision.v1")).toHaveLength(0);
+      call.schemaId === "player-action.execution-decision.v1")).toHaveLength(1);
+    expect(result.trace.entries.filter((entry) =>
+      entry.phase === "stop" &&
+      typeof entry.detail === "object" && entry.detail !== null &&
+      "source" in entry.detail &&
+      entry.detail.source === "validated-committed-effect"
+    )).toHaveLength(1);
     expect(result.narration).not.toMatch(/searched all morning/i);
     const originalHistory = await session.eventHistory();
     const replay = await session.performPlayerAction({
