@@ -87,6 +87,74 @@ export const prepareReferenceRealization: RealizationPreparer = ({ request, worl
       },
     };
   }
+  if (request.kind === "entity-detail") {
+    const entity = world.entities.find((entry) => entry.id === request.sourceId);
+    if (!entity || request.targetLevel !== "minimal" || request.required.length !== 1) {
+      return { status: "unavailable", reason: "Missing a canonical entity or one specific required detail." };
+    }
+    const prefix = `entity:${entity.id}:`;
+    const required = request.required[0]!;
+    const key = required.startsWith(prefix) ? required.slice(prefix.length) : "";
+    if (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(key)) {
+      return { status: "unavailable", reason: "The request lacks one valid missing entity-data key." };
+    }
+    const fact = world.facts.find((item) =>
+      item.subjectId === entity.id &&
+      item.predicate === `entity.detail.${key}` &&
+      item.visibility === "public");
+    if (!fact) return { status: "unavailable", reason: "No publicly established source for this detail." };
+    if (Object.prototype.hasOwnProperty.call(entity.data, key)) {
+      return JSON.stringify(entity.data[key]) === JSON.stringify(fact.value)
+        ? { status: "already-sufficient" }
+        : { status: "unavailable", reason: "Established data conflicts with the proposed source." };
+    }
+    return { status: "operation", operationId: "rules.realization.realize-sourced-detail",
+      input: { entityId: entity.id, factId: fact.id, dataKey: key } };
+  }
+  if (request.kind === "location") {
+    if (request.trigger.kind !== "location-entry" ||
+        request.targetLevel !== "minimal" ||
+        request.required.length !== 1 ||
+        request.required[0] !== `fact:${request.sourceId}:location`) {
+      return { status: "unavailable", reason: "Only a validated entry may realize a location hint." };
+    }
+    const fact = world.facts.find((item) =>
+      item.id === request.sourceId &&
+      item.predicate === "location.hint" && item.visibility === "public");
+    if (!fact || request.scopeId !== fact.subjectId) {
+      return { status: "unavailable", reason: "Missing source-grounded location hint in the requested scope." };
+    }
+    const placeValue = fact.value;
+    if (!placeValue || typeof placeValue !== "object" || Array.isArray(placeValue)) {
+      return { status: "unavailable", reason: "Location hint is not structured." };
+    }
+    const name = (placeValue as Readonly<Record<string, unknown>>).name;
+    if (typeof name !== "string" || name.trim().length === 0) {
+      return { status: "unavailable", reason: "Location hint lacks a name." };
+    }
+    const actor = world.entities.find((entity) => entity.id === request.actorId);
+    if (!actor || actor.kind !== "actor") {
+      return { status: "unavailable", reason: "Actor is not canonical." };
+    }
+    const current = [...world.facts].reverse().find((entry) =>
+      entry.subjectId === actor.id && entry.predicate === "actor.current-location"
+      && typeof entry.value === "string")?.value ?? actor.data.currentLocation;
+    const currentPlace = typeof current === "string"
+      ? world.entities.find((entity) => entity.id === current) : undefined;
+    const existing = world.entities.find((entity) =>
+      entity.kind === "location" &&
+      entity.data["location-source-fact-id"] === fact.id &&
+      entity.data.parentLocationId === fact.subjectId);
+    if (existing?.id === current) return { status: "already-sufficient" };
+    if (current !== fact.subjectId && currentPlace?.data.parentLocationId !== fact.subjectId) {
+      return { status: "unavailable", reason: "A validated local entry requires the actor to be at the parent or its known child." };
+    }
+    return {
+      status: "operation", operationId: "rules.actions.enter-local-place",
+      input: { actorId: actor.id, placeName: name.trim(), travelDurationMs: 0,
+        sourceFactId: fact.id },
+    };
+  }
   if (request.kind !== "mechanics") {
     return { status: "unavailable",
       reason: "No authorized source-specific realization was registered for this target." };
