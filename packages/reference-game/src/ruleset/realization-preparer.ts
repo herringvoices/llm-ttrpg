@@ -68,14 +68,14 @@ export const prepareReferenceRealization: RealizationPreparer = ({ request, worl
     const ranks: Readonly<Record<string, number>> = {
       ephemeral: 1, identified: 2, persistent: 3,
     };
-    if ((ranks[level ?? ""] ?? 0) >= ranks[target]) {
+    if ((ranks[level ?? ""] ?? 0) >= (ranks[target] ?? 0)) {
       return { status: "already-sufficient" };
     }
     const observedValue = observed.value;
     if (!observedValue || typeof observedValue !== "object" || Array.isArray(observedValue)) {
       return { status: "unavailable", reason: "Observation does not contain structured source detail." };
     }
-    const proposedName = observedValue.disclosedName;
+    const proposedName = (observedValue as Readonly<Record<string, unknown>>).disclosedName;
     if (target !== "ephemeral" && typeof proposedName !== "string") {
       return { status: "unavailable", reason: "The person's name has not been authoritatively disclosed." };
     }
