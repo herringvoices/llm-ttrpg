@@ -157,8 +157,44 @@ function generatedCampaignModel(options: {
         : value,
     },
   }));
+  const compactSeed = {
+    regionName: outputs.region.name,
+    settlementName: outputs.settlement.name,
+    settlementScale: "medium-city",
+    settlementDetail: "Modern regional city with healthcare and retail work.",
+    localityName: outputs.locality.name,
+    localityDetail: "A modern connected neighborhood with groceries and apartments.",
+    publicPlace: { name: "Riverside Grocery",
+      description: "A neighborhood grocery store with an ordinary loading dock and public retail services." },
+    contacts: [
+      { name: "Alice", connection: "A neighborhood grocery coworker who has noticed something strange.",
+        immediateGoal: "Keep ordinary deliveries running during the disruption." },
+      { name: "Bob", connection: "A clinic worker concerned about local supplies.",
+        immediateGoal: "Understand the supply disruption." },
+    ],
+    ordinaryPressure: "An upcoming work shift and ordinary household expenses need attention.",
+    socialPressure: "The local clinic is experiencing delayed essential deliveries.",
+    supernaturalPressure: "Unusual blue-lit tracks and a strange cold anomaly are reported near the river.",
+    magicalPrinciple: "The surrounding air briefly loses heat when the anomaly approaches.",
+  };
+  const originalOpening = { ...outputs["opening-situation"], ...(options.openingSituation ?? {}) };
+  const compactOpening = {
+    mode: originalOpening.openingMode,
+    focus: originalOpening.supernaturalFocus,
+    visibleSituation: originalOpening.awakeningEvent,
+    manifestationOpportunity: originalOpening.manifestationOpportunity,
+    targetTurn: 1, // Existing first-turn integration scenarios; separate coverage tests later deadlines.
+    unresolvedConsequence: originalOpening.unresolvedConsequences[0]!,
+    socialDirection: originalOpening.actionableDirections.social[0]!,
+    investigativeDirection: originalOpening.actionableDirections.investigative[0]!,
+    riskyDirection: originalOpening.actionableDirections.risky[0]!,
+  };
   return new ScriptedModelRuntime([
     ...stageSteps,
+    { id: "compact-seed", match: { schemaId: "starting-region.compact-seed.v2" },
+      result: { kind: "structured", value: compactSeed } },
+    { id: "compact-opening", match: { schemaId: "starting-region.compact-opening.v2" },
+      result: { kind: "structured", value: compactOpening } },
     {
       id: "audit-region",
       match: { schemaId: "starting-region.coherence-audit.v1" },
@@ -179,18 +215,20 @@ function generatedCampaignModel(options: {
           return found;
         };
         const player = outputs["player-context"].entity;
-        const playerName = options.playerName ?? player.name;
-        const npc = outputs.npcs[0]!.entity;
-        const creature = outputs.pressures.creatures[0]!;
-        const location = outputs.locality.locations.find((item) =>
-          item.id === "generated.location.grocery"
-        )!;
+        const playerName = options.playerName ?? (
+          scene.some((entry) => entry.displayIdentity === player.name)
+            ? player.name : "Player"
+        );
+        const npc = { name: "Alice" };
+        const creature = { entity: { name: "Emergent Local Anomaly" },
+          observedTraits: ["an observable unusual effect"] };
+        const location = { name: "Player's initial location" };
         return {
           kind: "structured" as const,
           value: {
             incident: {
               name: "Desktop Opening Incident",
-              summary: "A grounded supernatural threat emerges at the generated grocery.",
+              summary: "A grounded supernatural threat emerges at the established opening location.",
               locationRef: refForName(location.name),
               involvedRefs: [
                 refForName(playerName),
@@ -823,6 +861,16 @@ describe("desktop playable session integration", () => {
       hobbies: "urban sketching and pickup basketball",
       bioHistory: "Rowan works at a grocery store, rents an apartment, and wants to protect their sibling.",
     });
+    const coreStages = model.invocations.map((call) => call.schemaId)
+      .filter((schemaId) => schemaId?.startsWith("starting-region."));
+    expect(coreStages).toEqual([
+      "starting-region.normalize.v1",
+      "starting-region.compact-seed.v2",
+      "starting-region.compact-opening.v2",
+    ]);
+    expect(coreStages).not.toContain("starting-region.coherence-audit.v1");
+    expect(play.engineSession().snapshot().generationRecord?.generatorVersion)
+      .toBe("starting-region-v2");
     expect(play.view()).toEqual(expect.objectContaining({
       playerName: "Rowan",
       currentLocationName: expect.any(String),
@@ -845,6 +893,7 @@ describe("desktop playable session integration", () => {
         };
         pressures: Array<{ id: string; category: string }>;
       };
+      diagnostics: Array<{ stageId: string; attempts: number; issues: unknown[]; accepted: boolean }>;
       openingProposal: {
         incident: {
           locationRef: string;
@@ -882,6 +931,13 @@ describe("desktop playable session integration", () => {
     const supernaturalPressureId = descriptor.seed.pressures.find((pressure) =>
       pressure.category === "supernatural"
     )!.id;
+    // This block explicitly simulates an older descriptor without a compact
+    // generator version marker. V2 descriptors must reject ID-valued guidance
+    // rather than silently changing an accepted opening mode.
+    descriptor.diagnostics = descriptor.diagnostics.filter(
+      (stage) => !["compact-seed", "compact-opening", "expand-seed", "finalize-seed"]
+        .includes(stage.stageId),
+    );
     descriptor.seed.openingSituation.awakeningEvent = supernaturalPressureId;
     descriptor.seed.openingSituation.manifestationOpportunity = supernaturalPressureId;
     descriptor.openingProposal.incident.locationRef = "scene.999";
@@ -1005,7 +1061,7 @@ describe("desktop playable session integration", () => {
     expect(third.transcript.filter((entry) => entry.speaker === "player")).toHaveLength(3);
   });
 
-  it("starts with an inciting phenomenon and commits the first power through the real rules path on turn 1", async () => {
+  it("starts with a mundane shift and commits first power through the real rules path on turn 1", async () => {
     const { database } = await createMigratedSqlitePersistence();
     let id = 0;
     const model = generatedCampaignModel({
@@ -1040,10 +1096,18 @@ describe("desktop playable session integration", () => {
       manifestationDeadlineTurns: 3,
       firstPowerManifested: false,
     });
-    expect(play.view().transcript[0]?.text).toContain("impossible");
-    expect((await play.engineSession().eventHistory()).some((event) =>
-      event.type === "campaign.opening-phenomenon-realized"
+    expect(play.engineSession().snapshot().entities
+      .filter((entity) => entity.kind === "supernatural-phenomenon")
+      .map((entity) => entity.id)).not.toContain("generated.phenomenon.opening");
+    expect(play.view().error).toBeUndefined();
+    expect(play.view().transcript[0]?.text).toContain("ordinary afternoon rhythm");
+    const initialEvents = await play.engineSession().eventHistory();
+    expect(initialEvents.some((event) =>
+      event.type === "campaign.opening-context-established"
     )).toBe(true);
+    expect(initialEvents.some((event) =>
+      event.type === "campaign.opening-phenomenon-realized"
+    )).toBe(false);
 
     const afterTurn = await play.performTurn("I check the delivery list and keep working.");
     expect(afterTurn.error).toBeUndefined();
@@ -1342,7 +1406,7 @@ describe("desktop playable session integration", () => {
         expect.objectContaining({ id: "question.player-goal", scope: "player" }),
       ],
     });
-    expect(progress).toEqual(["1/12:normalize"]);
+    expect(progress).toEqual(["1/7:normalize"]);
     const reopenedDrafts = await createDesktopApplication(
       createSqlJsClient(database),
       { modelRuntime: model },
@@ -1385,13 +1449,8 @@ describe("desktop playable session integration", () => {
         result: { kind: "structured", value: outputs.normalize },
       },
       {
-        id: "region",
-        match: { schemaId: "starting-region.region.v1" },
-        result: { kind: "structured", value: outputs.region },
-      },
-      {
-        id: "settlement-failure",
-        match: { schemaId: "starting-region.settlement.v1" },
+        id: "compact-seed-failure",
+        match: { schemaId: "starting-region.compact-seed.v2" },
         result: {
           kind: "failure",
           failureKind: "runtime-unavailable",
@@ -1419,7 +1478,7 @@ describe("desktop playable session integration", () => {
     const [draft] = await firstApplication.listCampaignDrafts();
     expect(draft).toEqual(expect.objectContaining({
       status: "failed",
-      lastCompletedStageId: "region",
+      lastCompletedStageId: "normalize",
       errorMessage: expect.stringContaining("simulated local model stop"),
     }));
 
@@ -1433,7 +1492,7 @@ describe("desktop playable session integration", () => {
     expect(resumedModel.invocations.map((invocation) => invocation.schemaId))
       .not.toContain("starting-region.normalize.v1");
     expect(resumedModel.invocations.map((invocation) => invocation.schemaId))
-      .not.toContain("starting-region.region.v1");
+      .toContain("starting-region.compact-seed.v2");
     expect(await reopenedApplication.listCampaignDrafts()).toEqual([]);
   });
 

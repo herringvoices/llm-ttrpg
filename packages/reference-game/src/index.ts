@@ -11,5 +11,6 @@ export * from "./power-generation.js";
 export * from "./powers.js";
 export * from "./reference-game-integration.js";
 export * from "./starting-region.js";
+export * from "./compact-starting-region.js";
 export * from "./ruleset/index.js";
 export * from "./setting/index.js";

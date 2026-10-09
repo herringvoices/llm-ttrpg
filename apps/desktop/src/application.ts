@@ -22,8 +22,10 @@ import {
   compileStartingRegionCampaign,
   createOpeningProgressionState,
   createStartingRegionProposalModel,
+  createCompactStartingRegionProposalModel,
   ensureOpeningCreature,
   generateStartingRegion,
+  generateCompactStartingRegion,
   normalizeOpeningSituationCandidate,
   openingBriefFromCampaign,
   openingIncidentProposalSchema,
@@ -202,6 +204,15 @@ function parseGeneratedPackageDescriptor(value: unknown): GeneratedPackageDescri
     return generatedPackageDescriptorSchema.parse(value);
   }
   const descriptor = value as Record<string, unknown>;
+  // V2 openings have already passed the strict compact opening schema. The
+  // legacy compatibility normalizer can *reinterpret their mode* when an
+  // ordinary power manifestation sounds supernatural; never run it on v2.
+  if (Array.isArray(descriptor.diagnostics) &&
+      descriptor.diagnostics.some((item) =>
+        item && typeof item === "object" &&
+        (item as Record<string, unknown>).stageId === "compact-seed")) {
+    return generatedPackageDescriptorSchema.parse(value);
+  }
   if (!descriptor.seed || typeof descriptor.seed !== "object" || Array.isArray(descriptor.seed)) {
     return generatedPackageDescriptorSchema.parse(value);
   }
@@ -320,9 +331,15 @@ const campaignGenerationStages = [
   ["finalize", "Saving the campaign and preparing play"],
 ] as const;
 
-const campaignGenerationStageIndex = new Map<string, number>(
-  campaignGenerationStages.map(([id], index) => [id, index + 1]),
-);
+const compactCampaignGenerationStages = [
+  ["normalize", "Preserving your character and location"],
+  ["compact-seed", "Creating nearby people, places and pressures"],
+  ["expand-seed", "Checking and grounding the playable neighborhood"],
+  ["compact-opening", "Setting the opening scene"],
+  ["finalize-seed", "Validating the starting campaign"],
+  ["opening-incident", "Preparing the opening"],
+  ["finalize", "Saving the campaign and preparing play"],
+] as const;
 
 function addFollowUpAnswers(
   description: string,
@@ -927,16 +944,18 @@ export function createDesktopApplication(
     }
     const stored = await draftRow(draftId);
     if (!stored) throw new Error(`Campaign generation draft ${draftId} does not exist`);
+    const resumedState = startingRegionWorkingStateSchema.parse(
+      JSON.parse(stored.state_json),
+    ) as StartingRegionWorkingState;
+    const compact = resumedState.compactVersion === 2;
+    const stageList = compact ? compactCampaignGenerationStages : campaignGenerationStages;
     const report = (stageId: string, refining = false) => {
-      const current = campaignGenerationStageIndex.get(stageId);
-      const stage = campaignGenerationStages.find(([id]) => id === stageId);
+      const current = stageList.findIndex(([id]) => id === stageId) + 1;
+      const stage = stageList.find(([id]) => id === stageId);
       if (!current || !stage) return;
       creationOptions.onProgress?.({
-        current,
-        total: campaignGenerationStages.length,
-        stageId,
-        label: refining ? `Refining: ${stage[1]}` : stage[1],
-        refining,
+        current, total: stageList.length, stageId,
+        label: refining ? `Refining: ${stage[1]}` : stage[1], refining,
       });
     };
     const input = createCampaignInputSchema.parse(JSON.parse(stored.input_json));
@@ -966,14 +985,13 @@ export function createDesktopApplication(
       }
       let baseCampaign: ReturnType<typeof compileStartingRegionCampaign>;
       if (!completed) {
-        const proposalModel = createStartingRegionProposalModel(options.modelRuntime);
+        const proposalModel = compact
+          ? createCompactStartingRegionProposalModel(options.modelRuntime)
+          : createStartingRegionProposalModel(options.modelRuntime);
         const previousDiagnostics = z.array(generationStageDiagnosticSchema).parse(
           JSON.parse(stored.diagnostics_json),
         );
-        const resumeState = startingRegionWorkingStateSchema.parse(
-          JSON.parse(stored.state_json),
-        ) as StartingRegionWorkingState;
-        const generated = await generateStartingRegion(request, {
+        const generated = await (compact ? generateCompactStartingRegion : generateStartingRegion)(request, {
           propose(stageId, context) {
             report(stageId);
             return proposalModel.propose(stageId, context);
@@ -987,7 +1005,7 @@ export function createDesktopApplication(
             return proposalModel.audit(seed, context);
           },
         }, {
-          resumeState,
+          resumeState: resumedState,
           previousDiagnostics,
           async onCheckpoint(checkpoint) {
             await database.execute(
@@ -1018,7 +1036,7 @@ export function createDesktopApplication(
           diagnostics: generated.diagnostics,
         });
         await database.execute(
-          "UPDATE campaign_generation_drafts SET generated_json = ?, last_completed_stage_id = 'coherence-audit', updated_at = ? WHERE id = ?",
+          `UPDATE campaign_generation_drafts SET generated_json = ?, last_completed_stage_id = '${compact ? "finalize-seed" : "coherence-audit"}', updated_at = ? WHERE id = ?`,
           [JSON.stringify(completed), now(), draftId],
         );
         baseCampaign = generated.campaign;
@@ -1171,7 +1189,7 @@ export function createDesktopApplication(
         input.name ?? "Awakening Earth campaign",
         JSON.stringify(input),
         JSON.stringify(request),
-        JSON.stringify({ request }),
+        JSON.stringify({ request, compactVersion: 2 }),
         timestamp,
         timestamp,
       ],
@@ -1218,7 +1236,10 @@ export function createDesktopApplication(
         [
           JSON.stringify(input),
           JSON.stringify(request),
-          JSON.stringify({ request }),
+          JSON.stringify({ request,
+            ...(startingRegionWorkingStateSchema.parse(JSON.parse(stored.state_json)).compactVersion === 2
+              ? { compactVersion: 2 } : {}),
+          }),
           now(),
           draftId,
         ],
