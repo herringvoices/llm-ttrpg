@@ -44,6 +44,10 @@ const rulesetBoundarySchema = z
       (value) => typeof value === "function",
       "Ruleset action preparer must be a function",
     ).optional(),
+    prepareRealization: z.custom<import("./realization.js").RealizationPreparer>(
+      (value) => typeof value === "function",
+      "Ruleset realization preparer must be a function",
+    ).optional(),
     eventTypes: z.array(z.unknown()),
     toolCatalog: z.unknown().optional(),
     worldSimulation: worldSimulationBoundarySchema.optional(),
