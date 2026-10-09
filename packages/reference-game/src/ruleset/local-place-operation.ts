@@ -148,6 +148,9 @@ export const enterLocalPlaceOperation: RulesOperation<
     );
     // Reuse an exact canonical child first, then a known sibling. A shared
     // display name in a different parent scope is NOT the same place.
+    const ancestor = parentOfCurrent
+      ? context.world.entities.find((item) => item.id === parentOfCurrent)
+      : undefined;
     const existing = input.sourceFactId
       ? candidates.find((item) =>
           item.data["location-source-fact-id"] === input.sourceFactId &&
@@ -156,7 +159,12 @@ export const enterLocalPlaceOperation: RulesOperation<
       : candidates.find((item) =>
           item.data.parentLocationId === currentLocationValue &&
           item.data["location-source-fact-id"] === undefined
-        ) ?? (parentOfCurrent ? candidates.find((item) =>
+        ) ?? (ancestor && ancestor.kind === "location" &&
+          normalizedPlaceName(
+            typeof ancestor.data.localPlaceName === "string"
+              ? ancestor.data.localPlaceName : ancestor.name,
+          ) === normalizedName ? ancestor : undefined)
+          ?? (parentOfCurrent ? candidates.find((item) =>
           item.data.parentLocationId === parentOfCurrent &&
           item.data["location-source-fact-id"] === undefined
         ) : undefined);
