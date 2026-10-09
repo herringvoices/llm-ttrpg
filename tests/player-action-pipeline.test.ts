@@ -624,7 +624,7 @@ describe("player action execution pipeline", () => {
     expect(actualBeat.scene).toEqual(JSON.parse(frozen!.sceneBrief));
     expect(actualBeat.observableOutcomes).toEqual(frozen!.observableOutcomes);
     expect((await persistence.worlds.load(session.worldId))!.revision).toBe(changedRevision);
-    expect(await session.eventHistory({ types: ["test.effort-resolved" })).toHaveLength(atCommit);
+    expect(await session.eventHistory({ types: ["test.effort-resolved"] })).toHaveLength(atCommit);
     expect(retryModel.requests).toHaveLength(1);
   });
 
