@@ -1684,6 +1684,35 @@ function openSession(
           record("stop", { reason: "budget-exhausted" }, { worldRevision: revision });
           return narrate(run);
         }
+        if (run.receipts.length > 0) {
+          const nextSources = scenePressureSources(state, run.actorId,
+            actorLocation(run.actorId, request.locationId));
+          if (lastPressureBasis &&
+              nextSources.fingerprint !== lastPressureBasis.fingerprint) {
+            const updatedPressure = chooseScenePressure(
+              state.actionPressure, nextSources,
+              run.executableIntent.pressureLevel, lastPressureBasis,
+            );
+            const remainingMs = run.executableIntent.authorizedHorizonMs - run.elapsedMs;
+            if (updatedPressure.level !== run.executableIntent.pressureLevel ||
+                (nextSources.deadlineMs !== undefined &&
+                  nextSources.deadlineMs < remainingMs)) {
+              run = actionRunSchema.parse({
+                ...run, status: "stopped",
+                stopReason: "pressure-reassessment-required",
+              });
+              await dependencies.persistence.actionRuns.update(run);
+              record("stop", {
+                reason: "pressure-reassessment-required",
+                source: "material-scene-transition",
+                newLevel: updatedPressure.level,
+                deadlineMs: nextSources.deadlineMs ?? null,
+                committedElapsedMs: run.elapsedMs,
+              }, { worldRevision: revision });
+              return narrate(run);
+            }
+          }
+        }
         const contextRequest = {
           ...actorModelRequest,
           executableIntent: run.executableIntent,
