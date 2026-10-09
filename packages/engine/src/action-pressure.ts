@@ -148,7 +148,12 @@ export function scenePressureSources(
     Date.parse(trigger.dueAt) - now <= maximumResolutionHorizon(1)
   ).map((trigger) => ({ id: trigger.id, dueAt: trigger.dueAt,
     remainingMs: Math.max(0, Date.parse(trigger.dueAt) - now) }));
-  const factLevel = [...facts].reverse().find((fact) => fact.level !== undefined)?.level;
+  // Simultaneous constraints compose conservatively: a quiet environmental
+  // note cannot override a still-active lethal hazard.
+  const factLevel = facts.reduce<ActionPressureLevel | undefined>((highest, fact) =>
+    fact.level === undefined ? highest :
+      highest === undefined || fact.level > highest ? fact.level : highest,
+  undefined);
   const imminent = deadlines.reduce<ActionPressureLevel | undefined>((acc, deadline) => {
     const level: ActionPressureLevel = deadline.remainingMs <= 5_000 ? 9
       : deadline.remainingMs <= 10_000 ? 8
