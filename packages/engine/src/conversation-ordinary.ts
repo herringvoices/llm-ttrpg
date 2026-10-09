@@ -9,6 +9,7 @@ import {
 } from "./conversation-contracts.js";
 import { prepareModelBrief, redactModelBriefText } from "./model-brief.js";
 import { projectContinuity } from "./continuity.js";
+import { composeNpcReplies } from "./presentation-beat.js";
 import { maximumResolutionHorizon } from "./action-pressure.js";
 import type { PerformConversationTurnInput, ConversationTurnResult } from "./conversation.js";
 import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
@@ -265,8 +266,11 @@ export async function tryOrdinaryNpcConversation(
     groundingIds: [], containsNonSpeechAction: false, durationMs: playerDuration,
   });
   const beat = working.beat + 1;
+  // Direct LM-05 NPC speech is already presentation. Attribution is
+  // deterministic; never paraphrase it or call a second narration model.
   const narration = reply.speech.length
-    ? `${displayName}: "${reply.speech}"${reply.visibleManner ? ` (${reply.visibleManner})` : ""}`
+    ? composeNpcReplies([{ speaker: displayName, speech: reply.speech,
+        ...(reply.visibleManner ? { visibleManner: reply.visibleManner } : {}) }])
     : `${displayName} does not answer.`;
   const nextWorking = conversationWorkingStateSchema.parse({
     ...working,
