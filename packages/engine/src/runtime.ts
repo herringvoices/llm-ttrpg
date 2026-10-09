@@ -159,6 +159,8 @@ export interface ExecuteOperationOptions {
 export interface PerformPlayerActionOptions {
   readonly modelRuntime: ModelRuntime;
   readonly maxModelTurns?: number;
+  /** Remaining shared time for ordered segments in the same player turn. */
+  readonly maxAuthorizedHorizonMs?: number;
   readonly toolPolicy?: ToolAvailabilityPolicy;
   /** LM-03: validated interpretation from the shared turn classifier. */
   readonly preinterpreted?: PreinterpretedPlayerAction;
@@ -1428,8 +1430,13 @@ function openSession(
         const candidate = clone(state);
         candidate.actionPressure = { status: "assessed", level: pressureChoice.level };
         const boundedIntent = boundInterpretedIntent(interpretedIntent, candidate.actionPressure);
-        const capped = sources.deadlineMs === undefined ? boundedIntent.authorizedHorizonMs
-          : fictionalDurationMs(Math.min(boundedIntent.authorizedHorizonMs, sources.deadlineMs));
+        const sharedWindow = options.maxAuthorizedHorizonMs === undefined
+          ? boundedIntent.authorizedHorizonMs
+          : fictionalDurationMs(options.maxAuthorizedHorizonMs);
+        const capped = fictionalDurationMs(Math.min(
+          boundedIntent.authorizedHorizonMs, sharedWindow,
+          sources.deadlineMs ?? boundedIntent.authorizedHorizonMs,
+        ));
         const executableIntent = capped === boundedIntent.authorizedHorizonMs
           ? boundedIntent : { ...boundedIntent,
             authorizedHorizonMs: capped, wasNarrowed: true };
