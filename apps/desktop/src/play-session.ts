@@ -3,6 +3,8 @@ import {
   deriveSceneRegister,
   fictionalDurationMs,
   maximumResolutionHorizon,
+  chooseScenePressure,
+  scenePressureSources,
   jsonValueSchema,
   observeModelRuntime,
   classifyTurnDeclaration,
@@ -994,11 +996,22 @@ export class DesktopPlaySession {
       let previousSegmentPressure: number | undefined;
       for (const [index, segment] of segments.entries()) {
         const segmentStartingLocationId = this.view().currentLocationId;
-        const scene = await this.session.ensureScenePressure({
-          actorId: this.playerActorId,
-          ...(segmentStartingLocationId ? { locationId: segmentStartingLocationId } : {}),
-          proposedLevel: segment.kind === "action" ? segment.pressureLevel : 3,
-        });
+        const worldForPressure = this.session.snapshot();
+        // A first action can persist its first assessment atomically with the
+        // action run; avoid a separate empty-world-revision pressure commit.
+        const scene = worldForPressure.actionPressure.status === "unassessed" &&
+          segment.kind !== "communication"
+          ? { ...chooseScenePressure(
+              worldForPressure.actionPressure,
+              scenePressureSources(worldForPressure, this.playerActorId,
+                segmentStartingLocationId),
+              segment.kind === "action" ? segment.pressureLevel : 3,
+            ), changed: false }
+          : await this.session.ensureScenePressure({
+              actorId: this.playerActorId,
+              ...(segmentStartingLocationId ? { locationId: segmentStartingLocationId } : {}),
+              proposedLevel: segment.kind === "action" ? segment.pressureLevel : 3,
+            });
         if (previousSegmentPressure !== undefined && scene.changed &&
             scene.level !== previousSegmentPressure) {
           this.add("system", "The situation changed before the next step. Decide how to continue under the new pressure.");
