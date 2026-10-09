@@ -43,9 +43,53 @@ function requiredMechanics(
 }
 
 export const prepareReferenceRealization: RealizationPreparer = ({ request, world }): PreparedRealization => {
+  if (request.kind === "person-identity") {
+    const observed = world.facts.find((fact) =>
+      fact.id === request.sourceId && fact.predicate === "person.observed" &&
+      fact.visibility === "public");
+    if (!observed || request.scopeId !== observed.subjectId ||
+        !request.required.includes(`fact:${request.sourceId}:identity`)) {
+      return { status: "unavailable", reason: "Person is not grounded in an accessible canonical observation." };
+    }
+    const actor = world.entities.find((entity) => entity.id === request.actorId);
+    if (!actor || actor.kind !== "actor") {
+      return { status: "unavailable", reason: "Missing authorized observer." };
+    }
+    const target = request.targetLevel;
+    if (target !== "ephemeral" && target !== "identified" && target !== "persistent") {
+      return { status: "unavailable", reason: "Invalid person identity level." };
+    }
+    const existing = world.entities.find((entity) =>
+      entity.data["observation-source-id"] === observed.id &&
+      entity.data["observation-scope-id"] === observed.subjectId);
+    const history = existing?.data["identity-resolution-history"];
+    const level = Array.isArray(history) ? (history[history.length - 1] as {
+      level?: string } | undefined)?.level : undefined;
+    const ranks: Readonly<Record<string, number>> = {
+      ephemeral: 1, identified: 2, persistent: 3,
+    };
+    if ((ranks[level ?? ""] ?? 0) >= ranks[target]) {
+      return { status: "already-sufficient" };
+    }
+    const observedValue = observed.value;
+    if (!observedValue || typeof observedValue !== "object" || Array.isArray(observedValue)) {
+      return { status: "unavailable", reason: "Observation does not contain structured source detail." };
+    }
+    const proposedName = observedValue.disclosedName;
+    if (target !== "ephemeral" && typeof proposedName !== "string") {
+      return { status: "unavailable", reason: "The person's name has not been authoritatively disclosed." };
+    }
+    return { status: "operation", operationId: "rules.realization.realize-observed-person",
+      input: {
+        observationFactId: observed.id, locationId: observed.subjectId,
+        actorId: request.actorId, targetLevel: target,
+        occurredAt: request.fictionalTime,
+      },
+    };
+  }
   if (request.kind !== "mechanics") {
     return { status: "unavailable",
-      reason: "This request needs a registered source-specific identity or location operation." };
+      reason: "No authorized source-specific realization was registered for this target." };
   }
   if (request.targetLevel !== "complete") {
     return { status: "unavailable", reason: "Opposed reference checks require complete mechanical core fields." };
