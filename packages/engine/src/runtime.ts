@@ -1755,6 +1755,48 @@ function openSession(
         const modelCandidates = candidates.map(({ outputSchema: _outputSchema, ...candidate }) =>
           candidate
         );
+        // Only a *committed effect* can complete the player's attempt. The
+        // presence of a tool mode is NOT proof of success, and LM-10's
+        // zero-duration prerequisite receipts are not player action outcomes.
+        const actionReceipts = run.receipts.filter((receipt) =>
+          !dependencies.game.operationRegistry.get(receipt.toolId)
+            .metadata.category.tags.includes("realization")
+        );
+        const lastEffect = actionReceipts.at(-1);
+        const effect = lastEffect?.result;
+        const effectData = effect && typeof effect === "object" && !Array.isArray(effect)
+          ? effect as Record<string, JsonValue> : undefined;
+        const confirmedEffect = effectData && (
+          typeof effectData.success === "boolean" ||
+          typeof effectData.actionSummary === "string" ||
+          typeof effectData.toLocationId === "string" ||
+          typeof effectData.arrivedAt === "string"
+        );
+        const orderedMeans = /\\b(?:then|after that|next|before)\\b/i.test(run.declaration)
+          ? Math.max(2, run.semanticAction?.statedMeans.length ?? 0) : 1;
+        const completedModes = run.semanticAction?.modes.every((mode) =>
+          mode === "other" ? Boolean(lastEffect && confirmedEffect)
+            : !supportedModes.has(mode) || coveredModes.has(mode)) ?? false;
+        const deterministicCompletion = options.registeredOnly && confirmedEffect &&
+          completedModes && actionReceipts.length >= orderedMeans;
+        if (deterministicCompletion) {
+          const truncated = run.executableIntent.wasNarrowed &&
+            run.elapsedMs < run.executableIntent.requestedHorizonMs;
+          const reason = truncated ? "budget-exhausted"
+            : effectData!.success === false ? "material-circumstance-change"
+            : "goal-achieved";
+          run = actionRunSchema.parse({ ...run, status: "stopped", stopReason: reason });
+          await dependencies.persistence.actionRuns.update(run);
+          record("stop", {
+            reason, source: "validated-committed-effect",
+            committedSteps: actionReceipts.length,
+            coveredModes: [...coveredModes],
+            elapsedMs: run.elapsedMs,
+            authorizedHorizonMs: run.executableIntent.authorizedHorizonMs,
+            requestedHorizonMs: run.executableIntent.requestedHorizonMs,
+          }, { worldRevision: revision });
+          return narrate(run);
+        }
         const requireStopDecision = run.receipts.length > 0 &&
           ((hasTrackableDeclaredModes && pendingDeclaredModes.length === 0) ||
             (options.registeredOnly && !hasTrackableDeclaredModes));
