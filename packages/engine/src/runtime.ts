@@ -2,6 +2,9 @@ import { z } from "zod";
 import {
   actionPressureAssessmentSchema,
   boundInterpretedIntent,
+  chooseScenePressure,
+  declaredDurationMs,
+  scenePressureSources,
   intentStopReasonSchema,
   type ActionPressureAssessment,
   type ActionPressureState,
@@ -181,6 +184,13 @@ export interface GameSession {
   applyActionPressureAssessment(
     assessment: ActionPressureAssessment,
   ): Promise<ActionPressureState>;
+  /** Reuse a pressure scene, or react once to authoritative scene sources. */
+  ensureScenePressure(input: {
+    readonly actorId: string;
+    readonly locationId?: string;
+    readonly proposedLevel?: import("./action-pressure.js").ActionPressureLevel;
+  }): Promise<{ level: import("./action-pressure.js").ActionPressureLevel;
+    reason: string; sourceCount: number; changed: boolean }>;
   advanceTime(durationMs: number): Promise<WorldState>;
   setSimulationCursor(
     scopeId: string,
@@ -425,6 +435,18 @@ function openSession(
   let state = clone(persisted.state);
   let revision = persisted.revision;
   let eventSequence = persisted.eventSequence;
+  // This fingerprint is derived solely from authoritative scene sources.
+  // Older saves have no basis: keep their assessed pressure until a real source
+  // demands otherwise. Persisted pressure levels remain schema-compatible.
+  let lastPressureBasis: ReturnType<typeof scenePressureSources> | undefined;
+  const actorLocation = (actorId: string, locationId?: string): string | undefined => {
+    if (locationId) return locationId;
+    const fact = [...state.facts].reverse().find((item) =>
+      item.subjectId === actorId &&
+      item.predicate === "actor.current-location" &&
+      typeof item.value === "string");
+    return typeof fact?.value === "string" ? fact.value : undefined;
+  };
 
   async function commitCandidate(
     candidate: WorldState,
@@ -629,6 +651,8 @@ function openSession(
     },
     async applyActionPressureAssessment(assessment) {
       const parsed = actionPressureAssessmentSchema.parse(assessment);
+      if (state.actionPressure.status === "assessed" &&
+          state.actionPressure.level === parsed.level) return clone(state.actionPressure);
       const candidate = clone(state);
       candidate.actionPressure = {
         status: "assessed",
@@ -636,6 +660,22 @@ function openSession(
       };
       await commitCandidate(candidate);
       return clone(state.actionPressure);
+    },
+    async ensureScenePressure(input) {
+      const sources = scenePressureSources(state, input.actorId,
+        actorLocation(input.actorId, input.locationId));
+      const selected = chooseScenePressure(
+        state.actionPressure, sources,
+        input.proposedLevel ?? (state.actionPressure.status === "assessed"
+          ? state.actionPressure.level : 3),
+        lastPressureBasis,
+      );
+      lastPressureBasis = sources;
+      const changed = state.actionPressure.status !== "assessed" ||
+        state.actionPressure.level !== selected.level;
+      if (changed) await this.applyActionPressureAssessment({ level: selected.level });
+      return { level: selected.level, reason: selected.reason,
+        sourceCount: sources.sourceCount, changed };
     },
     async advanceTime(durationMs) {
       const duration = fictionalDurationMs(durationMs);
@@ -1370,18 +1410,29 @@ function openSession(
             normalizedModes,
           });
         }
+        const explicitDuration = declaredDurationMs(request.declaration);
         const interpretedIntent = {
           actorId: request.actorId,
           goal: interpretedDecision.goal,
           targetIds,
-          requestedHorizonMs: fictionalDurationMs(interpretedDecision.requestedHorizonMs),
+          requestedHorizonMs: explicitDuration ??
+            fictionalDurationMs(interpretedDecision.requestedHorizonMs),
         };
-        const candidate = clone(state);
-        candidate.actionPressure = { status: "assessed", level: interpretedDecision.pressureLevel };
-        const executableIntent = boundInterpretedIntent(
-          interpretedIntent,
-          candidate.actionPressure,
+        const sources = scenePressureSources(
+          state, request.actorId, actorLocation(request.actorId, request.locationId),
         );
+        const pressureChoice = chooseScenePressure(
+          state.actionPressure, sources, interpretedDecision.pressureLevel, lastPressureBasis,
+        );
+        lastPressureBasis = sources;
+        const candidate = clone(state);
+        candidate.actionPressure = { status: "assessed", level: pressureChoice.level };
+        const boundedIntent = boundInterpretedIntent(interpretedIntent, candidate.actionPressure);
+        const capped = sources.deadlineMs === undefined ? boundedIntent.authorizedHorizonMs
+          : fictionalDurationMs(Math.min(boundedIntent.authorizedHorizonMs, sources.deadlineMs));
+        const executableIntent = capped === boundedIntent.authorizedHorizonMs
+          ? boundedIntent : { ...boundedIntent,
+            authorizedHorizonMs: capped, wasNarrowed: true };
         const newRun = actionRunSchema.parse({
           schemaVersion: 1,
           id: request.actionId,
@@ -1402,12 +1453,23 @@ function openSession(
         try {
           await commitCandidate(candidate, [], newRun);
           run = newRun;
-          record("pressure", { level: interpretedDecision.pressureLevel }, { worldRevision: revision });
+          record("pressure", {
+            level: pressureChoice.level,
+            reason: pressureChoice.reason,
+            sceneSourceCount: sources.sourceCount,
+            previousLevel: state.actionPressure.status === "assessed"
+              ? state.actionPressure.level : "unassessed",
+            modelAssessmentCalls: pressureChoice.reason === "initial-assessment"
+              ? decision.attempts : 0,
+            ...(sources.deadlineMs !== undefined ? { deadlineMs: sources.deadlineMs } : {}),
+          }, { worldRevision: revision });
           record("intent", {
             goal: executableIntent.goal,
             requestedHorizonMs: executableIntent.requestedHorizonMs,
             authorizedHorizonMs: executableIntent.authorizedHorizonMs,
             wasNarrowed: executableIntent.wasNarrowed,
+            ...(explicitDuration !== undefined ? { explicitDurationMs: explicitDuration } : {}),
+            ...(sources.deadlineMs !== undefined ? { deadlineMs: sources.deadlineMs } : {}),
           }, { worldRevision: revision });
         } catch (error) {
           return fail("persistence", error instanceof Error ? error.message : "Could not persist action run");
@@ -1534,6 +1596,7 @@ function openSession(
               "Narrate only what the focal actor can perceive.",
               "Do not reveal canonical IDs, hidden state, rejected proposals, private events, mechanics not exposed by the presentation, or GM reasoning.",
               "Do not invent additional world changes. The supplied committed outcomes are authoritative.",
+            "A success of a bounded attempt is not permission to claim the entire originally requested activity completed when Action Pressure clipped the window. State only the time and progress in receipts.",
               "Do not invent player thoughts, feelings, dialogue, decisions, or voluntary actions beyond the submitted declaration.",
               "Do not invent specific tools, equipment, actionable objects, routes, hazards, witnesses, resources, or clues. Harmless transient color must not create a future affordance.",
               "Use second person for the focal actor. If the committed outcomes are sparse, be concise instead of padding with invented attempts, complications, or details.",
