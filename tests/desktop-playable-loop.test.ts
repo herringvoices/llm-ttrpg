@@ -858,6 +858,16 @@ describe("desktop playable session integration", () => {
       hobbies: "urban sketching and pickup basketball",
       bioHistory: "Rowan works at a grocery store, rents an apartment, and wants to protect their sibling.",
     });
+    const coreStages = model.invocations.map((call) => call.schemaId)
+      .filter((schemaId) => schemaId?.startsWith("starting-region."));
+    expect(coreStages).toEqual([
+      "starting-region.normalize.v1",
+      "starting-region.compact-seed.v2",
+      "starting-region.compact-opening.v2",
+    ]);
+    expect(coreStages).not.toContain("starting-region.coherence-audit.v1");
+    expect(play.engineSession().snapshot().generationRecord?.generatorVersion)
+      .toBe("starting-region-v2");
     expect(play.view()).toEqual(expect.objectContaining({
       playerName: "Rowan",
       currentLocationName: expect.any(String),
