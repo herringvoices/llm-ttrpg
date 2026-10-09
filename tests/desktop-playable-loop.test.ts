@@ -1088,6 +1088,9 @@ describe("desktop playable session integration", () => {
       manifestationDeadlineTurns: 3,
       firstPowerManifested: false,
     });
+    expect(play.engineSession().snapshot().entities
+      .filter((entity) => entity.kind === "supernatural-phenomenon")
+      .map((entity) => entity.id)).toContain("generated.phenomenon.opening");
     expect(play.view().error).toBeUndefined();
     expect(play.view().transcript[0]?.text).toContain("impossible");
     expect((await play.engineSession().eventHistory()).some((event) =>
