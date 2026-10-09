@@ -1053,7 +1053,7 @@ describe("desktop playable session integration", () => {
     expect(third.transcript.filter((entry) => entry.speaker === "player")).toHaveLength(3);
   });
 
-  it("starts with an inciting phenomenon and commits the first power through the real rules path on turn 1", async () => {
+  it("starts with a mundane shift and commits first power through the real rules path on turn 1", async () => {
     const { database } = await createMigratedSqlitePersistence();
     let id = 0;
     const model = generatedCampaignModel({
@@ -1090,12 +1090,16 @@ describe("desktop playable session integration", () => {
     });
     expect(play.engineSession().snapshot().entities
       .filter((entity) => entity.kind === "supernatural-phenomenon")
-      .map((entity) => entity.id)).toContain("generated.phenomenon.opening");
+      .map((entity) => entity.id)).not.toContain("generated.phenomenon.opening");
     expect(play.view().error).toBeUndefined();
-    expect(play.view().transcript[0]?.text).toContain("impossible");
-    expect((await play.engineSession().eventHistory()).some((event) =>
-      event.type === "campaign.opening-phenomenon-realized"
+    expect(play.view().transcript[0]?.text).toContain("ordinary afternoon rhythm");
+    const initialEvents = await play.engineSession().eventHistory();
+    expect(initialEvents.some((event) =>
+      event.type === "campaign.opening-context-established"
     )).toBe(true);
+    expect(initialEvents.some((event) =>
+      event.type === "campaign.opening-phenomenon-realized"
+    )).toBe(false);
 
     const afterTurn = await play.performTurn("I check the delivery list and keep working.");
     expect(afterTurn.error).toBeUndefined();
