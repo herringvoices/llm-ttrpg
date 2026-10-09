@@ -2137,11 +2137,15 @@ function openSession(
             decision.arguments,
             new Set(state.entities.map((entity) => entity.id)),
           );
-          for (const [alias] of Object.entries(executionBrief.localReferences)) {
-            // The alias table is scoped to the exact model-input snapshot.
-            resolveBriefReference(
-              executionBrief, alias, { worldRevision: revision, eventSequence },
-            );
+          if (!trustedMechanicalArguments) {
+            for (const [alias] of Object.entries(executionBrief.localReferences)) {
+              // A trusted ruleset prerequisite can commit between model
+              // selection and this check. Do not reinterpret stale scene
+              // aliases in that case: mechanical inputs have no model refs.
+              resolveBriefReference(
+                executionBrief, alias, { worldRevision: revision, eventSequence },
+              );
+            }
           }
           const validateAliases = (value: JsonValue): void => {
             if (typeof value === "string" && /^scene\.\d{3}$/.test(value)) {
