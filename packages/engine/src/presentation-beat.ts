@@ -52,8 +52,11 @@ export function buildPresentationBeat(input: PresentationBeatInput): Presentatio
   const scene = presentationSceneSnapshotSchema.parse(input.scene);
   const observableOutcomes = input.observableOutcomes.slice(0, 12)
     .map((part) => safe(part, 3_800)).filter(Boolean);
+  // Quoted player speech is authored verbatim, not an environmental source.
+  // Never trim, redact or slice its bytes. An oversize quote must fail safely
+  // instead of silently weakening the display-fidelity requirement.
   const quotedSpeech = (input.quotedSpeech ?? []).slice(0, 12)
-    .map((quote) => safe(quote, 400)).filter(Boolean);
+    .map((quote) => z.string().min(1).max(8_000).parse(quote));
   const declaration = input.declaration ? safe(input.declaration, 1_500) : undefined;
   const elapsedMs = z.number().int().nonnegative().parse(input.elapsedMs);
   return {
