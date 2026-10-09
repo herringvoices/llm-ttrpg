@@ -64,6 +64,14 @@ describe("LM-11 source-tracked scene pressure", () => {
       ...base, facts: [...base.facts, threat],
     }, actorId, locationId);
     expect(danger).toMatchObject({ level: 9 });
+    const quietNote = canonicalFactSchema.parse({
+      id: "fact.pressure.quiet-note", subjectId: locationId,
+      predicate: "environment.action-pressure", value: { level: 1 },
+      visibility: "public", tags: ["pressure"],
+    });
+    expect(scenePressureSources({
+      ...base, facts: [...base.facts, threat, quietNote],
+    }, actorId, locationId).level).toBe(9);
     expect(chooseScenePressure({ status: "assessed", level: 2 }, danger, 1))
       .toMatchObject({ level: 9, reason: "authoritative-source" });
     const ended = scenePressureSources(base, actorId, locationId);
