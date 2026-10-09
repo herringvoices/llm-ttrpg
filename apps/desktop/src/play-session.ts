@@ -1,6 +1,10 @@
 import {
   compileNarrationDirective,
   deriveSceneRegister,
+  buildPresentationBeat,
+  prepareModelBrief,
+  observableEventSummaries,
+  validatePresentedText,
   fictionalDurationMs,
   maximumResolutionHorizon,
   chooseScenePressure,
@@ -606,22 +610,62 @@ export class DesktopPlaySession {
         elapsedMs: 0,
       }),
     );
-    const context = this.session.assembleContext({
-      role: "actor",
-      perspective: { kind: "actor", id: this.playerActorId },
-      focalActorId: this.playerActorId,
-      ...(this.view().currentLocationId
-        ? { locationId: this.view().currentLocationId }
-        : {}),
-      budget: { maxUnits: 30_000 },
+    let frozen = state.manifestationPresentationScene;
+    if (!frozen) {
+      const context = this.session.assembleContext({
+        role: "actor",
+        perspective: { kind: "actor", id: this.playerActorId },
+        focalActorId: this.playerActorId,
+        ...(this.view().currentLocationId
+          ? { locationId: this.view().currentLocationId } : {}),
+        budget: { maxUnits: 8_000 },
+      });
+      const brief = prepareModelBrief({
+        purpose: "narration", context, maxCharacters: 3_800,
+        perspective: { kind: "actor", id: this.playerActorId },
+      });
+      const history = await this.session.eventHistory();
+      const manifestationEvent = state.manifestationEventId
+        ? history.find((event) => event.id === state.manifestationEventId)
+        : [...history].reverse().find((event) => event.type === "rules.first-power-manifested");
+      const manifestationEvidenceEvent = state.manifestationEvidenceEventId
+        ? history.find((event) => event.id === state.manifestationEvidenceEventId)
+        : undefined;
+      const locationId = this.view().currentLocationId;
+      const observed = observableEventSummaries(
+        [manifestationEvidenceEvent, manifestationEvent].filter(
+          (candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate),
+        ), [this.playerActorId], locationId,
+      );
+      frozen = {
+        schemaVersion: 1,
+        sceneBrief: brief.modelText,
+        worldRevision: brief.basis.worldRevision,
+        eventSequence: brief.basis.eventSequence ?? this.session.planningBasis().eventSequence,
+        observableOutcomes: [
+          ...observed,
+          JSON.stringify({
+            firstAwakeningCommitted: true,
+            name: power.name, corePrinciple: power.corePrinciple,
+            functions: power.functions.map((fn) => ({
+              name: fn.name, description: fn.description,
+            })),
+          }),
+        ],
+      };
+      // Persist the authorized source snapshot BEFORE any model generation:
+      // a presentation timeout cannot make the next attempt see a later scene.
+      this.openingProgression = openingProgressionStateSchema.parse({
+        ...state, manifestationPresentationScene: frozen,
+      });
+      await this.persistPresentation();
+    }
+    const beat = buildPresentationBeat({
+      id: state.manifestationEventId ?? `awakening.${this.playerActorId}`,
+      kind: "awakening", scene: frozen,
+      observableOutcomes: frozen.observableOutcomes ?? [],
+      elapsedMs: 0,
     });
-    const history = await this.session.eventHistory();
-    const manifestationEvent = state.manifestationEventId
-      ? history.find((event) => event.id === state.manifestationEventId)
-      : [...history].reverse().find((event) => event.type === "rules.first-power-manifested");
-    const manifestationEvidenceEvent = state.manifestationEvidenceEventId
-      ? history.find((event) => event.id === state.manifestationEvidenceEventId)
-      : undefined;
     const result = await this.requireModel().generate({
       prompt: {
         protectedContext: [directive.protectedContext],
@@ -633,27 +677,7 @@ export class DesktopPlaySession {
           "Begin at the final instant of the triggering evidence event or immediately afterward. Do not invent earlier failed attempts, tools, or complications.",
           "Make the moment legible as the character's first personal Awakening, then return control.",
         ],
-        context: renderContextForModel(context),
-        input: JSON.stringify({
-          manifestationEvent: manifestationEvent
-            ? { id: manifestationEvent.id, summary: manifestationEvent.summary }
-            : undefined,
-          triggeringEvidenceEvent: manifestationEvidenceEvent
-            ? {
-                id: manifestationEvidenceEvent.id,
-                type: manifestationEvidenceEvent.type,
-                summary: manifestationEvidenceEvent.summary,
-              }
-            : undefined,
-          power: {
-            name: power.name,
-            corePrinciple: power.corePrinciple,
-            functions: power.functions.map((fn) => ({
-              name: fn.name,
-              description: fn.description,
-            })),
-          },
-        }),
+        input: beat.modelText,
       },
       output: { kind: "text" },
       trace: { operation: "desktop.first-power-narration.v1" },
@@ -661,7 +685,10 @@ export class DesktopPlaySession {
       timeoutMs: 5 * 60 * 1_000,
       generation: { temperature: 0.4, maxOutputTokens: 512 },
     });
-    if (!result.ok || !result.output.text.trim()) {
+    const checked = result.ok
+      ? validatePresentedText(result.output.text, beat)
+      : { ok: false as const, reason: "model-failure" };
+    if (!checked.ok) {
       this.add(
         "system",
         "Your first power manifested, but presentation failed. You may retry narration safely without replaying the Awakening.",
@@ -670,9 +697,10 @@ export class DesktopPlaySession {
       return;
     }
 
-    this.add("narrator", result.output.text.trim());
+    this.add("narrator", checked.text);
     this.openingProgression = openingProgressionStateSchema.parse({
       ...state,
+      manifestationPresentationScene: frozen,
       manifestationNarrationPending: false,
     });
     await this.persistPresentation();

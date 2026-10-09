@@ -147,9 +147,9 @@ function simpleModel(
     if (request.output.kind === "text") {
       if (narration) return narration(request);
       const input = JSON.parse(request.prompt.input) as {
-        playerCommunication: { exactQuoteFragments: string[] };
+        quotedSpeech?: string[];
       };
-      const quote = input.playerCommunication.exactQuoteFragments[0];
+      const quote = input.quotedSpeech?.[0];
       return quote
         ? `Liam asks, "${quote}" Gary answers carefully.`
         : "Liam asks about the missing chicken. Gary answers carefully.";

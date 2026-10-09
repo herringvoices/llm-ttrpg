@@ -38,7 +38,8 @@ import type { WorldState } from "./world.js";
 import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
 import { tryOrdinaryNpcConversation } from "./conversation-ordinary.js";
 import { projectContinuity, type ContinuitySummary } from "./continuity.js";
-import { redactModelBriefText } from "./model-brief.js";
+import { prepareModelBrief, redactModelBriefText } from "./model-brief.js";
+import { buildPresentationBeat, validatePresentedText } from "./presentation-beat.js";
 
 export interface ConversationAuthorityBindings {
   readonly recordCommunicationOperationId: string;
@@ -957,6 +958,33 @@ export async function performConversationTurn(
   if (pressure.status !== "assessed") {
     throw new ConversationValidationError("Conversation narration requires assessed Action Pressure");
   }
+  const narrationContext = prepareModelBrief({
+    purpose: "narration",
+    context: playerContext,
+    perspective: { kind: "actor", id: request.playerActorId },
+    maxCharacters: 4_000,
+  });
+  const presentationBeat = buildPresentationBeat({
+    id: request.turnId,
+    kind: "conversation",
+    scene: {
+      schemaVersion: 1,
+      sceneBrief: narrationContext.modelText,
+      worldRevision: narrationContext.basis.worldRevision,
+      eventSequence: narrationContext.basis.eventSequence ??
+        input.session.planningBasis().eventSequence,
+    },
+    declaration: act.authorizedContent,
+    observableOutcomes: [
+      ...publicDecisions.map((decision) => JSON.stringify(decision)),
+      ...(committedActions.length ? [
+        "Registered NPC actions were committed; only describe their visible effects already present in the actor scene.",
+      ] : []),
+    ],
+    quotedSpeech: act.exactQuoteFragments,
+    elapsedMs: conversationElapsedMs,
+    stopReason,
+  });
   const presentation = input.session.presentation();
   const directive = compileNarrationDirective(
     presentation.narrationProfile,
@@ -978,20 +1006,7 @@ export async function performConversationTurn(
         "Do not invent actionable objects, routes, hazards, witnesses, resources, or clues.",
         `Target ${narrationTarget.minimumCharacters}-${narrationTarget.maximumCharacters} characters (${narrationTarget.preference}/${narrationTarget.band}); this is guidance, never a truncation limit.`,
       ],
-      context: renderContextForModel(playerContext),
-      input: JSON.stringify({
-        playerCommunication: {
-          inputMode: act.inputMode,
-          exactQuoteFragments: act.exactQuoteFragments,
-          semanticKinds: act.semanticKinds,
-          authorizedContent: act.authorizedContent,
-          materialCommitments: act.materialCommitments,
-          deliveryIntent: act.deliveryIntent,
-          containsNonSpeechAction: act.containsNonSpeechAction,
-        },
-        npcResponses: publicDecisions,
-        stopReason,
-      }),
+      input: presentationBeat.modelText,
     },
     output: { kind: "text" },
     trace: { operation: "conversation.narration.v1" },
@@ -1001,13 +1016,13 @@ export async function performConversationTurn(
   if (!narrationResult.ok) {
     narrationError = `${narrationResult.error.kind}: ${narrationResult.error.message}`;
   } else {
-    narration = narrationResult.output.text;
-    for (const quote of act.exactQuoteFragments) {
-      if (!narration.includes(quote)) {
-        narration = undefined;
-        narrationError = `Narration omitted or rewrote exact player quote: ${quote}`;
-        break;
-      }
+    const validated = validatePresentedText(narrationResult.output.text, presentationBeat);
+    if (!validated.ok) {
+      narrationError = validated.reason === "missing-verbatim-quote"
+        ? "Narration omitted or rewrote exact player quote"
+        : `Narration rejected unsafe or unsupported prose: ${validated.reason}`;
+    } else {
+      narration = validated.text;
     }
   }
   if (narration) {

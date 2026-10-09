@@ -11,6 +11,7 @@ import { componentIdentitySchema, stableIdSchema } from "./identity.js";
 import { jsonValueSchema } from "./json.js";
 import { mutationProposalSchema } from "./operations.js";
 import { randomnessTraceSchema } from "./randomness.js";
+import { presentationSceneSnapshotSchema } from "./presentation-beat.js";
 import { resolutionPathSchema } from "./resolution.js";
 import { semanticActionModeSchema, semanticActionSchema } from "./semantic-action.js";
 import { fictionalDurationMsSchema } from "./time.js";
@@ -107,6 +108,8 @@ export const actionRunSchema = z.object({
   lastWorldRevision: z.number().int().nonnegative(),
   receipts: z.array(committedOperationReceiptSchema),
   stopReason: intentStopReasonSchema.optional(),
+  /** Frozen actor-authorized scene at completion for presentation-only retry. */
+  narrationScene: presentationSceneSnapshotSchema.optional(),
   narration: z.string().min(1).optional(),
 }).strict().superRefine((run, context) => {
   if (run.status === "stopped" && !run.stopReason) {
@@ -169,6 +172,13 @@ export function validateActionRunMetadataUpdate(
   }
   if (before.stopReason && before.stopReason !== after.stopReason) {
     throw new ActionRunTransitionError("An action run stop reason is immutable");
+  }
+  if (before.narrationScene &&
+      !sameJson(before.narrationScene, after.narrationScene)) {
+    throw new ActionRunTransitionError("Persisted narration scene basis is immutable");
+  }
+  if (after.narrationScene && after.status !== "stopped") {
+    throw new ActionRunTransitionError("Narration scene requires a stopped committed action");
   }
   if (before.narration && before.narration !== after.narration) {
     throw new ActionRunTransitionError("Persisted narration is immutable");

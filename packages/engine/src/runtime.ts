@@ -118,6 +118,8 @@ import {
   type CampaignPlanDocument,
 } from "./campaign-planning.js";
 import { compileNarrationDirective, deriveSceneRegister } from "./presentation.js";
+import { buildPresentationBeat, deterministicBeatFallback,
+  observableActionOutcomes, validatePresentedText } from "./presentation-beat.js";
 import {
   NARRATION_CHARACTER_TARGETS,
   narrationPreferenceSchema,
@@ -1518,35 +1520,69 @@ function openSession(
             trace: resultTrace(),
           };
         }
-        const actorContext = assembleContext({
-          game: dependencies.game,
-          world: state,
-          worldRevision: revision,
-          eventSequence,
-          request: {
-            role: "actor",
+        // This snapshot is frozen BEFORE the first narration invocation,
+        // including after model timeout. A later retry must not see whatever
+        // happened in the world after the committed action.
+        let snapshot = completed.narrationScene;
+        let contextOmissions: { localId: string; decision: string; reason: string }[] = [];
+        let briefOverflow = false;
+        if (!snapshot) {
+          const actorContext = assembleContext({
+            game: dependencies.game, world: state,
+            worldRevision: revision, eventSequence,
+            request: {
+              role: "actor", perspective: { kind: "actor", id: completed.actorId },
+              focalActorId: completed.actorId,
+              declaration: completed.declaration,
+              budget: request.budget,
+            },
+            ...(dependencies.context?.sceneSource
+              ? { sceneSource: dependencies.context.sceneSource } : {}),
+          });
+          const preliminary = prepareModelBrief({
+            purpose: "narration",
             perspective: { kind: "actor", id: completed.actorId },
-            focalActorId: completed.actorId,
-            declaration: completed.declaration,
-            budget: request.budget,
-          },
-          ...(dependencies.context?.sceneSource
-            ? { sceneSource: dependencies.context.sceneSource }
-            : {}),
-        });
-        const outcomes = completed.receipts.map((receipt) => ({
-          elapsedMs: receipt.advanceTimeByMs,
-          publicEvents: receipt.events
-            .filter((event) => event.access === "public")
-            .map((event) => ({ type: event.type, summary: redactModelBriefText(event.summary) })),
-        }));
-        const narrationBrief = prepareModelBrief({
-          purpose: "narration",
-          perspective: { kind: "actor", id: completed.actorId },
-          context: actorContext,
-          requiredEntityIds: completed.executableIntent.targetIds,
-          committedOutcomes: outcomes.flatMap((outcome) =>
-            outcome.publicEvents.map((event) => event.summary)),
+            context: actorContext,
+            requiredEntityIds: completed.executableIntent.targetIds,
+          });
+          const localIds = Object.values(preliminary.localReferences);
+          const visibleLocationId = actorContext.situation.locationRef
+            ? preliminary.localReferences[actorContext.situation.locationRef] : undefined;
+          const safeOutcomes = observableActionOutcomes({
+            receipts: completed.receipts,
+            authorizedEntityIds: localIds,
+            playerActorId: completed.actorId,
+            ...(visibleLocationId ? { locationId: visibleLocationId } : {}),
+          });
+          snapshot = {
+            schemaVersion: 1,
+            sceneBrief: preliminary.modelText,
+            worldRevision: preliminary.basis.worldRevision,
+            eventSequence: preliminary.basis.eventSequence ?? eventSequence,
+            observableOutcomes: safeOutcomes,
+          };
+          completed = actionRunSchema.parse({ ...completed, narrationScene: snapshot });
+          await dependencies.persistence.actionRuns.update(completed);
+          contextOmissions = actorContext.diagnostics.decisions
+            .filter((decision) => decision.decision !== "included")
+            .map((decision) => ({
+              localId: decision.localId, decision: decision.decision,
+              reason: decision.reason,
+            }));
+          briefOverflow = preliminary.diagnostics.requiredOverflow;
+        }
+        const beat = buildPresentationBeat({
+          id: completed.id,
+          kind: completed.executableIntent.pressureLevel >= 7
+            ? "immediate-danger" : completed.elapsedMs >= 600_000
+              ? "compressed-duration" : completed.semanticAction?.modes.some(
+                (mode) => mode === "movement" || mode === "observation",
+              ) ? "exploration" : "action",
+          scene: snapshot,
+          declaration: completed.declaration,
+          observableOutcomes: snapshot.observableOutcomes ?? [],
+          elapsedMs: completed.elapsedMs,
+          stopReason: completed.stopReason,
         });
         const narrationKind = completed.executableIntent.pressureLevel >= 7
           ? "immediate-danger"
@@ -1589,17 +1625,28 @@ function openSession(
           targetBand: narrationBand,
           targetCharacters: { minimum: minimumCharacters, maximum: maximumCharacters },
           sourceCategories: ["actor-visible-context", "committed-outcomes", "player-declaration"],
-          briefCharacters: narrationBrief.diagnostics.serializedCharacters,
-          briefOverflow: narrationBrief.diagnostics.requiredOverflow,
-          contextOmissions: actorContext.diagnostics.decisions
-            .filter((decision) => decision.decision !== "included")
-            .map((decision) => ({
-              localId: decision.localId,
-              decision: decision.decision,
-              reason: decision.reason,
-            })),
+          briefCharacters: beat.modelText.length,
+          briefOverflow,
+          contextOmissions,
+          sourceRevision: beat.basis.worldRevision,
+          sourceEventSequence: beat.basis.eventSequence,
+          observableOutcomeCount: beat.observableOutcomes.length,
           presentationKind: narrationRetry ? "retry" : "action",
         });
+        // A trivial committed routine can be displayed without generating
+        // prose or asking another model to assert what already happened.
+        const trivialRoutine = completed.receipts.length === 1 &&
+          /^I (?:sit|stand|wait|rest)\b/i.test(completed.declaration) &&
+          completed.receipts[0]!.toolId.includes("routine-task");
+        const directText = trivialRoutine ? deterministicBeatFallback(beat) : undefined;
+        if (directText) {
+          completed = actionRunSchema.parse({ ...completed, narration: directText });
+          await dependencies.persistence.actionRuns.update(completed);
+          record("narration", { ok: true, source: "committed-routine", modelCalls: 0 });
+          return { kind: "resolved", run: clone(completed),
+            narration: directText, developmentSignal: makeDevelopmentSignal(completed),
+            trace: resultTrace() };
+        }
         const narrationResult = await options.modelRuntime.generate({
           prompt: {
             protectedContext: [directive.protectedContext],
@@ -1610,17 +1657,10 @@ function openSession(
             "A success of a bounded attempt is not permission to claim the entire originally requested activity completed when Action Pressure clipped the window. State only the time and progress in receipts.",
               "Do not invent player thoughts, feelings, dialogue, decisions, or voluntary actions beyond the submitted declaration.",
               "Do not invent specific tools, equipment, actionable objects, routes, hazards, witnesses, resources, or clues. Harmless transient color must not create a future affordance.",
-              "Use second person for the focal actor. If the committed outcomes are sparse, be concise instead of padding with invented attempts, complications, or details.",
+              "Follow the package's protected perspective and tense. If outcomes are sparse, be concise instead of padding with invented attempts, complications or details.",
               `Aim for at most ${maximumCharacters} characters (${narrationPreference}/${narrationBand}). The nominal ${minimumCharacters}-character lower bound is optional when the authoritative outcomes do not support that much detail.`,
             ],
-            context: narrationBrief.modelText,
-            input: JSON.stringify({
-              declaration: completed.declaration,
-              goal: completed.executableIntent.goal,
-              elapsedMs: completed.elapsedMs,
-              stopReason: completed.stopReason,
-              committedActorVisibleOutcomes: outcomes,
-            }),
+            input: beat.modelText,
           },
           output: { kind: "text" },
           trace: { operation: "player-action.narration.v1" },
@@ -1638,10 +1678,22 @@ function openSession(
             trace: resultTrace(),
           };
         }
-        completed = actionRunSchema.parse({ ...completed, narration: narrationResult.output.text });
+        const validated = validatePresentedText(narrationResult.output.text, beat);
+        if (!validated.ok) {
+          record("narration", {
+            ok: false, reason: validated.reason,
+            originalCommitPreserved: true,
+          });
+          // Never persist ungrounded text as the truth of a committed beat.
+          return { kind: "resolved", run: clone(completed),
+            developmentSignal: makeDevelopmentSignal(completed), trace: resultTrace() };
+        }
+        completed = actionRunSchema.parse({ ...completed, narration: validated.text });
         await dependencies.persistence.actionRuns.update(completed);
         record("narration", {
           ok: true,
+          source: "validated-model",
+          modelInputCharacters: beat.modelText.length,
           metadata: jsonValueSchema.parse(clone(narrationResult.metadata)),
         });
         return {

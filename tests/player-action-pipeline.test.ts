@@ -588,6 +588,74 @@ describe("player action execution pipeline", () => {
     expect(retryModel.requests).toHaveLength(1);
   });
 
+  it("freezes the actor-visible committed scene across time changes and narration-only retry", async () => {
+    const { runtime, persistence } = makeRuntime();
+    const session = await runtime.createWorld("Frozen presentation basis");
+    const actionRequest = { ...request, actionId: "action.lm12.frozen-scene" };
+    const first = await session.performPlayerAction(actionRequest, {
+      modelRuntime: new QueueModelRuntime([
+        { kind: "interpreted", goal: "test my position", targetRefs: [],
+          requestedHorizonMs: 10_000, pressureLevel: 8 },
+        { kind: "invoke-tool", toolId: "test.actions.resolve-effort",
+          arguments: { base: 5, modifier: 2, difficulty: 6, durationMs: 1_000 } },
+        { kind: "stop", reason: "goal-achieved" },
+        { failure: "timeout" },
+      ]),
+    });
+    expect(first.kind).toBe("resolved");
+    if (first.kind !== "resolved") return;
+    const frozen = first.run.narrationScene;
+    expect(frozen?.schemaVersion).toBe(1);
+    const atCommit = (await session.eventHistory({ types: ["test.effort-resolved"] })).length;
+    await session.advanceTime(60 * 60_000);
+    const changedRevision = (await persistence.worlds.load(session.worldId))!.revision;
+    const retryModel = new QueueModelRuntime([
+      "Your recorded attempt succeeds; no later encounter is described.",
+    ]);
+    const second = await session.performPlayerAction(actionRequest, {
+      modelRuntime: retryModel,
+    });
+    expect(second.kind).toBe("resolved");
+    if (second.kind !== "resolved") return;
+    expect(second.run.narrationScene).toEqual(frozen);
+    const actualBeat = JSON.parse(retryModel.requests[0]!.prompt.input) as {
+      scene: unknown; observableOutcomes: string[];
+    };
+    expect(actualBeat.scene).toEqual(JSON.parse(frozen!.sceneBrief));
+    expect(actualBeat.observableOutcomes).toEqual(frozen!.observableOutcomes);
+    expect((await persistence.worlds.load(session.worldId))!.revision).toBe(changedRevision);
+    expect(await session.eventHistory({ types: ["test.effort-resolved"] })).toHaveLength(atCommit);
+    expect(retryModel.requests).toHaveLength(1);
+  });
+
+  it("rejects narration that invents a usable exit without replaying an authoritative result", async () => {
+    const { runtime } = makeRuntime();
+    const session = await runtime.createWorld("Presentation must not create exits");
+    const actionRequest = { ...request, actionId: "action.lm12.unsafe-prose" };
+    const first = await session.performPlayerAction(actionRequest, {
+      modelRuntime: new QueueModelRuntime([
+        { kind: "interpreted", goal: "test my position", targetRefs: [],
+          requestedHorizonMs: 10_000, pressureLevel: 8 },
+        { kind: "invoke-tool", toolId: "test.actions.resolve-effort",
+          arguments: { base: 5, modifier: 2, difficulty: 6, durationMs: 1_000 } },
+        { kind: "stop", reason: "goal-achieved" },
+        "You succeed. An unlocked exit appears beside you.",
+      ]),
+    });
+    expect(first.kind).toBe("resolved");
+    if (first.kind !== "resolved") return;
+    expect(first.narration).toBeUndefined();
+    expect(first.run.narrationScene).toBeDefined();
+    const history = await session.eventHistory();
+    const retry = await session.performPlayerAction(actionRequest, {
+      modelRuntime: new QueueModelRuntime(["Your attempt succeeds."]),
+    });
+    expect(retry.kind).toBe("resolved");
+    if (retry.kind !== "resolved") return;
+    expect(retry.narration).toBe("Your attempt succeeds.");
+    expect(await session.eventHistory()).toEqual(history);
+  });
+
   it("feeds invalid proposals back without effects until a valid operation is chosen", async () => {
     const { runtime } = makeRuntime();
     const session = await runtime.createWorld("Proposal recovery");
