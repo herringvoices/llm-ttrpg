@@ -2,6 +2,7 @@ import {
   compileNarrationDirective,
   deriveSceneRegister,
   fictionalDurationMs,
+  maximumResolutionHorizon,
   jsonValueSchema,
   observeModelRuntime,
   classifyTurnDeclaration,
@@ -989,8 +990,29 @@ export class DesktopPlaySession {
           ? [{ kind: "legacy-action" as const, text: declaration }]
           : [];
       const segmentTraces: JsonValue[] = [];
+      let remainingTurnMs: number | undefined;
+      let previousSegmentPressure: number | undefined;
       for (const [index, segment] of segments.entries()) {
         const segmentStartingLocationId = this.view().currentLocationId;
+        const scene = await this.session.ensureScenePressure({
+          actorId: this.playerActorId,
+          ...(segmentStartingLocationId ? { locationId: segmentStartingLocationId } : {}),
+          proposedLevel: segment.kind === "action" ? segment.pressureLevel : 3,
+        });
+        if (previousSegmentPressure !== undefined && scene.changed &&
+            scene.level !== previousSegmentPressure) {
+          this.add("system", "The situation changed before the next step. Decide how to continue under the new pressure.");
+          break;
+        }
+        previousSegmentPressure = scene.level;
+        remainingTurnMs = Math.min(
+          remainingTurnMs ?? maximumResolutionHorizon(scene.level),
+          maximumResolutionHorizon(scene.level),
+        );
+        if (remainingTurnMs <= 0) {
+          this.add("system", "The Action Pressure window is exhausted. The remaining steps were not performed.");
+          break;
+        }
         // IDs are derived from the persisted player transcript identity, not
         // random per-operation IDs. Each segment is a distinct action run.
         const segmentId = `action.${playerMessageId}.segment.${index + 1}`;
@@ -1031,6 +1053,7 @@ export class DesktopPlaySession {
             modelRuntime: this.requireModel(),
             bindings: referenceConversationBindings,
             ordinaryFastPath: true,
+            availableWindowMs: remainingTurnMs,
             request: {
               turnId: `conversation.${playerMessageId}.segment.${index + 1}`,
               interactionId: this.workingConversation?.interactionId ?? `interaction.${playerMessageId}`,
@@ -1054,6 +1077,9 @@ export class DesktopPlaySession {
             onProgress: (phase) => this.reportTurnProgress(phase, onProgress),
           });
           this.workingConversation = result.workingState;
+          if (result.communicationCommitted) {
+            remainingTurnMs = Math.max(0, remainingTurnMs - (result.elapsedMs ?? result.act.durationMs));
+          }
           segmentTraces.push(asJson({
             communicationEventIds: result.communicationEventIds,
             extractionEventIds: result.extractionEventIds,
@@ -1094,6 +1120,10 @@ export class DesktopPlaySession {
             // a different canonical place; durable world state is untouched.
             this.workingConversation = undefined;
           }
+          if (result.stopReason === "pressure-boundary" || remainingTurnMs <= 0) {
+            this.add("system", "The scene's time window ended before any later declared steps.");
+            break;
+          }
           continue;
         }
 
@@ -1111,6 +1141,7 @@ export class DesktopPlaySession {
           modelRuntime: this.requireModel(),
           maxModelTurns: ACTION_MAX_MODEL_TURNS,
           registeredOnly: true,
+          maxAuthorizedHorizonMs: remainingTurnMs,
           ...(segment.kind === "action"
             ? { preinterpreted: {
                 declaration: segment.text,
@@ -1153,6 +1184,7 @@ export class DesktopPlaySession {
           }
           break;
         }
+        remainingTurnMs = Math.max(0, remainingTurnMs - result.run.elapsedMs);
         meaningfulTurn = meaningfulTurn ||
           result.developmentSignal.operationIds.length > 0 ||
           result.developmentSignal.eventIds.length > 0;
@@ -1165,6 +1197,12 @@ export class DesktopPlaySession {
         else {
           narrationStatus = "failed";
           this.add("system", "The action committed, but narration was unavailable. You may retry narration safely.");
+          break;
+        }
+        if (result.run.stopReason !== "goal-achieved" || remainingTurnMs <= 0) {
+          if (index < segments.length - 1) {
+            this.add("system", "The remaining declared steps were not attempted; decide how to proceed.");
+          }
           break;
         }
       }
