@@ -1088,6 +1088,7 @@ describe("desktop playable session integration", () => {
       manifestationDeadlineTurns: 3,
       firstPowerManifested: false,
     });
+    expect(play.view().error).toBeUndefined();
     expect(play.view().transcript[0]?.text).toContain("impossible");
     expect((await play.engineSession().eventHistory()).some((event) =>
       event.type === "campaign.opening-phenomenon-realized"
