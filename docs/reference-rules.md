@@ -1,5 +1,7 @@
 # Reference Rules
 
+> **Current implementation vs. next revision:** The mechanics below document the running **v1** reference game. The proposed **v2 Awakening Earth progression** is in [Awakened Types and Practice-Based Progression](awakening-earth/awakened-progression-types.md). Its changes to human baseline (30), practice-based SP/PP earning, type-specific XP/PP thresholds, and Effect 1–5 require coordinated code and test migrations; they are **not currently enforced** here. Do not reinterpret old saves using the v2 formulas without an explicit migration.
+
 The selected reference ruleset is a reusable, setting-neutral RPG rules package. It supplies concrete mechanics through the generic engine's operation and resolution contracts; none of these concepts are engine-level schemas.
 
 ## Character capabilities
@@ -71,7 +73,7 @@ Successful fixed/contextual Effect realizes the Potential Effect. Derived Effect
 
 Exact numeric margin remains diagnostic data. It never automatically raises Effect or SP. Stress-producing success normally applies Realized Effect directly to the selected track; non-stress Effect can instead describe scope, such as how far a rumor propagates.
 
-## Learning and recovery
+## Learning and recovery (implemented v1; practice-based v2 specified separately)
 
 Only uncertain checks award use-based skill SP. Failure teaches. Awards use Potential Effect:
 
@@ -95,7 +97,7 @@ There are no combat rounds, initiative, action points, or universal reactions. A
 
 These operations expose duration and timing semantics compatible with Action Pressure. They do not implement the multi-intent scheduler, cumulative horizon loop, or player-control stop conditions owned by issue #11.
 
-## Starting humans, awakening, and mechanical realization
+## Starting humans, awakening, and mechanical realization (implemented v1)
 
 Starting human mechanics are generated from normalized player-established facts. Attribute departures from the mundane baseline and every starting Skill require explicit evidence links; the complete Level-0 profile is validated before campaign initialization.
 
