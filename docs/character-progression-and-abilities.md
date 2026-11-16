@@ -1,5 +1,7 @@
 # Character Progression and Abilities
 
+> **Implementation and design versioning (Nov 2026):** This document describes the **v1 implemented progression model** in the current TypeScript ruleset (including cubic Slow Character XP/Power Level thresholds, prime-numbered new powers, prime Power-Level functions, and a level-up-only PP budget). The agreed direction for a **v2 revision**—three Awakened types (Prime, Periodic, Fibonacci), five-Power-Level function milestones, practice-earned SP/PP, human-average-30 attributes, and Effect 1–5—is recorded in **[Awakened Types and Practice-Based Progression](awakening-earth/awakened-progression-types.md)**. That revision is a proposed design and is **not yet active in the reference game**. Retain these v1 formulas for existing sessions and saves unless migrated explicitly.
+
 Issue #22 defines the selected reference ruleset's character-progression model and the Awakening Earth adapter/setting boundaries around it. The engine remains generic: it validates and commits structured operations, state, events, time, and RNG, but it does not define XP, levels, attributes, skills, powers, mana, or power growth.
 
 ## Ownership boundary
@@ -9,7 +11,7 @@ Issue #22 defines the selected reference ruleset's character-progression model a
 - **Awakening Earth adapter:** maps setting events and concepts into validated ruleset progression operations.
 - **Engine:** stores opaque validated state, executes package operations, advances fictional time, and commits state/events atomically. Narration has no authority to grant XP, levels, points, powers, or effects.
 
-## Character level and XP
+## Character level and XP (implemented v1)
 
 Character XP is authoritative nonnegative integer state.
 
@@ -34,7 +36,7 @@ After awakening, meaningful mundane experience can also contribute XP because ma
 
 One XP award may cross multiple thresholds. Threshold effects resolve sequentially in ascending level order.
 
-## XP award rubric
+## XP award rubric (implemented v1)
 
 There is intentionally no universal encounter-to-XP table. The LLM proposes an XP award at a meaningful resolution boundary and supplies its reasoning in structured form; the ruleset validates the band, amount, eligibility, and resulting state update.
 
@@ -111,7 +113,7 @@ The character does not normally choose allocations. An explicit ability may gran
 
 The player is still told exactly what changed. Player-facing progression information is not automatically a diegetic interface visible to the character.
 
-## Attribute growth
+## Attribute growth (implemented v1)
 
 The 18 ruleset Attributes remain the authoritative raw-capability values.
 
@@ -233,7 +235,7 @@ This is the ordinary causal link between practicing a power and that power growi
 
 If evidence is genuinely tied after applying the rubric, the LLM may choose among tied allocations but must record that the choice was underdetermined rather than pretending one option was mechanically required.
 
-## Power Point budget and Power Level
+## Power Point budget and Power Level (implemented v1)
 
 Power Level is derived from PP:
 
@@ -253,7 +255,7 @@ Newly available PP is the increase in that budget since the previous committed t
 
 PP is ordinarily created only by Character Level advancement or an explicit exceptional mechanic.
 
-## Power acquisition
+## Power acquisition (implemented v1)
 
 A character manifests:
 
@@ -330,7 +332,7 @@ Once a new function is validated and committed, it becomes permanent authoritati
 
 A later advancement cannot violate or casually replace the power's established core principle.
 
-## Power growth profiles
+## Power growth profiles (implemented v1)
 
 Every power has one mechanical growth profile.
 
