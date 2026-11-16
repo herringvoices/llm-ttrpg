@@ -1,5 +1,7 @@
 # Awakening Earth: Monster Design, Threat Calibration & Encounter Composition
 
+> **Upcoming rules calibration:** The proposed [Awakened Types and Practice-Based Progression](awakened-progression-types.md) recasts the ordinary human baseline at 30 per Attribute on the same numeric scale used by creatures, and expands potential Effect to 5. Existing monster threat envelopes and challenge-calibration guidance remain v1 until the ruleset, generation, Resistance benchmarks, and tests are migrated together.
+
 **Status:** Design complete; canonical source for closed Issue #35  
 **Scope:** Monster archetypes, signature abilities, threat envelopes, party-relative challenge calibration, encounter composition, rules-grounded challenge audits, and the boundary between authored/player-targeted threats and simulation-originated threats.
 
