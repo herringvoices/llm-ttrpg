@@ -1,5 +1,7 @@
 # Awakening Earth Power Design and Discovery
 
+> **Progression revision in design:** See [Awakened Types and Practice-Based Progression](awakened-progression-types.md) for the proposed Prime / Periodic / Fibonacci manifestation schedules, five-Power-Level functional milestones, PP earned through sustained use/practice, and the distinction between a power's initial Manifestation Strength and its subsequent Power Level. The current implementation still uses the v1 formulas in [Character Progression and Abilities](../character-progression-and-abilities.md) pending migration.
+
 Awakening Earth powers are individualized supernatural rules. They are not a closed spell list, a rigid class system, or a finite taxonomy.
 
 This document defines the reference game's semantic guidance for creating, retrieving, growing, and experimentally understanding powers. Mechanical progression remains defined by [Character Progression and Abilities](../character-progression-and-abilities.md).
